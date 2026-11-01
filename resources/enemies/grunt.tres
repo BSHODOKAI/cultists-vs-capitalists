@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="EnemyData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/enemies/enemy_data.gd" id="1_enemy_data"]
+
+[resource]
+script = ExtResource("1_enemy_data")
+display_name = "Grunt"
+color = Color(0.9, 0.4, 0.4, 1)
+max_health = 60.0
+speed = 55.0
+reward = 8

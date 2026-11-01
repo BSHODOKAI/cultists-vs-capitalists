@@ -1,0 +1,28 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/tower.gd" id="1_tower"]
+[ext_resource type="Resource" path="res://resources/towers/basic_tower.tres" id="2_data"]
+
+[sub_resource type="CylinderMesh" id="Mesh_tower"]
+top_radius = 0.35
+bottom_radius = 0.4
+height = 0.7
+
+[sub_resource type="SphereShape3D" id="Shape_range"]
+radius = 6.0
+
+[node name="Tower" type="Node3D"]
+script = ExtResource("1_tower")
+data = ExtResource("2_data")
+
+[node name="Mesh" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.35, 0)
+mesh = SubResource("Mesh_tower")
+
+[node name="Range" type="Area3D" parent="."]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Range"]
+shape = SubResource("Shape_range")
+
+[node name="FireTimer" type="Timer" parent="."]
+wait_time = 1.0

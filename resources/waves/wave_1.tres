@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="WaveData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/waves/wave_data.gd" id="1_wave_data"]
+[ext_resource type="Script" path="res://scripts/waves/wave_entry.gd" id="2_wave_entry"]
+[ext_resource type="Resource" path="res://resources/enemies/grunt.tres" id="3_grunt"]
+
+[sub_resource type="Resource" id="WaveEntry_grunts"]
+script = ExtResource("2_wave_entry")
+enemy_data = ExtResource("3_grunt")
+count = 6
+
+[resource]
+script = ExtResource("1_wave_data")
+entries = Array[WaveEntry]([SubResource("WaveEntry_grunts")])
+spawn_interval = 0.8
+label = "Wave 1"

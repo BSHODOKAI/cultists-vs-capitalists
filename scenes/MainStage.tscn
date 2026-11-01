@@ -1,0 +1,111 @@
+[gd_scene format=3 uid="uid://bectj8403ab46"]
+
+[ext_resource type="Script" uid="uid://3377l2ei37ns" path="res://scripts/grid/grid_manager.gd" id="1_grid"]
+[ext_resource type="Script" uid="uid://tb8rbv5s43ki" path="res://scripts/towers/tower_placement_manager.gd" id="2_preview"]
+[ext_resource type="PackedScene" path="res://scenes/towers/tower.tscn" id="3_tower"]
+[ext_resource type="Script" uid="uid://7r044vbyjy2k" path="res://scripts/waves/wave_manager.gd" id="4_wave"]
+[ext_resource type="PackedScene" path="res://scenes/enemies/enemy.tscn" id="5_enemy"]
+[ext_resource type="Script" uid="uid://7q1cc1heki5w" path="res://scripts/camera/isometric_camera.gd" id="6_cam"]
+[ext_resource type="Script" path="res://scripts/level/level_generator.gd" id="7_level"]
+[ext_resource type="Script" path="res://scripts/stage/stage.gd" id="8_stage"]
+[ext_resource type="Script" path="res://scripts/level/spawner.gd" id="9_spawn"]
+[ext_resource type="Script" path="res://scripts/ui/game_hud.gd" id="10_hud"]
+[ext_resource type="Script" path="res://scripts/economy/player_resources.gd" id="11_res"]
+[ext_resource type="Script" path="res://scripts/economy/player_health.gd" id="12_health"]
+[ext_resource type="Script" path="res://scripts/level/stage_manager.gd" id="13_stage"]
+
+[sub_resource type="Environment" id="Env"]
+background_mode = 1
+background_color = Color(0.13, 0.14, 0.18, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.55, 0.58, 0.65, 1)
+ambient_light_energy = 0.6
+
+[sub_resource type="StandardMaterial3D" id="Mat_ground"]
+albedo_color = Color(0.24, 0.31, 0.27, 1)
+
+[sub_resource type="PlaneMesh" id="Mesh_ground"]
+size = Vector2(20, 20)
+
+
+
+[node name="Main" type="Node3D" unique_id=2139412098]
+script = ExtResource("8_stage")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=732354834]
+environment = SubResource("Env")
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=44579849]
+projection = 1
+size = 20.0
+script = ExtResource("6_cam")
+grid_path = NodePath("../Grid")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=27946382]
+transform = Transform3D(0.707107, -0.408248, 0.57735, 0, 0.816497, 0.57735, -0.707107, -0.408248, 0.57735, 10, 10, 10)
+shadow_enabled = true
+
+[node name="Grid" type="Node3D" parent="." unique_id=1668802412]
+script = ExtResource("1_grid")
+
+[node name="Ground" type="MeshInstance3D" parent="Grid" unique_id=1513553400]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10, 0, 10)
+material_override = SubResource("Mat_ground")
+mesh = SubResource("Mesh_ground")
+
+[node name="LevelGenerator" type="Node3D" parent="."]
+script = ExtResource("7_level")
+
+[node name="Spawner" type="Node" parent="."]
+script = ExtResource("9_spawn")
+
+[node name="StageManager" type="Node" parent="."]
+script = ExtResource("13_stage")
+
+[node name="TowerPlacement" type="Node3D" parent="." unique_id=327715603]
+script = ExtResource("2_preview")
+grid = NodePath("../Grid")
+tower_scene = ExtResource("3_tower")
+towers_parent = NodePath("../Towers")
+
+[node name="Towers" type="Node3D" parent="." unique_id=427228105]
+
+[node name="Enemies" type="Node3D" parent="." unique_id=1239701718]
+
+[node name="WaveManager" type="Node" parent="." unique_id=1231603732]
+script = ExtResource("4_wave")
+enemy_scene = ExtResource("5_enemy")
+spawn_parent = NodePath("../Enemies")
+
+[node name="PlayerResources" type="Node" parent="."]
+script = ExtResource("11_res")
+
+[node name="PlayerHealth" type="Node" parent="."]
+script = ExtResource("12_health")
+
+[node name="HUD" type="CanvasLayer" parent="."]
+script = ExtResource("10_hud")
+
+[node name="ResourceLabel" type="Label" parent="HUD"]
+offset_left = 16.0
+offset_top = 12.0
+offset_right = 320.0
+offset_bottom = 48.0
+theme_override_font_sizes/font_size = 28
+text = "Essence: 5"
+
+[node name="HealthLabel" type="Label" parent="HUD"]
+offset_left = 16.0
+offset_top = 48.0
+offset_right = 320.0
+offset_bottom = 84.0
+theme_override_font_sizes/font_size = 28
+text = "HP: 100 / 100"
+
+[node name="StageLabel" type="Label" parent="HUD"]
+offset_left = 16.0
+offset_top = 84.0
+offset_right = 320.0
+offset_bottom = 120.0
+theme_override_font_sizes/font_size = 28
+text = "Stage: 1"
