@@ -39,7 +39,7 @@ func _build_ui() -> void:
 	add_theme_stylebox_override("panel", style)
 
 	var vbox := VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 8)
+	vbox.add_theme_constant_override("separation", 6)
 	add_child(vbox)
 
 	var title_hbox := HBoxContainer.new()
@@ -47,7 +47,7 @@ func _build_ui() -> void:
 	vbox.add_child(title_hbox)
 
 	_icon_rect = TextureRect.new()
-	_icon_rect.custom_minimum_size = Vector2(38.0, 38.0)
+	_icon_rect.custom_minimum_size = Vector2(36.0, 36.0)
 	_icon_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_icon_rect.visible = false
 	title_hbox.add_child(_icon_rect)
@@ -56,13 +56,13 @@ func _build_ui() -> void:
 	_title_label.text = "No Tower Selected"
 	_title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_title_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_title_label.add_theme_font_size_override("font_size", 16)
+	_title_label.add_theme_font_size_override("font_size", 15)
 	_title_label.add_theme_color_override("font_color", Color(0.95, 0.88, 1.0))
 	title_hbox.add_child(_title_label)
 
 	_stats_label = Label.new()
 	_stats_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_stats_label.add_theme_font_size_override("font_size", 13)
+	_stats_label.add_theme_font_size_override("font_size", 12)
 	vbox.add_child(_stats_label)
 
 	_tier_container = VBoxContainer.new()
@@ -126,6 +126,7 @@ func refresh() -> void:
 	if inst == null or inst.def == null or tsys == null:
 		var build_td: TowerData = gs.get("selected_build_tower") as TowerData
 		if build_td != null:
+			visible = true
 			var build_cost: int = tsys.get_tower_build_cost(build_td) if tsys != null else build_td.cost
 			if _icon_rect != null:
 				_icon_rect.texture = _PlaceholderIcons.get_tower_icon(build_td.id, 38)
@@ -144,18 +145,21 @@ func refresh() -> void:
 				_sep.visible = false
 			_penance_button.visible = false
 		else:
+			visible = false
 			if _icon_rect != null:
 				_icon_rect.visible = false
-			_title_label.text = "Click a Tower on the Hex Grid"
-			_stats_label.text = "Select a placed tower to inspect stats, upgrade its tech tree, perform Rigged maintenance, or sell.\nPress [B] to open the Build Tower Menu."
+			_title_label.text = ""
+			_stats_label.text = ""
 			if _sep != null:
-				_sep.visible = true
-			_penance_button.visible = true
+				_sep.visible = false
+			_penance_button.visible = false
 		_maintenance_button.visible = false
 		_cleanse_button.visible = false
 		_sell_button.visible = false
+		_sync_right_aligned_rect()
 		return
 
+	visible = true
 	if _sep != null:
 		_sep.visible = true
 	_penance_button.visible = true
@@ -200,6 +204,25 @@ func refresh() -> void:
 		_sell_button.text = "Sell Tower (+%d Off, +%d Scrap)" % [off_ref, scr_ref]
 	else:
 		_sell_button.text = "Sell Tower (+%d Offerings)" % off_ref
+	_sync_right_aligned_rect()
+
+
+func _sync_right_aligned_rect() -> void:
+	anchor_left = 1.0
+	anchor_right = 1.0
+	anchor_top = 0.0
+	anchor_bottom = 0.0
+	grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	grow_vertical = Control.GROW_DIRECTION_END
+	offset_right = -12.0
+	offset_left = -330.0
+	offset_top = 226.0
+	offset_bottom = 226.0
+	var min_sz: Vector2 = get_combined_minimum_size()
+	var w: float = maxf(318.0, min_sz.x)
+	offset_right = -12.0
+	offset_left = -12.0 - w
+	offset_bottom = 226.0 + min_sz.y
 
 
 func _build_upgrade_ladder(inst: TowerInstance, tsys: TowerSystem) -> void:

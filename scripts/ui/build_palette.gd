@@ -193,16 +193,9 @@ func _build_ui() -> void:
 	# --- Persistent Bottom Bar (toggle button + active build tower description) ---
 	_bottom_bar = HBoxContainer.new()
 	_bottom_bar.name = "BottomBar"
+	_bottom_bar.alignment = BoxContainer.ALIGNMENT_END
 	_bottom_bar.add_theme_constant_override("separation", 10)
 	_root_vbox.add_child(_bottom_bar)
-
-	_toggle_menu_button = Button.new()
-	_toggle_menu_button.name = "ToggleMenuButton"
-	_toggle_menu_button.text = "Build Tower [B]"
-	_toggle_menu_button.custom_minimum_size = Vector2(150.0, 40.0)
-	_toggle_menu_button.focus_mode = Control.FOCUS_NONE
-	_toggle_menu_button.pressed.connect(toggle_menu)
-	_bottom_bar.add_child(_toggle_menu_button)
 
 	_active_build_icon = TextureRect.new()
 	_active_build_icon.name = "ActiveBuildIcon"
@@ -227,6 +220,14 @@ func _build_ui() -> void:
 	_cancel_build_button.visible = false
 	_cancel_build_button.pressed.connect(_on_cancel_build_pressed)
 	_bottom_bar.add_child(_cancel_build_button)
+
+	_toggle_menu_button = Button.new()
+	_toggle_menu_button.name = "ToggleMenuButton"
+	_toggle_menu_button.text = "Build Tower [B]"
+	_toggle_menu_button.custom_minimum_size = Vector2(150.0, 40.0)
+	_toggle_menu_button.focus_mode = Control.FOCUS_NONE
+	_toggle_menu_button.pressed.connect(toggle_menu)
+	_bottom_bar.add_child(_toggle_menu_button)
 
 
 func _connect_signals() -> void:
@@ -279,6 +280,21 @@ func close_menu() -> void:
 func _apply_menu_visibility() -> void:
 	if _menu_drawer != null:
 		_menu_drawer.visible = is_menu_open
+	var gs: Node = get_node_or_null("/root/GameState")
+	var has_active_build: bool = (gs != null and gs.get("selected_build_tower") != null)
+	anchor_left = 1.0
+	anchor_right = 1.0
+	anchor_top = 1.0
+	anchor_bottom = 1.0
+	grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	grow_vertical = Control.GROW_DIRECTION_BEGIN
+	offset_right = -12.0
+	if is_menu_open:
+		offset_left = -940.0
+	elif has_active_build:
+		offset_left = -630.0
+	else:
+		offset_left = -178.0
 	offset_bottom = BOTTOM_OFFSET
 	offset_top = OPEN_TOP_OFFSET if is_menu_open else CLOSED_TOP_OFFSET
 
@@ -392,6 +408,7 @@ func refresh() -> void:
 			if _active_build_icon != null:
 				_active_build_icon.texture = _PlaceholderIcons.get_tower_icon(selected.id, 34)
 				_active_build_icon.visible = true
+			_active_build_label.visible = true
 			_active_build_label.text = "BUILDING: %s (%d Off) — %s" % [
 				selected.display_name,
 				sel_cost,
@@ -402,7 +419,8 @@ func refresh() -> void:
 		else:
 			if _active_build_icon != null:
 				_active_build_icon.visible = false
-			_active_build_label.text = "Press [B] to open the Build Tower Menu, inspect tower descriptions, and select one to build."
-			_active_build_label.add_theme_color_override("font_color", Color(0.76, 0.80, 0.88))
+			_active_build_label.visible = false
+			_active_build_label.text = ""
 			_cancel_build_button.visible = false
+	_apply_menu_visibility()
 

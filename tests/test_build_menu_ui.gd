@@ -45,10 +45,14 @@ func test_01_main_build_palette_menu_inspect_before_build_and_description_displa
 	assert(palette != null, "HUD/BuildPalette must exist")
 	assert(tower_panel != null, "HUD/TowerPanel must exist")
 
-	# 1. Menu starts closed and no build tower is active
+	# 1. Menu starts closed and no build tower is active; information boxes are hidden to free up screen space
 	assert(not palette.is_menu_open, "Build menu must start closed")
 	assert(not palette._menu_drawer.visible, "Menu drawer must be hidden when closed")
 	assert(gs.selected_build_tower == null, "No tower should be selected for building initially")
+	assert(not tower_panel.visible, "TowerPanel must be hidden when no tower is selected")
+	assert(not palette._active_build_label.visible, "Bottom bar tower description must be hidden when no tower is selected")
+	assert(is_equal_approx(palette.anchor_right, 1.0) and is_equal_approx(palette.offset_right, -12.0), "BuildPalette must be right-justified")
+	assert(is_equal_approx(tower_panel.anchor_right, 1.0) and is_equal_approx(tower_panel.offset_right, -12.0), "TowerPanel must be right-justified")
 
 	# 2. Open menu (simulating B hotkey / toggle_menu)
 	palette.toggle_menu()
@@ -68,6 +72,8 @@ func test_01_main_build_palette_menu_inspect_before_build_and_description_displa
 	palette.confirm_build()
 	assert(not palette.is_menu_open, "Confirming build must close the menu drawer")
 	assert(gs.selected_build_tower != null and gs.selected_build_tower.id == "chanting_choir", "GameState.selected_build_tower must now be chanting_choir")
+	assert(tower_panel.visible, "TowerPanel must be visible when a tower is selected for building")
+	assert(palette._active_build_label.visible, "Bottom bar tower description must be visible when building")
 	assert(
 		palette._active_build_label.text.contains("Chanting Choir") and palette._active_build_label.text.contains("Psychic"),
 		"Bottom bar must display the active building tower's name and description while building"
@@ -76,6 +82,11 @@ func test_01_main_build_palette_menu_inspect_before_build_and_description_displa
 		tower_panel._title_label.text.contains("Building: Chanting Choir") and tower_panel._stats_label.text.contains("Psychic"),
 		"TowerPanel must also display the building tower's description and stats while building"
 	)
+
+	# 5. Cancel build -> hides the information boxes again when no tower is selected
+	gs.cancel_build_mode()
+	assert(not tower_panel.visible, "TowerPanel must hide again when build mode is cancelled and no tower is selected")
+	assert(not palette._active_build_label.visible, "Bottom bar description must hide again when no tower is selected")
 
 	main_inst.queue_free()
 	clock.manual_mode = false

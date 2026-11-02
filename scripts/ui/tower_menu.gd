@@ -174,6 +174,7 @@ func _build_ui() -> void:
 
 	var column := VBoxContainer.new()
 	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	column.alignment = BoxContainer.ALIGNMENT_END
 	column.add_theme_constant_override("separation", 8)
 	margin.add_child(column)
@@ -330,10 +331,12 @@ func _refresh() -> void:
 
 	if _active_desc_label != null:
 		if selected != null:
+			_active_desc_label.visible = true
 			_active_desc_label.text = "Building: %s (%dc)\n%s" % [
 				selected.display_name,
 				selected.cost,
 				selected.get_display_description()
 			]
 		else:
-			_active_desc_label.text = "Press [B] to open Build Menu and select a tower."
+			_active_desc_label.visible = false
+			_active_desc_label.text = ""

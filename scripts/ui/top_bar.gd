@@ -12,6 +12,7 @@ var _offerings_label: Label
 var _scrap_label: Label
 var _corruption_bar: ProgressBar
 var _corruption_label: Label
+var _penance_button: Button
 
 
 func _ready() -> void:
@@ -53,7 +54,15 @@ func _build_ui() -> void:
 	_corruption_bar.value = 0.0
 	_corruption_bar.show_percentage = false
 	_corruption_bar.custom_minimum_size = Vector2(110.0, 18.0)
+	_corruption_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	corr_box.add_child(_corruption_bar)
+
+	_penance_button = Button.new()
+	_penance_button.text = "Penance (-5) [40 Off]"
+	_penance_button.focus_mode = Control.FOCUS_NONE
+	_penance_button.add_theme_font_size_override("font_size", 12)
+	_penance_button.pressed.connect(_on_penance_pressed)
+	corr_box.add_child(_penance_button)
 
 
 func _make_stat_label(parent: Node, text: String, col: Color) -> Label:
@@ -96,3 +105,13 @@ func refresh() -> void:
 	_scrap_label.text = "Scrap: %d" % scr
 	_corruption_label.text = "Corruption: %d/100" % corr
 	_corruption_bar.value = float(corr)
+	if _penance_button != null:
+		var tsys: TowerSystem = gs.get("tower_system") as TowerSystem
+		_penance_button.visible = (corr > 0)
+		_penance_button.disabled = (tsys == null or not tsys.can_perform_penance())
+
+
+func _on_penance_pressed() -> void:
+	var gs: Node = get_node_or_null("/root/GameState")
+	if gs != null:
+		gs.call("request_penance")
