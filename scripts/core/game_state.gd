@@ -688,6 +688,9 @@ func validate_placement(hex: Vector2i, tower_id_or_def: Variant = null) -> Dicti
 	if def == null:
 		return {"ok": true, "reason": "", "cost": 0}
 
+	if def.id == "the_congregation" and not tower_system.is_adjacent_to_path(hex):
+		return {"ok": false, "reason": "not_adjacent_to_path", "cost": 0}
+
 	var cost: int = tower_system.get_tower_build_cost(def)
 	if tower_system.offerings < cost:
 		return {"ok": false, "reason": "insufficient_offerings", "cost": cost}

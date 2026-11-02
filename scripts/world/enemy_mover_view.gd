@@ -156,6 +156,12 @@ func update_visual(path_hexes: Array[Vector2i], prev_path_pos: float, alpha: flo
 	if dir.length_squared() > 0.0001:
 		_body_mesh.rotation.y = atan2(-dir.x, -dir.z)
 
+	# Visual melee lunge when engaged with a Congregation blocker so the mob visibly attacks the blocker
+	if unit.engaged_blocker_id >= 0 and not unit.has_breakthrough:
+		var lunge: float = sin(float(Time.get_ticks_msec()) * 0.016 + float(unit.unit_id)) * 0.11
+		var lunge_dir: Vector3 = dir.normalized() if dir.length_squared() > 0.0001 else Vector3(0.0, 0.0, -1.0)
+		_body_mesh.position = Vector3(lunge_dir.x * lunge, altitude + absf(lunge) * 0.25, lunge_dir.z * lunge)
+
 	# Cloaked translucency
 	if unit.is_cloaked() and not unit.is_cloak_revealed():
 		_body_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -198,6 +204,8 @@ func update_visual(path_hexes: Array[Vector2i], prev_path_pos: float, alpha: flo
 		badges.append("ROOT")
 	if unit.stun_timer > 0.0:
 		badges.append("STUN")
+	if unit.engaged_blocker_id >= 0 and not unit.has_breakthrough:
+		badges.append("BLOCKED")
 	if unit.flee_timer > 0.0 or unit.confuse_timer > 0.0:
 		badges.append("FLEE")
 	if unit.drain_slow_strength > 0.0 or unit.flood_slow_strength > 0.0 or unit.timed_slow_timer > 0.0:

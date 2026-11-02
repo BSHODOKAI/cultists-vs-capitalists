@@ -17,6 +17,7 @@ signal menu_toggled(is_open: bool)
 ## Group used to find the menu from elsewhere (there is only ever one).
 const GROUP := "tower_menu"
 const _PlaceholderIcons = preload("res://scripts/ui/placeholder_icons.gd")
+const _InGameMenu = preload("res://scripts/ui/in_game_menu.gd")
 
 ## Placement manager whose tower list and selection this menu drives. Auto-found
 ## from its group when left empty.
@@ -36,6 +37,7 @@ var _build_button: Button
 var _hud_bar: PanelContainer
 var _toggle_button: Button
 var _active_desc_label: Label
+var _in_game_menu: InGameMenu
 
 var _buttons: Array[Button] = []
 var _types: Array[TowerData] = []
@@ -59,6 +61,14 @@ func _ready() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo:
+		var ke_esc: InputEventKey = event as InputEventKey
+		if ke_esc.keycode == KEY_ESCAPE or ke_esc.physical_keycode == KEY_ESCAPE:
+			handle_escape()
+			get_viewport().set_input_as_handled()
+			return
+	if _in_game_menu != null and _in_game_menu.is_menu_open():
+		return
 	if event.is_action_pressed(toggle_action):
 		_toggle()
 		get_viewport().set_input_as_handled()
@@ -71,10 +81,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			confirm_build()
 			get_viewport().set_input_as_handled()
 			return
-		if ke.keycode == KEY_ESCAPE:
-			close_menu()
-			get_viewport().set_input_as_handled()
-			return
 		var index: int = _key_to_index(ke.keycode)
 		if index >= 0 and index < _types.size():
 			if _inspected_data == _types[index]:
@@ -82,6 +88,32 @@ func _unhandled_input(event: InputEvent) -> void:
 			else:
 				inspect_tower(index)
 			get_viewport().set_input_as_handled()
+
+
+## Handles Esc key press:
+## - If InGameMenu is open, backs out of Display Settings or closes InGameMenu.
+## - Else if TowerMenu is open or a tower is selected for placement, deselects/closes without opening InGameMenu.
+## - Else (nothing selected), opens InGameMenu.
+func handle_escape() -> void:
+	if _in_game_menu != null and _in_game_menu.is_menu_open():
+		_in_game_menu.handle_escape()
+		return
+	var had_selection: bool = false
+	if is_menu_open():
+		close_menu()
+		had_selection = true
+	if _placement != null and _placement.current_data != null:
+		_placement.deselect_tower()
+		had_selection = true
+	if had_selection:
+		_refresh()
+		return
+	if _in_game_menu != null:
+		_in_game_menu.open_menu()
+
+
+func get_in_game_menu() -> InGameMenu:
+	return _in_game_menu
 
 
 ## Opens the menu if closed, closes it if open.
@@ -259,6 +291,10 @@ func _build_ui() -> void:
 	_toggle_button.focus_mode = Control.FOCUS_NONE
 	_toggle_button.pressed.connect(_toggle)
 	bar_hbox.add_child(_toggle_button)
+
+	_in_game_menu = _InGameMenu.new()
+	_in_game_menu.name = "InGameMenu"
+	add_child(_in_game_menu)
 
 
 func _panel_style() -> StyleBoxFlat:

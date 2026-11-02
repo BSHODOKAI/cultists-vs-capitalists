@@ -1,4 +1,4 @@
-[gd_scene load_steps=16 format=3]
+[gd_scene load_steps=17 format=3]
 
 [ext_resource type="Script" path="res://scripts/world/main_scene_controller.gd" id="1_main"]
 [ext_resource type="Script" path="res://scripts/world/terrain_view.gd" id="2_terrain"]
@@ -15,6 +15,7 @@
 [ext_resource type="Script" path="res://scripts/ui/telegraph_layer.gd" id="13_tele"]
 [ext_resource type="Script" path="res://scripts/ui/game_over_screen.gd" id="14_gameover"]
 [ext_resource type="Script" path="res://scripts/ui/debug_panel.gd" id="15_debug"]
+[ext_resource type="Script" path="res://scripts/ui/in_game_menu.gd" id="16_ingamemenu"]
 
 [sub_resource type="Environment" id="Environment_main"]
 background_mode = 1
@@ -155,6 +156,16 @@ offset_bottom = 210.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("14_gameover")
+
+[node name="InGameMenu" type="Control" parent="HUD"]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("16_ingamemenu")
 
 [node name="DebugPanel" type="CanvasLayer" parent="."]
 script = ExtResource("15_debug")

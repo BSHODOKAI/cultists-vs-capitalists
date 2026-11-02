@@ -188,3 +188,114 @@ func test_main_menu_settings_navigation_and_steam_deck_visibility() -> void:
 	assert(main_vbox.visible, "Main menu VBox must be visible again after closing Settings")
 
 	menu.queue_free()
+
+
+func test_in_game_menu_esc_deselect_before_opening_and_settings_and_quit() -> void:
+	_DisplaySettings.steam_deck_override = 0 # Force PC mode
+
+	var main_packed := load("res://scenes/main.tscn") as PackedScene
+	assert(main_packed != null, "res://scenes/main.tscn must load")
+	var main_inst: MainSceneController = main_packed.instantiate() as MainSceneController
+	add_child(main_inst)
+
+	var gs: Node = get_node_or_null("/root/GameState")
+	var clock: Node = get_node_or_null("/root/SimClock")
+	var palette: BuildPalette = main_inst.get_node_or_null("HUD/BuildPalette") as BuildPalette
+	var in_game_menu: InGameMenu = main_inst.get_node_or_null("HUD/InGameMenu") as InGameMenu
+
+	assert(in_game_menu != null, "Main HUD must have HUD/InGameMenu")
+	assert(not in_game_menu.is_menu_open(), "InGameMenu must start hidden")
+
+	var menu_panel: Control = in_game_menu.get_node_or_null("Center/MenuPanel") as Control
+	var resume_btn: Button = in_game_menu.get_node_or_null("Center/MenuPanel/VBox/ResumeButton") as Button
+	var settings_btn: Button = in_game_menu.get_node_or_null("Center/MenuPanel/VBox/SettingsButton") as Button
+	var main_menu_btn: Button = in_game_menu.get_node_or_null("Center/MenuPanel/VBox/MainMenuButton") as Button
+	var ig_settings: SettingsMenu = in_game_menu.get_node_or_null("Center/SettingsMenu") as SettingsMenu
+	assert(menu_panel != null and resume_btn != null and settings_btn != null and main_menu_btn != null and ig_settings != null, "InGameMenu controls must exist")
+	ig_settings.display_settings.save_path = "user://test_in_game_display_settings.cfg"
+
+	var esc_event := InputEventKey.new()
+	esc_event.pressed = true
+	esc_event.keycode = KEY_ESCAPE
+	esc_event.physical_keycode = KEY_ESCAPE
+
+	# 1. With Build Menu open, pressing ESC closes Build Menu and does NOT open InGameMenu
+	palette.open_menu()
+	assert(palette.is_menu_open, "Build menu must be open")
+	main_inst._unhandled_input(esc_event)
+	assert(not palette.is_menu_open, "ESC must close open Build Menu")
+	assert(not in_game_menu.is_menu_open(), "ESC must NOT open InGameMenu when closing Build Menu")
+
+	# 2. With a build tower selected (active build mode), pressing ESC cancels build mode and does NOT open InGameMenu
+	palette.inspect_tower_index(0)
+	palette.confirm_build()
+	assert(gs.get("selected_build_tower") != null, "A tower must be selected for building")
+	main_inst._unhandled_input(esc_event)
+	assert(gs.get("selected_build_tower") == null, "ESC must deselect the active build tower")
+	assert(not in_game_menu.is_menu_open(), "ESC must NOT open InGameMenu when deselecting build tower")
+
+	# 3. With a placed tower selected on the map, pressing ESC deselects the placed tower and does NOT open InGameMenu
+	var pgen: PathGenerator = gs.get("path_generator") as PathGenerator
+	var buildable: Array[Vector2i] = pgen.get_buildable_hexes()
+	var placed: TowerInstance = gs.call("request_place_tower", buildable[0], "hexed_nail_gun") as TowerInstance
+	assert(placed != null, "Must place a tower on buildable hex")
+	gs.call("select_placed_tower", placed)
+	assert(gs.get("selected_placed_tower") == placed, "Placed tower must be selected")
+	main_inst._unhandled_input(esc_event)
+	assert(gs.get("selected_placed_tower") == null, "ESC must deselect the selected placed tower")
+	assert(not in_game_menu.is_menu_open(), "ESC must NOT open InGameMenu when deselecting a placed tower")
+
+	# 4. Now that NOTHING is selected, pressing ESC opens the InGameMenu (and pauses SimClock)
+	assert(not main_inst.has_active_selection(), "Nothing should be selected now")
+	if clock != null:
+		clock.call("set_paused", false)
+	main_inst._unhandled_input(esc_event)
+	assert(in_game_menu.is_menu_open(), "ESC must open InGameMenu when nothing is selected")
+	assert(menu_panel.visible and not ig_settings.visible, "InGameMenu must open on main menu panel")
+	if clock != null:
+		assert(bool(clock.get("paused")), "Opening InGameMenu must pause SimClock")
+
+	# 5. Open Display Settings from InGameMenu, adjust resolution, Apply & Keep Changes
+	settings_btn.pressed.emit()
+	assert(in_game_menu.is_settings_open(), "Display Settings sub-panel must open when SettingsButton is pressed")
+	assert(not menu_panel.visible and ig_settings.visible, "MenuPanel must hide while Display Settings is open")
+
+	ig_settings.set_screen_size_override(Vector2i(2560, 1440))
+	var res_select: OptionButton = ig_settings.get_node("VBox/ResolutionRow/ResolutionSelect") as OptionButton
+	var apply_btn: Button = ig_settings.get_node("VBox/ButtonRow/ApplyButton") as Button
+	var keep_btn: Button = ig_settings.get_node("VBox/ConfirmBox/ConfirmVBox/ConfirmBtnRow/KeepButton") as Button
+	res_select.select(0)
+	res_select.item_selected.emit(0)
+	var expected_res: Vector2i = ig_settings.get_available_resolutions()[0]
+	apply_btn.pressed.emit()
+	assert(ig_settings.is_confirmation_active(), "Apply inside in-game settings must start 5s confirmation")
+	keep_btn.pressed.emit()
+	assert(ig_settings.display_settings.current_resolution == expected_res, "Confirmed in-game display setting must persist")
+
+	# 6. Pressing ESC while in Display Settings backs out to the main InGameMenu panel
+	main_inst._unhandled_input(esc_event)
+	assert(in_game_menu.is_menu_open(), "ESC inside Display Settings must return to InGameMenu")
+	assert(not in_game_menu.is_settings_open(), "Display Settings sub-panel must close on ESC")
+	assert(menu_panel.visible, "InGameMenu main buttons must be visible again")
+
+	# 7. Pressing ESC again on the main InGameMenu panel closes InGameMenu and unpauses SimClock
+	main_inst._unhandled_input(esc_event)
+	assert(not in_game_menu.is_menu_open(), "ESC on InGameMenu must close the menu")
+	if clock != null:
+		assert(not bool(clock.get("paused")), "Closing InGameMenu must restore SimClock unpaused state")
+
+	# 8. Re-open with ESC and test Quit to Main Menu
+	main_inst._unhandled_input(esc_event)
+	assert(in_game_menu.is_menu_open(), "ESC must re-open InGameMenu when nothing is selected")
+	in_game_menu.change_scene_on_quit = false
+	var quit_emitted: Array[bool] = [false]
+	in_game_menu.quit_to_main_menu_requested.connect(func() -> void: quit_emitted[0] = true)
+	main_menu_btn.pressed.emit()
+	assert(quit_emitted[0], "Pressing Quit to Main Menu must emit quit_to_main_menu_requested")
+	assert(not in_game_menu.is_menu_open(), "InGameMenu must close when quitting to main menu")
+	if clock != null:
+		assert(not bool(clock.get("paused")), "Quitting to main menu must unpause SimClock")
+
+	_DisplaySettings.steam_deck_override = -1
+	main_inst.queue_free()
+

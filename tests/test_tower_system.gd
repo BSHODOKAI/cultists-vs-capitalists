@@ -87,7 +87,7 @@ const EXPECTED_TOWERS: Dictionary = {
 	},
 	"the_congregation": {
 		"cost": 45,
-		"range": 2,
+		"range": 1,
 		"t2": "bigger_flock",
 		"rev_t3": "devoted",
 		"rev_t4": "martyrs_chorus",
@@ -570,6 +570,36 @@ func test_06_deterministic_headless_combat_sim_for_each_tower() -> void:
 	assert(not boss_unit.apply_confuse(1.5), "Boss must be immune to confuse/reverse walk")
 	boss_unit.apply_timed_slow(0.40, 3.0)
 	assert(is_equal_approx(boss_unit.timed_slow_strength, 0.20), "Boss slow must apply at 50% strength (0.40 -> 0.20)")
+
+	# Verify Congregation adjacency requirement, adjacent blocker placement, and mob clearing blockers
+	var cong_sys := _make_test_system()
+	var cong_rng := RandomNumberGenerator.new()
+	cong_rng.seed = 999
+	assert(not cong_sys.can_place_tower(Vector2i(5, 2), "the_congregation"), "Congregation must NOT be placeable 2 hexes from the path")
+	assert(cong_sys.place_tower(Vector2i(5, 2), "the_congregation") == null, "place_tower must reject Congregation at distance 2")
+	assert(cong_sys.can_place_tower(Vector2i(5, 1), "the_congregation"), "Congregation must be placeable adjacent (distance 1) to the path")
+	var cong_inst: TowerInstance = cong_sys.place_tower(Vector2i(5, 1), "the_congregation")
+	assert(cong_inst != null and cong_inst.active_blockers.size() == 2, "Congregation must spawn 2 blockers")
+	for b_info: Dictionary in cong_inst.active_blockers:
+		var b_hex: Vector2i = b_info["hex"] as Vector2i
+		assert(_HexGrid.hex_distance(cong_inst.hex, b_hex) == 1, "Congregation blocker must be placed on an adjacent path hex (distance 1), got %s" % str(b_hex))
+		assert(b_hex == Vector2i(5, 0), "Congregation at (5, 1) must place blockers at adjacent path hex (5, 0), got %s" % str(b_hex))
+
+	# Spawn a moving enemy at path_position 8.0 walking toward 0.0 at speed 2.0
+	var mover: CombatUnit = cong_sys.spawn_unit(500.0, [_C.UnitTag.GROUND], 2.0, 8.0)
+	cong_sys.step(0.25, cong_rng) # moves to 7.5 (distance 2+ from (5,1))
+	assert(mover.engaged_blocker_id == -1, "Mover at 7.5 must not be engaged before reaching the blocker's adjacent hex (5, 0)")
+	# Step until mover reaches 5.0 (takes ~1.25s)
+	for _s in range(6):
+		cong_sys.step(0.25, cong_rng)
+	assert(mover.engaged_blocker_id >= 0, "Mover must engage the blocker upon reaching (5, 0)")
+	assert(cong_sys.get_unit_hex(mover) == Vector2i(5, 0), "Engaged mover must stop at the blocker's adjacent path hex (5, 0)")
+	# Step for 7.0s so the mover clears both 60 HP blockers (~3.0s each) and resumes walking past 5.0
+	for _s in range(28):
+		cong_sys.step(0.25, cong_rng)
+	assert(cong_inst.active_blockers.size() == 0, "Mover must clear both 60 HP blockers")
+	assert(mover.engaged_blocker_id == -1, "Mover must be disengaged after clearing blockers")
+	assert(mover.path_position < 4.5, "Mover must resume moving along the path after clearing blockers, got %.2f" % mover.path_position)
 
 
 static func _run_upgraded_branch_sim(tower_id: String, revealed_branch: bool, seed_val: int) -> Dictionary:

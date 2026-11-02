@@ -185,6 +185,8 @@ func _format_rejection_reason(reason: String) -> String:
 			return "Hex Occupied"
 		"out_of_build_range":
 			return "Too Far from Path (>2 Hexes)"
+		"not_adjacent_to_path":
+			return "Must Build Adjacent to Path (1 Hex)"
 		"insufficient_offerings":
 			return "Insufficient Offerings"
 		_:

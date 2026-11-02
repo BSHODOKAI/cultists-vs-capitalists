@@ -138,11 +138,24 @@ func get_tower_types() -> Array[TowerData]:
 ## Selects [param data] as the tower to place next and refreshes the ghost tint.
 func select_tower(data: TowerData) -> void:
 	if data == null:
+		deselect_tower()
 		return
 	current_data = data
 	tower_selected.emit(data)
 	if grid != null and grid.has_hover:
 		_update_ghost_at(grid.hovered_cell)
+
+
+## Clears the active build tower selection and hides the placement ghost.
+func deselect_tower() -> void:
+	if current_data == null:
+		if _ghost != null:
+			_ghost.visible = false
+		return
+	current_data = null
+	if _ghost != null:
+		_ghost.visible = false
+	tower_selected.emit(null)
 
 
 ## Selects the tower at [param index] of [member tower_types].
@@ -174,7 +187,7 @@ func get_tower_at(cell: Vector2i) -> Node3D:
 ## Attempts to place a tower on [param cell]. Returns the tower on success,
 ## or null when the cell is out of bounds, occupied, or no scene is assigned.
 func place_tower(cell: Vector2i) -> Node3D:
-	if not can_place(cell) or tower_scene == null:
+	if current_data == null or not can_place(cell) or tower_scene == null:
 		return null
 	var cost := current_cost()
 	var resources := PlayerResources.of(self)
@@ -268,6 +281,9 @@ func _on_cell_hovered(cell: Vector2i, _valid: bool) -> void:
 ## ghost is hidden entirely when the cell is outside the buildable band.
 func _update_ghost_at(cell: Vector2i) -> void:
 	if _ghost == null:
+		return
+	if current_data == null:
+		_ghost.visible = false
 		return
 	# Outside the buildable band there is nothing to build — hide the ghost so the
 	# out-of-bounds area reads as off-limits rather than a sea of red.

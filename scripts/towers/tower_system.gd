@@ -111,6 +111,9 @@ func _init(
 func set_path(ordered_path: Array[Vector2i]) -> void:
 	path_hexes = ordered_path.duplicate()
 	grid.set_path_hexes(path_hexes)
+	for t: TowerInstance in towers.values():
+		if t.get_type_id() == "the_congregation":
+			_sync_congregation_blockers(t)
 
 
 # --- Wave type queries -------------------------------------------------------
@@ -171,6 +174,14 @@ func is_within_build_distance_of_path(hex: Vector2i) -> bool:
 	return false
 
 
+## True when [param hex] is directly adjacent (hex distance == 1) to at least one path hex.
+func is_adjacent_to_path(hex: Vector2i) -> bool:
+	for ph: Vector2i in path_hexes:
+		if _HexGrid.hex_distance(hex, ph) == 1:
+			return true
+	return false
+
+
 ## True when [param hex] is a valid placement spot (buildable terrain, not a path
 ## hex, within distance 2 of path, not reserved, and unoccupied).
 func can_place_at_hex(hex: Vector2i) -> bool:
@@ -194,6 +205,8 @@ func can_place_tower(hex: Vector2i, tower_id_or_def: Variant) -> bool:
 		return false
 	if not can_place_at_hex(hex):
 		return false
+	if def.id == "the_congregation" and not is_adjacent_to_path(hex):
+		return false
 	var cost: int = get_tower_build_cost(def)
 	return offerings >= cost
 
@@ -203,6 +216,8 @@ func can_place_tower(hex: Vector2i, tower_id_or_def: Variant) -> bool:
 func place_tower(hex: Vector2i, tower_id_or_def: Variant, ignore_cost: bool = false) -> TowerInstance:
 	var def: TowerData = _resolve_tower_def(tower_id_or_def)
 	if def == null or not can_place_at_hex(hex):
+		return null
+	if def.id == "the_congregation" and not is_adjacent_to_path(hex):
 		return null
 	var cost: int = 0 if ignore_cost else get_tower_build_cost(def)
 	if not ignore_cost and offerings < cost:
@@ -1142,7 +1157,10 @@ func _sync_congregation_blockers(tower: TowerInstance) -> void:
 	var dps: float = (tower.def.summon_dps if tower.def != null else 2.0) * tower.get_upgrade_damage_multiplier()
 	var dmg_red: float = 0.30 if tower.has_behavior("picket_line") else 0.0
 
-	# Update existing blockers' stats
+	var default_path_idx: int = _get_default_congregation_path_idx(tower.hex)
+	var default_hex: Vector2i = path_hexes[default_path_idx] if not path_hexes.is_empty() else tower.hex
+
+	# Update existing blockers' stats and keep unengaged blockers stationed at the adjacent path hex
 	for b: Dictionary in tower.active_blockers:
 		var hp_diff: float = max_hp - float(b["max_hp"])
 		b["max_hp"] = max_hp
@@ -1150,12 +1168,11 @@ func _sync_congregation_blockers(tower: TowerInstance) -> void:
 			b["hp"] = float(b["hp"]) + hp_diff
 		b["dps"] = dps
 		b["damage_reduction"] = dmg_red
+		if int(b.get("engaged_unit_id", -1)) < 0:
+			b["hex"] = default_hex
+			b["path_idx"] = default_path_idx
 
 	# Spawn new blockers up to max_b if not waiting on resummon timers
-	var valid_path_indices: Array[int] = _get_path_indices_in_range(tower.hex, get_effective_tower_range_hexes(tower))
-	var default_path_idx: int = valid_path_indices[0] if not valid_path_indices.is_empty() else 0
-	var default_hex: Vector2i = path_hexes[default_path_idx] if not path_hexes.is_empty() else tower.hex
-
 	while (tower.active_blockers.size() + tower.resummon_timers.size()) < max_b:
 		tower.active_blockers.append({
 			"id": _next_blocker_id,
@@ -1165,8 +1182,43 @@ func _sync_congregation_blockers(tower: TowerInstance) -> void:
 			"hex": default_hex,
 			"path_idx": default_path_idx,
 			"damage_reduction": dmg_red,
+			"engaged_unit_id": -1,
 		})
 		_next_blocker_id += 1
+
+
+## Returns all path indices directly adjacent (hex distance == 1) to [param center_hex],
+## falling back to within range 2 only if no path hex is at distance 1.
+func _get_adjacent_path_indices(center_hex: Vector2i) -> Array[int]:
+	var out: Array[int] = []
+	for i in path_hexes.size():
+		if _HexGrid.hex_distance(center_hex, path_hexes[i]) == 1:
+			out.append(i)
+	if out.is_empty():
+		out = _get_path_indices_in_range(center_hex, 2)
+	return out
+
+
+## Selects the primary adjacent path index where a Congregation tower at [param tower_hex]
+## stations its blockers.
+func _get_default_congregation_path_idx(tower_hex: Vector2i) -> int:
+	var adj: Array[int] = _get_adjacent_path_indices(tower_hex)
+	if adj.is_empty():
+		return 0
+	if adj.size() >= 3:
+		return adj[floori(float(adj.size()) * 0.5)]
+	return adj[0]
+
+
+func _disengage_all_congregation_blockers(tower: TowerInstance) -> void:
+	if tower == null:
+		return
+	for b: Dictionary in tower.active_blockers:
+		var bid: int = int(b.get("id", -1))
+		b["engaged_unit_id"] = -1
+		for u: CombatUnit in units:
+			if u.engaged_blocker_id == bid:
+				u.engaged_blocker_id = -1
 
 
 func _get_path_indices_in_range(center_hex: Vector2i, radius: int) -> Array[int]:
@@ -1213,9 +1265,11 @@ func step(delta: float, rng: RandomNumberGenerator) -> void:
 		if u.root_timer <= 0.0:
 			u.entangled_by_drain = false
 
-	# 4. Step each operational tower
+	# 4. Step each operational tower (and release any blockers on non-operational Congregation towers)
 	for t: TowerInstance in towers.values():
 		if not t.is_operational() or t.def == null:
+			if t != null and t.get_type_id() == "the_congregation":
+				_disengage_all_congregation_blockers(t)
 			continue
 		_step_tower(t, delta, rng)
 
@@ -1613,8 +1667,7 @@ func _step_congregation_tower(tower: TowerInstance, delta: float) -> void:
 	var max_hp: float = tower.get_summon_max_hp()
 	var dps: float = (tower.def.summon_dps if tower.def != null else 2.0) * tower.get_upgrade_damage_multiplier()
 	var dmg_red: float = 0.30 if tower.has_behavior("picket_line") else 0.0
-	var valid_indices: Array[int] = _get_path_indices_in_range(tower.hex, get_effective_tower_range_hexes(tower))
-	var default_idx: int = valid_indices[0] if not valid_indices.is_empty() else 0
+	var default_idx: int = _get_default_congregation_path_idx(tower.hex)
 	var default_hex: Vector2i = path_hexes[default_idx] if not path_hexes.is_empty() else tower.hex
 
 	for i in range(tower.resummon_timers.size() - 1, -1, -1):
@@ -1629,10 +1682,11 @@ func _step_congregation_tower(tower: TowerInstance, delta: float) -> void:
 				"hex": default_hex,
 				"path_idx": default_idx,
 				"damage_reduction": dmg_red,
+				"engaged_unit_id": -1,
 			})
 			_next_blocker_id += 1
 
-	# Engage Ground units in range with active blockers and deal blocker DPS
+	# Engage Ground units at the adjacent blocker hex and resolve melee combat
 	tower.attack_cooldown -= delta
 	var deal_tick: bool = false
 	var tick_dt: float = 0.5
@@ -1640,46 +1694,92 @@ func _step_congregation_tower(tower: TowerInstance, delta: float) -> void:
 		tower.attack_cooldown += tick_dt
 		deal_tick = true
 
-	var r: int = get_effective_tower_range_hexes(tower)
 	for b_idx in range(tower.active_blockers.size() - 1, -1, -1):
 		var blocker: Dictionary = tower.active_blockers[b_idx]
 		var bid: int = int(blocker["id"])
+		var b_hex: Vector2i = blocker.get("hex", default_hex) as Vector2i
+		var b_path_idx: int = int(blocker.get("path_idx", default_idx))
+
 		var engaged_unit: CombatUnit = null
 		for u: CombatUnit in units:
 			if u.is_alive() and u.is_ground() and u.engaged_blocker_id == bid:
 				engaged_unit = u
 				break
+
+		# Disengage if the unit was knocked back / displaced off the blocker's hex or is fleeing/confused
+		if engaged_unit != null:
+			if engaged_unit.flee_timer > 0.0 or engaged_unit.confuse_timer > 0.0 or get_unit_hex(engaged_unit) != b_hex:
+				engaged_unit.engaged_blocker_id = -1
+				engaged_unit = null
+
 		if engaged_unit == null:
+			blocker["engaged_unit_id"] = -1
+			blocker["hex"] = default_hex
+			blocker["path_idx"] = default_idx
+			b_hex = default_hex
+			b_path_idx = default_idx
+
+			# 1. Prefer an unengaged Ground unit that has reached the blocker's adjacent path hex
 			for u: CombatUnit in units:
-				if u.is_alive() and u.is_ground() and not u.is_supply_pod and not u.is_bid_drone and u.engaged_blocker_id < 0:
-					if _HexGrid.hex_distance(tower.hex, get_unit_hex(u)) <= r:
-						if u.has_breakthrough:
-							# Breakthrough: not held by blockers; instantly kills blockers it touches
-							_kill_congregation_blocker(tower, b_idx, get_unit_hex(u), u)
-							engaged_unit = null
-							break
-						u.engaged_blocker_id = bid
-						engaged_unit = u
+				if not u.is_alive() or not u.is_ground() or u.is_supply_pod or u.is_bid_drone:
+					continue
+				if u.engaged_blocker_id >= 0 or u.flee_timer > 0.0 or u.confuse_timer > 0.0:
+					continue
+				var u_hex: Vector2i = get_unit_hex(u)
+				var on_blocker_hex: bool = (u_hex == b_hex or absf(u.path_position - float(b_path_idx)) <= 0.50)
+				var stationary_on_adj: bool = (u.speed <= 0.0 and _HexGrid.hex_distance(tower.hex, u_hex) == 1)
+				if on_blocker_hex or stationary_on_adj:
+					if u.has_breakthrough:
+						# Breakthrough: not held by blockers; instantly kills blockers it touches
+						_kill_congregation_blocker(tower, b_idx, u_hex, u)
+						engaged_unit = null
 						break
+					u.engaged_blocker_id = bid
+					if u.speed > 0.0 and on_blocker_hex:
+						u.path_position = float(b_path_idx)
+					blocker["engaged_unit_id"] = u.unit_id
+					blocker["hex"] = get_unit_hex(u)
+					blocker["path_idx"] = clampi(roundi(u.path_position), 0, maxi(0, path_hexes.size() - 1))
+					b_hex = blocker["hex"] as Vector2i
+					engaged_unit = u
+					break
+
+		if b_idx >= tower.active_blockers.size():
+			continue
+
 		if engaged_unit != null and engaged_unit.has_breakthrough:
 			engaged_unit.engaged_blocker_id = -1
 			_kill_congregation_blocker(tower, b_idx, get_unit_hex(engaged_unit), engaged_unit)
 			continue
-		if engaged_unit != null:
+
+		# Determine melee target: either this blocker's directly engaged unit, or a Ground unit
+		# already held on the same hex by a fellow blocker from this Congregation
+		var melee_target: CombatUnit = engaged_unit
+		if melee_target == null:
+			for u: CombatUnit in units:
+				if u.is_alive() and u.is_ground() and not u.is_supply_pod and not u.is_bid_drone:
+					if get_unit_hex(u) == b_hex:
+						melee_target = u
+						break
+
+		if melee_target != null:
 			if tower.has_behavior("union_strike"):
 				var slow_s: float = float(tower.get_behavior_param("union_strike", "melee_slow", 0.30))
 				for u: CombatUnit in units:
-					if u.is_alive() and u.is_ground() and _HexGrid.hex_distance(get_unit_hex(engaged_unit), get_unit_hex(u)) <= 1:
+					if u.is_alive() and u.is_ground() and _HexGrid.hex_distance(get_unit_hex(melee_target), get_unit_hex(u)) <= 1:
 						u.apply_timed_slow(slow_s, 1.0)
 			if deal_tick:
-				var hit_dmg: float = calculate_hit_damage(tower, engaged_unit, float(blocker["dps"]) * tick_dt, _C.DamageTag.KINETIC)
-				deal_damage_from_tower(tower, engaged_unit, hit_dmg, _C.DamageTag.KINETIC)
-				# Enemy fights back against blocker (5 DPS baseline)
-				var incoming: float = 5.0 * tick_dt * (1.0 - float(blocker["damage_reduction"]))
-				blocker["hp"] = float(blocker["hp"]) - incoming
-				if float(blocker["hp"]) <= 0.0:
-					engaged_unit.engaged_blocker_id = -1
-					_kill_congregation_blocker(tower, b_idx, get_unit_hex(engaged_unit), engaged_unit)
+				var hit_dmg: float = calculate_hit_damage(tower, melee_target, float(blocker["dps"]) * tick_dt, _C.DamageTag.KINETIC)
+				deal_damage_from_tower(tower, melee_target, hit_dmg, _C.DamageTag.KINETIC)
+
+		# Engaged enemy actively fights back to clear the blocker (~20 DPS base, 30 DPS for Tank/Boss)
+		if engaged_unit != null and engaged_unit.is_alive():
+			var enemy_dps: float = 30.0 if (engaged_unit.is_boss() or engaged_unit.has_tag(_C.UnitTag.TANK)) else 20.0
+			var incoming: float = enemy_dps * delta * (1.0 - float(blocker["damage_reduction"]))
+			blocker["hp"] = float(blocker["hp"]) - incoming
+			if float(blocker["hp"]) <= 0.0:
+				engaged_unit.engaged_blocker_id = -1
+				_kill_congregation_blocker(tower, b_idx, get_unit_hex(engaged_unit), engaged_unit)
 
 	# Step active Martyr's Chorus ghosts
 	for g_idx in range(tower.active_ghosts.size() - 1, -1, -1):
@@ -1779,14 +1879,16 @@ func _step_enemy_abilities(delta: float, rng: RandomNumberGenerator) -> void:
 		if not u.is_alive() or u.is_supply_pod or u.is_bid_drone:
 			continue
 
-		# Breakthrough check against any Congregation blockers on or near unit's hex
+		# Breakthrough check against any Congregation blockers on the unit's hex
 		if u.has_breakthrough:
+			var u_hex: Vector2i = get_unit_hex(u)
 			for t: TowerInstance in towers.values():
 				if t.get_type_id() == "the_congregation" and not t.active_blockers.is_empty():
-					var tr: int = get_effective_tower_range_hexes(t)
-					if _HexGrid.hex_distance(t.hex, get_unit_hex(u)) <= tr:
-						for b_idx in range(t.active_blockers.size() - 1, -1, -1):
-							_kill_congregation_blocker(t, b_idx, get_unit_hex(u), u)
+					for b_idx in range(t.active_blockers.size() - 1, -1, -1):
+						var b: Dictionary = t.active_blockers[b_idx]
+						var b_hex: Vector2i = b.get("hex", t.hex) as Vector2i
+						if u_hex == b_hex or (u.speed <= 0.0 and _HexGrid.hex_distance(t.hex, u_hex) <= 1):
+							_kill_congregation_blocker(t, b_idx, u_hex, u)
 
 		# ShieldRegen tick
 		if u.max_shield_hp > 0.0 and u.shield_regen_delay > 0.0 and u.shield_hp < u.max_shield_hp:
@@ -2305,6 +2407,20 @@ func _step_units(delta: float) -> void:
 
 		if not u.is_alive():
 			continue
+
+		# Validate engaged_blocker_id still points to a live blocker on an operational Congregation tower
+		if u.engaged_blocker_id >= 0:
+			var blocker_still_valid: bool = false
+			for t: TowerInstance in towers.values():
+				if t.is_operational() and t.get_type_id() == "the_congregation":
+					for b: Dictionary in t.active_blockers:
+						if int(b.get("id", -1)) == u.engaged_blocker_id:
+							blocker_still_valid = true
+							break
+				if blocker_still_valid:
+					break
+			if not blocker_still_valid:
+				u.engaged_blocker_id = -1
 
 		# Move along path toward index 0
 		var speed_mult: float = u.get_effective_speed_multiplier()

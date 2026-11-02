@@ -58,7 +58,12 @@ func setup_benchmark() -> void:
 	var step_h: int = maxi(1, floori(float(buildable.size()) / float(tower_ids.size() + 1)))
 	for i in range(tower_ids.size()):
 		var idx: int = mini(buildable.size() - 1, (i + 1) * step_h)
-		gs.call("request_place_tower", buildable[idx], tower_ids[i])
+		var placed: TowerInstance = gs.call("request_place_tower", buildable[idx], tower_ids[i]) as TowerInstance
+		if placed == null:
+			for h: Vector2i in buildable:
+				placed = gs.call("request_place_tower", h, tower_ids[i]) as TowerInstance
+				if placed != null:
+					break
 
 	# Start Wave 1 and spawn up to 300 simultaneous enemies across the path
 	gs.call("start_wave")

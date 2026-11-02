@@ -275,6 +275,20 @@ func test_04_placement_rejections_with_reasons() -> void:
 		"Unaffordable tower must be rejected with 'insufficient_offerings', got %s" % str(r_unaff)
 	)
 
+	# 6. Distance 2 buildable hex for The Congregation -> rejected with "not_adjacent_to_path"
+	gs.offerings = 500
+	var dist_2_hex: Vector2i = Vector2i(999, 999)
+	for bh: Vector2i in valid_hexes:
+		if not gs.tower_system.is_adjacent_to_path(bh):
+			dist_2_hex = bh
+			break
+	assert(dist_2_hex != Vector2i(999, 999), "Must find a buildable hex at distance 2 from path")
+	var r_cong_dist2: Dictionary = gs.validate_placement(dist_2_hex, "the_congregation")
+	assert(
+		not bool(r_cong_dist2["ok"]) and String(r_cong_dist2["reason"]) == "not_adjacent_to_path",
+		"The Congregation at distance 2 must be rejected with 'not_adjacent_to_path', got %s" % str(r_cong_dist2)
+	)
+
 
 # --- Test 5: Economy choke point, kill rewards, Penance, maintenance & sell refunds
 
@@ -360,6 +374,11 @@ func test_06_scripted_headless_run_reaches_wave_25() -> void:
 	var placed_towers: Array[TowerInstance] = []
 	for i in range(mini(build_order.size(), buildable.size())):
 		var inst: TowerInstance = gs.request_place_tower(buildable[i], build_order[i])
+		if inst == null:
+			for cand_h: Vector2i in buildable:
+				inst = gs.request_place_tower(cand_h, build_order[i])
+				if inst != null:
+					break
 		if inst != null:
 			placed_towers.append(inst)
 			# Upgrade to T2 and T3/T4 so waves clear briskly

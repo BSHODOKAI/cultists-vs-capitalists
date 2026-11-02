@@ -30,6 +30,7 @@ const _EnemyVisualPool = preload("res://scripts/world/enemy_visual_pool.gd")
 @onready var boss_bar: BossBar = $HUD/BossBar
 @onready var telegraph_layer: TelegraphLayer = $HUD/TelegraphLayer
 @onready var game_over_screen: GameOverScreen = $HUD/GameOverScreen
+@onready var in_game_menu: InGameMenu = get_node_or_null("HUD/InGameMenu") as InGameMenu
 @onready var debug_panel: DebugPanel = $DebugPanel
 
 var tower_factory: TowerFactory
@@ -113,6 +114,16 @@ func _unhandled_input(event: InputEvent) -> void:
 	if gs == null:
 		return
 
+	if event is InputEventKey and event.pressed and not event.echo:
+		var ke_esc: InputEventKey = event as InputEventKey
+		if ke_esc.keycode == KEY_ESCAPE or ke_esc.physical_keycode == KEY_ESCAPE:
+			handle_escape()
+			get_viewport().set_input_as_handled()
+			return
+
+	if in_game_menu != null and in_game_menu.is_menu_open():
+		return
+
 	# Mouse motion -> update hovered hex via camera ray to Y = 0
 	if event is InputEventMouseMotion and camera_rig != null:
 		var mm: InputEventMouseMotion = event as InputEventMouseMotion
@@ -151,7 +162,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				get_viewport().set_input_as_handled()
 				return
 
-	# Keyboard hotkeys: B build menu, 1-9 towers, Enter confirm build, Space start wave, P pause, Q/W/E speed 1x/2x/3x, Esc cancel
+	# Keyboard hotkeys: B build menu, 1-9 towers, Enter confirm build, Space start wave, P pause, Q/W/E speed 1x/2x/3x, Esc cancel/menu
 	if event.is_action_pressed(&"toggle_tower_menu"):
 		if build_palette != null:
 			build_palette.toggle_menu()
@@ -171,12 +182,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif (ke.keycode == KEY_ENTER or ke.keycode == KEY_KP_ENTER) and build_palette != null and build_palette.is_menu_open:
 			build_palette.confirm_build()
 			get_viewport().set_input_as_handled()
-		elif ke.keycode == KEY_ESCAPE:
-			if build_palette != null and build_palette.is_menu_open:
-				build_palette.close_menu()
-			gs.call("cancel_build_mode")
-			gs.call("select_placed_tower", null)
-			get_viewport().set_input_as_handled()
 		elif ke.keycode == KEY_SPACE:
 			gs.call("start_wave")
 			get_viewport().set_input_as_handled()
@@ -192,6 +197,53 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif ke.keycode == KEY_E and clock != null:
 			clock.call("set_speed", 3.0)
 			get_viewport().set_input_as_handled()
+
+
+## Returns true if any item or build menu is currently selected/open.
+func has_active_selection() -> bool:
+	if build_palette != null and build_palette.is_menu_open:
+		return true
+	var gs: Node = get_node_or_null("/root/GameState")
+	if gs != null:
+		if gs.get("selected_build_tower") != null:
+			return true
+		if gs.get("selected_placed_tower") != null:
+			return true
+	return false
+
+
+## Deselects any currently selected item (placed tower, active build tower, or open build menu).
+## Returns true if something was deselected.
+func deselect_all() -> bool:
+	var had_selection: bool = false
+	if build_palette != null and build_palette.is_menu_open:
+		build_palette.close_menu()
+		had_selection = true
+	var gs: Node = get_node_or_null("/root/GameState")
+	if gs != null:
+		if gs.get("selected_build_tower") != null:
+			gs.call("cancel_build_mode")
+			had_selection = true
+		if gs.get("selected_placed_tower") != null:
+			gs.call("select_placed_tower", null)
+			had_selection = true
+	if had_selection:
+		_refresh_hover_and_overlays()
+	return had_selection
+
+
+## Handles Esc key press:
+## - If InGameMenu is open, backs out of Display Settings or closes InGameMenu.
+## - Else if anything is selected, deselects it without opening InGameMenu.
+## - Else (nothing selected), opens InGameMenu.
+func handle_escape() -> void:
+	if in_game_menu != null and in_game_menu.is_menu_open():
+		in_game_menu.handle_escape()
+		return
+	if deselect_all():
+		return
+	if in_game_menu != null:
+		in_game_menu.open_menu()
 
 
 func _on_state_changed(old_state: int, new_state: int) -> void:
@@ -300,9 +352,13 @@ func _on_tower_damaged_enemy(
 	var tv: TowerView = tower_factory.views[tower_id] as TowerView
 	var ev: EnemyMoverView = enemy_pool.active_views[unit_id] as EnemyMoverView
 	if is_instance_valid(tv) and is_instance_valid(ev):
-		var from_p: Vector3 = tv.global_position + Vector3(0.0, 0.72, 0.0)
 		var to_p: Vector3 = ev.global_position + Vector3(0.0, 0.50, 0.0)
-		effects_view.spawn_projectile(from_p, to_p, _tower_type, damage_tag)
+		if _tower_type == "the_congregation":
+			# Congregation blockers fight in melee on the path tile rather than shooting from the tower roof
+			effects_view.spawn_impact_burst(to_p, damage_tag)
+		else:
+			var from_p: Vector3 = tv.global_position + Vector3(0.0, 0.72, 0.0)
+			effects_view.spawn_projectile(from_p, to_p, _tower_type, damage_tag)
 
 
 func _on_currency_earned(currency: int, amount: int, _reason: String) -> void:
