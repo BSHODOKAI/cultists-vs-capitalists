@@ -1,21 +1,71 @@
 ## MainMenu
 ##
 ## Title screen for Cultists vs Capitalists.
-## Supports Start Game (with optional seed input) loading res://scenes/main.tscn, and Quit.
+## Supports Start Game (with optional seed input) loading res://scenes/main.tscn,
+## Settings (opening the Display Settings menu), and Quit.
+class_name MainMenu
 extends Control
 
 const MAIN_SCENE_PATH := "res://scenes/main.tscn"
+const _SettingsMenu = preload("res://scripts/ui/settings_menu.gd")
 
+@onready var _center: CenterContainer = get_node_or_null("Center") as CenterContainer
+@onready var _main_vbox: VBoxContainer = get_node_or_null("Center/VBox") as VBoxContainer
 @onready var _start_button: Button = get_node_or_null("Center/VBox/StartButton") as Button
+@onready var _settings_button: Button = get_node_or_null("Center/VBox/SettingsButton") as Button
 @onready var _quit_button: Button = get_node_or_null("Center/VBox/QuitButton") as Button
 @onready var _seed_input: LineEdit = get_node_or_null("Center/VBox/SeedBox/SeedInput") as LineEdit
+@onready var _settings_menu: SettingsMenu = get_node_or_null("Center/SettingsMenu") as SettingsMenu
 
 
 func _ready() -> void:
+	if _settings_button == null and _main_vbox != null:
+		_settings_button = Button.new()
+		_settings_button.name = "SettingsButton"
+		_settings_button.text = "Settings"
+		_settings_button.custom_minimum_size = Vector2(0.0, 40.0)
+		_main_vbox.add_child(_settings_button)
+		if _quit_button != null:
+			_main_vbox.move_child(_settings_button, _quit_button.get_index())
+
+	if _settings_menu == null and _center != null:
+		_settings_menu = _SettingsMenu.new()
+		_settings_menu.name = "SettingsMenu"
+		_settings_menu.visible = false
+		_center.add_child(_settings_menu)
+
 	if _start_button != null and not _start_button.pressed.is_connected(_on_start_pressed):
 		_start_button.pressed.connect(_on_start_pressed)
+	if _settings_button != null and not _settings_button.pressed.is_connected(_on_settings_pressed):
+		_settings_button.pressed.connect(_on_settings_pressed)
 	if _quit_button != null and not _quit_button.pressed.is_connected(_on_quit_pressed):
 		_quit_button.pressed.connect(_on_quit_pressed)
+	if _settings_menu != null and not _settings_menu.closed.is_connected(_on_settings_closed):
+		_settings_menu.closed.connect(_on_settings_closed)
+
+
+func open_settings() -> void:
+	if _settings_menu == null:
+		return
+	if _main_vbox != null:
+		_main_vbox.visible = false
+	_settings_menu.refresh_options()
+	_settings_menu.visible = true
+
+
+func close_settings() -> void:
+	if _settings_menu != null:
+		_settings_menu.visible = false
+	if _main_vbox != null:
+		_main_vbox.visible = true
+
+
+func _on_settings_pressed() -> void:
+	open_settings()
+
+
+func _on_settings_closed() -> void:
+	close_settings()
 
 
 func _on_start_pressed() -> void:

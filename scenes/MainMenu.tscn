@@ -1,6 +1,7 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/main_menu.gd" id="1_menu"]
+[ext_resource type="Script" path="res://scripts/ui/settings_menu.gd" id="2_settings"]
 
 [node name="MainMenu" type="Control"]
 layout_mode = 3
@@ -40,3 +41,16 @@ horizontal_alignment = 1
 [node name="StartButton" type="Button" parent="Center/VBox"]
 layout_mode = 2
 text = "Start Game"
+
+[node name="SettingsButton" type="Button" parent="Center/VBox"]
+layout_mode = 2
+text = "Settings"
+
+[node name="QuitButton" type="Button" parent="Center/VBox"]
+layout_mode = 2
+text = "Quit"
+
+[node name="SettingsMenu" type="PanelContainer" parent="Center"]
+visible = false
+layout_mode = 2
+script = ExtResource("2_settings")
