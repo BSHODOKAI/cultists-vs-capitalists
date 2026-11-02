@@ -1,0 +1,38 @@
+[gd_resource type="Resource" script_class="UnitData" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/units/unit_data.gd" id="1_ud"]
+[ext_resource type="Script" path="res://scripts/units/ability_data.gd" id="2_ad"]
+
+[sub_resource type="Resource" id="AbilityData_ranged_suppress"]
+script = ExtResource("2_ad")
+ability_id = "RangedSuppress"
+display_name = "Ranged Suppress"
+radius = 3
+range_hexes = 3
+fire_rate_penalty = 0.3
+telegraph_event = "telegraph_ranged_suppress"
+telegraph_lead_time = 0.0
+
+[sub_resource type="Resource" id="AbilityData_breakthrough"]
+script = ExtResource("2_ad")
+ability_id = "Breakthrough"
+display_name = "Breakthrough"
+telegraph_event = "telegraph_breakthrough_crush"
+telegraph_lead_time = 0.0
+
+[resource]
+script = ExtResource("1_ud")
+id = "siege_walker"
+display_name = "Siege Walker"
+faction = "iron_board"
+cost = 10
+base_hp = 260.0
+speed = 0.6
+tags = Array[int]([0, 17, 4])
+resistances = {
+0: 0.8
+}
+abilities = Array[ExtResource("2_ad")]([SubResource("AbilityData_ranged_suppress"), SubResource("AbilityData_breakthrough")])
+leak_cost = 1
+scrap_value = 5
+tier = 1

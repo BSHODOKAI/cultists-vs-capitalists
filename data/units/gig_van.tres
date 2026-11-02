@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="UnitData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/units/unit_data.gd" id="1_ud"]
+[ext_resource type="Script" path="res://scripts/units/ability_data.gd" id="2_ad"]
+
+[sub_resource type="Resource" id="AbilityData_spawn_on_timer"]
+script = ExtResource("2_ad")
+ability_id = "SpawnOnTimer"
+display_name = "Spawn On Timer"
+interval = 3.0
+unit_id = "gig_runner"
+cap = 4
+spawn_count = 1
+release_on_death = true
+telegraph_event = "telegraph_spawn_on_timer"
+telegraph_lead_time = 0.0
+
+[resource]
+script = ExtResource("1_ud")
+id = "gig_van"
+display_name = "Gig Van"
+faction = "swarm_syndicate"
+cost = 9
+base_hp = 220.0
+speed = 0.9
+tags = Array[int]([0, 9])
+resistances = {}
+abilities = Array[ExtResource("2_ad")]([SubResource("AbilityData_spawn_on_timer")])
+leak_cost = 1
+scrap_value = 5
+tier = 1

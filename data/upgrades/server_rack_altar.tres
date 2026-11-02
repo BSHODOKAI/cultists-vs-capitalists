@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "server_rack_altar"
+display_name = "Server Rack Altar"
+description = "+10% range; buffed towers can't be disabled or converted by enemies."
+tower_id = "fever_shrine"
+tier = 3
+branch = 2
+currency = 1
+cost = 55
+prerequisite_id = "more_candles"
+corruption_delta = 0
+jank_set = 10
+range_mult = 0.1
+behaviors = Array[String](["server_rack_altar"])
+behavior_params = {
+"buffed_range_bonus": 0.1,
+"prevents_disable_and_convert": true
+}

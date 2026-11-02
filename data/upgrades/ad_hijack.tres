@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "ad_hijack"
+display_name = "Ad Hijack"
+description = "Each shot also confuses enemies within 1 hex (walk in reverse 1.5 s, not Bosses) and cancels Hacker channels."
+tower_id = "watcher_in_the_billboard"
+tier = 4
+branch = 2
+currency = 1
+cost = 126
+prerequisite_id = "rooftop_scope_array"
+corruption_delta = 0
+jank_set = 25
+behaviors = Array[String](["ad_hijack"])
+behavior_params = {
+"confuse_duration": 1.5,
+"confuse_radius": 1,
+"interrupts_hacker": true
+}

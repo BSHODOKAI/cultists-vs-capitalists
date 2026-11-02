@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "rust_communion"
+display_name = "Rust Communion"
+description = "Shred cap 8; shred counts double vs Cybernetic."
+tower_id = "rust_censer"
+tier = 4
+branch = 1
+currency = 0
+cost = 72
+prerequisite_id = "plague_incense"
+corruption_delta = 8
+jank_set = 0
+shred_cap_override = 8
+behaviors = Array[String](["rust_communion"])
+behavior_params = {
+"cybernetic_shred_multiplier": 2.0,
+"shred_cap": 8
+}

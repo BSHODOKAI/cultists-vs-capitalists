@@ -1,0 +1,36 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://tests/enemy_type_showcase.gd" id="1_showcase"]
+
+[sub_resource type="Environment" id="Env"]
+background_mode = 1
+background_color = Color(0.13, 0.14, 0.18, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.55, 0.58, 0.65, 1)
+ambient_light_energy = 0.8
+
+[sub_resource type="StandardMaterial3D" id="Mat_ground"]
+albedo_color = Color(0.24, 0.31, 0.27, 1)
+
+[sub_resource type="PlaneMesh" id="Mesh_ground"]
+size = Vector2(14, 6)
+
+[node name="EnemyTypeShowcase" type="Node3D"]
+script = ExtResource("1_showcase")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Env")
+
+[node name="Ground" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
+material_override = SubResource("Mat_ground")
+mesh = SubResource("Mesh_ground")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.2, 7.5)
+projection = 1
+size = 6.0
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.707107, -0.408248, 0.57735, 0, 0.816497, 0.57735, -0.707107, -0.408248, 0.57735, 4, 6, 4)
+shadow_enabled = true

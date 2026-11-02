@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="UnitData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/units/unit_data.gd" id="1_ud"]
+[ext_resource type="Script" path="res://scripts/units/ability_data.gd" id="2_ad"]
+
+[sub_resource type="Resource" id="AbilityData_anti_magic_aura"]
+script = ExtResource("2_ad")
+ability_id = "AntiMagicAura"
+display_name = "Anti-Magic Aura"
+radius = 2
+telegraph_event = "telegraph_anti_magic_aura"
+telegraph_lead_time = 0.0
+
+[resource]
+script = ExtResource("1_ud")
+id = "compliance_officer"
+display_name = "Compliance Officer"
+faction = "hostile_takeover"
+cost = 9
+base_hp = 160.0
+speed = 0.8
+tags = Array[int]([0, 14, 10])
+resistances = {
+2: 0.6
+}
+abilities = Array[ExtResource("2_ad")]([SubResource("AbilityData_anti_magic_aura")])
+leak_cost = 1
+scrap_value = 5
+tier = 1

@@ -1,0 +1,30 @@
+[gd_resource type="Resource" script_class="UnitData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/units/unit_data.gd" id="1_ud"]
+[ext_resource type="Script" path="res://scripts/units/ability_data.gd" id="2_ad"]
+
+[sub_resource type="Resource" id="AbilityData_restructuring"]
+script = ExtResource("2_ad")
+ability_id = "Restructuring"
+display_name = "Restructuring"
+pct = 0.4
+duration = 3.0
+unit_id = "riot_shield_unit"
+spawn_count = 2
+telegraph_event = "telegraph_restructuring_phase"
+telegraph_lead_time = 3.0
+
+[resource]
+script = ExtResource("1_ud")
+id = "the_chairman"
+display_name = "The Chairman"
+faction = "iron_board"
+cost = 60
+base_hp = 1600.0
+speed = 0.4
+tags = Array[int]([0, 4, 16, 18])
+resistances = {}
+abilities = Array[ExtResource("2_ad")]([SubResource("AbilityData_restructuring")])
+leak_cost = 20
+scrap_value = 30
+tier = 1

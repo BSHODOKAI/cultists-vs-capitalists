@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "deeper_harmony"
+display_name = "Deeper Harmony"
+description = "+2 choir members."
+tower_id = "chanting_choir"
+tier = 2
+branch = 0
+currency = 0
+cost = 24
+prerequisite_id = ""
+corruption_delta = 0
+jank_set = 0
+members_add = 2
+behaviors = Array[String](["deeper_harmony"])

@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="EnemyData" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/enemies/enemy_data.gd" id="1_enemy_data"]
+
+[sub_resource type="CapsuleMesh" id="Mesh_brute"]
+radius = 0.45
+height = 1.2
+
+[resource]
+script = ExtResource("1_enemy_data")
+display_name = "Brute"
+mesh = SubResource("Mesh_brute")
+color = Color(0.65, 0.35, 0.8, 1)
+max_health = 45.0
+speed = 1.3
+reward = 18
+damage = 2
+type_id = "brute"

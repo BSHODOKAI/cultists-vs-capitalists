@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="UnitData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/units/unit_data.gd" id="1_ud"]
+[ext_resource type="Script" path="res://scripts/units/ability_data.gd" id="2_ad"]
+
+[sub_resource type="Resource" id="AbilityData_leak_steal"]
+script = ExtResource("2_ad")
+ability_id = "LeakSteal"
+display_name = "Leak Steal"
+offerings = 5
+telegraph_event = "telegraph_leak_steal"
+telegraph_lead_time = 0.0
+
+[resource]
+script = ExtResource("1_ud")
+id = "gig_runner"
+display_name = "Gig Runner"
+faction = "swarm_syndicate"
+cost = 2
+base_hp = 30.0
+speed = 1.6
+tags = Array[int]([0, 2, 7])
+resistances = {}
+abilities = Array[ExtResource("2_ad")]([SubResource("AbilityData_leak_steal")])
+leak_cost = 1
+scrap_value = 1
+tier = 1

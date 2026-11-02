@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "dissonant_hymn"
+display_name = "Dissonant Hymn"
+description = "Stacking Fear (max 5; -6% speed and +3% damage taken per stack)."
+tower_id = "chanting_choir"
+tier = 3
+branch = 1
+currency = 0
+cost = 40
+prerequisite_id = "deeper_harmony"
+corruption_delta = 4
+jank_set = 0
+behaviors = Array[String](["dissonant_hymn"])
+behavior_params = {
+"fear_damage_taken_per_stack": 0.03,
+"fear_max_stacks": 5,
+"fear_slow_per_stack": 0.06
+}

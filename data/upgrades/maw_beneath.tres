@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "maw_beneath"
+display_name = "Maw Beneath"
+description = "Every 12 s a maw kills non-Tank, non-Boss Ground units under 30% max HP in the pulse area."
+tower_id = "gutter_ritual_circle"
+tier = 4
+branch = 1
+currency = 0
+cost = 90
+prerequisite_id = "ichor_bloom"
+corruption_delta = 8
+jank_set = 0
+behaviors = Array[String](["maw_beneath"])
+behavior_params = {
+"execute_hp_ratio": 0.3,
+"maw_interval": 12.0
+}

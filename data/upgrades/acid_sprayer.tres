@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "acid_sprayer"
+display_name = "Acid Sprayer"
+description = "+1 range, +50% application rate."
+tower_id = "rust_censer"
+tier = 3
+branch = 2
+currency = 1
+cost = 40
+prerequisite_id = "heavier_incense"
+corruption_delta = 0
+jank_set = 10
+fire_rate_mult = 0.5
+range_add = 1
+behaviors = Array[String](["acid_sprayer"])

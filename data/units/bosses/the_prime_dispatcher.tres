@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="UnitData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/units/unit_data.gd" id="1_ud"]
+[ext_resource type="Script" path="res://scripts/units/ability_data.gd" id="2_ad"]
+
+[sub_resource type="Resource" id="AbilityData_same_day_delivery"]
+script = ExtResource("2_ad")
+ability_id = "SameDayDelivery"
+display_name = "Same-Day Delivery"
+duration = 3.0
+interval = 15.0
+unit_id = "courier_drone"
+cap = 2
+spawn_count = 3
+shield_hp = 150.0
+telegraph_event = "telegraph_same_day_delivery_reticle"
+telegraph_lead_time = 2.0
+
+[resource]
+script = ExtResource("1_ud")
+id = "the_prime_dispatcher"
+display_name = "The Prime Dispatcher"
+faction = "skyline_logistics"
+cost = 55
+base_hp = 1200.0
+speed = 0.5
+tags = Array[int]([1, 16, 9, 18])
+resistances = {}
+abilities = Array[ExtResource("2_ad")]([SubResource("AbilityData_same_day_delivery")])
+leak_cost = 20
+scrap_value = 28
+tier = 1

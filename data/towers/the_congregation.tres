@@ -1,0 +1,34 @@
+[gd_resource type="Resource" script_class="TowerData" load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/tower_data.gd" id="1_td"]
+[ext_resource type="Resource" path="res://data/upgrades/bigger_flock.tres" id="2_t2"]
+[ext_resource type="Resource" path="res://data/upgrades/devoted.tres" id="3_rev3"]
+[ext_resource type="Resource" path="res://data/upgrades/martyrs_chorus.tres" id="4_rev4"]
+[ext_resource type="Resource" path="res://data/upgrades/picket_line.tres" id="5_rig3"]
+[ext_resource type="Resource" path="res://data/upgrades/union_strike.tres" id="6_rig4"]
+
+[resource]
+script = ExtResource("1_td")
+id = "the_congregation"
+display_name = "The Congregation"
+description = "Summons up to 2 cultist blockers (60 HP, 2 Kinetic/s) on path hexes in range; resummon 10 s after death."
+cost = 45
+attack_range = 2.0
+range_hexes = 2
+damage = 2.0
+damage_tag = 0
+fire_rate = 1.0
+target_tags = Array[int]([0])
+targeting_mode = 7
+detects_cloaked = false
+pulse_reveal_duration = 0.0
+summon_count = 2
+summon_hp = 60.0
+summon_dps = 2.0
+resummon_time = 10.0
+base_behaviors = Array[String](["the_congregation"])
+t2_upgrade = ExtResource("2_t2")
+revealed_t3_upgrade = ExtResource("3_rev3")
+revealed_t4_upgrade = ExtResource("4_rev4")
+rigged_t3_upgrade = ExtResource("5_rig3")
+rigged_t4_upgrade = ExtResource("6_rig4")

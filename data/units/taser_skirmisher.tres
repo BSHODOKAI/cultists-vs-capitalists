@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="UnitData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/units/unit_data.gd" id="1_ud"]
+[ext_resource type="Script" path="res://scripts/units/ability_data.gd" id="2_ad"]
+
+[sub_resource type="Resource" id="AbilityData_tower_disable"]
+script = ExtResource("2_ad")
+ability_id = "TowerDisable"
+display_name = "Tower Disable"
+duration = 2.0
+interval = 6.0
+effect = "nearest"
+telegraph_event = "telegraph_tower_disable"
+telegraph_lead_time = 0.0
+
+[resource]
+script = ExtResource("1_ud")
+id = "taser_skirmisher"
+display_name = "Taser Skirmisher"
+faction = "hostile_takeover"
+cost = 5
+base_hp = 80.0
+speed = 1.0
+tags = Array[int]([0, 13])
+resistances = {
+4: 0.5
+}
+abilities = Array[ExtResource("2_ad")]([SubResource("AbilityData_tower_disable")])
+leak_cost = 1
+scrap_value = 3
+tier = 1

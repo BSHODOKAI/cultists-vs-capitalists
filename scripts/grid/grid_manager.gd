@@ -38,8 +38,12 @@ const GROUP := "grid_manager"
 @export var plane_y: float = 0.0
 ## Y coordinate at which occupants are placed, so they rest on the plane.
 @export var placement_y: float = 0.0
-## Playable cell region on the X/Z plane, in cell coordinates.
+## Playable cell region on the X/Z plane, in cell coordinates (used for debug
+## grid / backdrop sizing when [member unbounded] is false or as initial view rect).
 @export var bounds: Rect2i = Rect2i(0, 0, 24, 24)
+## When true, the grid has no fixed size or bounds anywhere (all axial coordinates
+## are valid), matching the sparse hex-grid specification.
+@export var unbounded: bool = true
 
 @export_group("Input")
 ## If true, the manager watches mouse motion/clicks and emits hover/click signals.
@@ -50,6 +54,20 @@ const GROUP := "grid_manager"
 @export var show_highlight: bool = true
 ## Draw the grid extent as wireframe lines.
 @export var debug_draw: bool = true
+
+@export_group("Backdrop")
+## Draw a large grid-patterned backdrop around the playable area so the board does
+## not appear to float in empty space when the camera is at an edge or zoomed out.
+## The backdrop matches the playable grid's look but is dimmed, so it reads as
+## "the world continues, but this part is out of play".
+@export var backdrop: bool = true
+## How many cells the backdrop extends beyond [member bounds] on every side. Must
+## be large enough to fill the widest view at the most zoomed-out level.
+@export var backdrop_margin: int = 60
+## Ground colour of the backdrop, kept a little darker than the playable ground.
+@export var backdrop_ground_color: Color = Color(0.17, 0.22, 0.19, 1.0)
+## Line colour of the backdrop grid, dimmer than the playable grid's lines.
+@export var backdrop_line_color: Color = Color(1.0, 1.0, 1.0, 0.09)
 
 ## The cell currently under the mouse (meaningful only while [member has_hover]).
 var hovered_cell: Vector2i = Vector2i.ZERO
@@ -66,6 +84,8 @@ func _ready() -> void:
 	add_to_group(GROUP)
 	if show_highlight:
 		_build_highlight()
+	if backdrop:
+		_build_backdrop()
 	if debug_draw:
 		_build_debug_grid()
 
@@ -133,8 +153,10 @@ func get_bounds() -> Rect2i:
 	return bounds
 
 
-## True when [param cell] lies inside the playable region.
+## True when [param cell] lies inside the playable region (always true when [member unbounded]).
 func is_in_bounds(cell: Vector2i) -> bool:
+	if unbounded:
+		return true
 	return bounds.has_point(cell)
 
 
@@ -194,12 +216,18 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseMotion:
 		_update_hover(event.position)
-	elif event is InputEventMouseButton and event.pressed:
+	elif event is InputEventMouseButton and event.pressed and _is_click_button(event.button_index):
 		var hit: Variant = raycast_plane(event.position)
 		if hit != null:
 			var cell := world_to_cell(hit)
 			if is_in_bounds(cell):
 				cell_clicked.emit(cell, event.button_index)
+
+
+## True for real click buttons (left/right/middle) — not the mouse wheel, which
+## the camera uses for zoom.
+func _is_click_button(button: int) -> bool:
+	return button == MOUSE_BUTTON_LEFT or button == MOUSE_BUTTON_RIGHT or button == MOUSE_BUTTON_MIDDLE
 
 
 func _update_hover(screen_pos: Vector2) -> void:
@@ -229,13 +257,15 @@ func _update_hover(screen_pos: Vector2) -> void:
 ## Rebuilds the debug wireframe to match the current [member bounds]. Call after
 ## changing the bounds at runtime (e.g. when the play area grows).
 func refresh_visuals() -> void:
-	if not debug_draw:
-		return
-	var existing := get_node_or_null("DebugGrid")
-	if existing != null:
-		remove_child(existing)
-		existing.queue_free()
-	_build_debug_grid()
+	for child_name: String in ["DebugGrid", "Backdrop"]:
+		var existing := get_node_or_null(child_name)
+		if existing != null:
+			remove_child(existing)
+			existing.queue_free()
+	if backdrop:
+		_build_backdrop()
+	if debug_draw:
+		_build_debug_grid()
 
 
 func _build_highlight() -> void:
@@ -281,3 +311,55 @@ func _build_debug_grid() -> void:
 	mat.albedo_color = Color(1.0, 1.0, 1.0, 0.25)
 	mi.material_override = mat
 	add_child(mi)
+
+
+## Builds the out-of-play backdrop: a large ground plane just under the playable
+## ground plus a dimmer copy of the grid lines, both extending
+## [member backdrop_margin] cells beyond [member bounds] on every side. The
+## playable ground occludes the part of the backdrop beneath the board, so the
+## board keeps its own brighter grid while the surrounding world reads as a
+## continuation rather than a void.
+func _build_backdrop() -> void:
+	var root := Node3D.new()
+	root.name = "Backdrop"
+	add_child(root)
+	var x0 := float(bounds.position.x - backdrop_margin) * cell_size
+	var x1 := float(bounds.end.x + backdrop_margin) * cell_size
+	var z0 := float(bounds.position.y - backdrop_margin) * cell_size
+	var z1 := float(bounds.end.y + backdrop_margin) * cell_size
+	# Ground plane, a touch below the playable ground to avoid z-fighting.
+	var plane := PlaneMesh.new()
+	plane.size = Vector2(x1 - x0, z1 - z0)
+	var ground := MeshInstance3D.new()
+	ground.name = "BackdropGround"
+	ground.mesh = plane
+	var gmat := StandardMaterial3D.new()
+	gmat.albedo_color = backdrop_ground_color
+	ground.material_override = gmat
+	ground.position = Vector3((x0 + x1) * 0.5, plane_y - 0.02, (z0 + z1) * 0.5)
+	root.add_child(ground)
+	# Wireframe lines on the same cell spacing as the playable grid.
+	var verts := PackedVector3Array()
+	var y := plane_y - 0.01
+	for gx in range(bounds.position.x - backdrop_margin, bounds.end.x + backdrop_margin + 1):
+		var x := float(gx) * cell_size
+		verts.append(Vector3(x, y, z0))
+		verts.append(Vector3(x, y, z1))
+	for gz in range(bounds.position.y - backdrop_margin, bounds.end.y + backdrop_margin + 1):
+		var z := float(gz) * cell_size
+		verts.append(Vector3(x0, y, z))
+		verts.append(Vector3(x1, y, z))
+	var arrays: Array = []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_LINES, arrays)
+	var mi := MeshInstance3D.new()
+	mi.name = "BackdropGrid"
+	mi.mesh = mesh
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.albedo_color = backdrop_line_color
+	mi.material_override = mat
+	root.add_child(mi)

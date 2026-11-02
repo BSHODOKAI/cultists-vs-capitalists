@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "drone_feeder"
+display_name = "Drone Feeder"
+description = "+40% fire rate, never reloads."
+tower_id = "hexed_nail_gun"
+tier = 3
+branch = 2
+currency = 1
+cost = 30
+prerequisite_id = "rapid_cycling"
+corruption_delta = 0
+jank_set = 10
+fire_rate_mult = 0.4
+behaviors = Array[String](["drone_feeder"])
+behavior_params = {
+"never_reloads": true
+}

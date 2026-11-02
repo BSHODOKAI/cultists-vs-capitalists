@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "chop_shop"
+display_name = "Chop Shop"
+description = "Once per wave, free maintenance: -10 Jank on every Rigged tower within 3 hexes."
+tower_id = "tithe_box"
+tier = 4
+branch = 2
+currency = 1
+cost = 63
+prerequisite_id = "scrap_collector"
+corruption_delta = 0
+jank_set = 25
+behaviors = Array[String](["chop_shop"])
+behavior_params = {
+"jank_reduction": 10,
+"radius_hexes": 3
+}

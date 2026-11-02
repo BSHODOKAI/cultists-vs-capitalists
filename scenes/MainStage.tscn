@@ -13,6 +13,8 @@
 [ext_resource type="Script" path="res://scripts/economy/player_resources.gd" id="11_res"]
 [ext_resource type="Script" path="res://scripts/economy/player_health.gd" id="12_health"]
 [ext_resource type="Script" path="res://scripts/level/stage_manager.gd" id="13_stage"]
+[ext_resource type="Script" path="res://scripts/ui/tower_menu.gd" id="14_menu"]
+[ext_resource type="Script" path="res://scripts/enemies/enemy_progression.gd" id="15_prog"]
 
 [sub_resource type="Environment" id="Env"]
 background_mode = 1
@@ -55,6 +57,9 @@ mesh = SubResource("Mesh_ground")
 
 [node name="LevelGenerator" type="Node3D" parent="."]
 script = ExtResource("7_level")
+
+[node name="EnemyProgression" type="Node" parent="."]
+script = ExtResource("15_prog")
 
 [node name="Spawner" type="Node" parent="."]
 script = ExtResource("9_spawn")
@@ -109,3 +114,6 @@ offset_right = 320.0
 offset_bottom = 120.0
 theme_override_font_sizes/font_size = 28
 text = "Stage: 1"
+
+[node name="TowerMenu" type="CanvasLayer" parent="."]
+script = ExtResource("14_menu")

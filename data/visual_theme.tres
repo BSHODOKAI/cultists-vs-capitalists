@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="VisualThemeData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/core/visual_theme_data.gd" id="1_theme"]
+
+[resource]
+script = ExtResource("1_theme")
+hex_size = 1.0
+hex_prism_height = 0.16
+blocked_prism_height = 0.55
+path_prism_height = 0.12
+air_altitude = 1.8
+tower_max_height = 1.5

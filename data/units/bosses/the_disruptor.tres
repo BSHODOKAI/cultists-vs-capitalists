@@ -1,0 +1,39 @@
+[gd_resource type="Resource" script_class="UnitData" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/units/unit_data.gd" id="1_ud"]
+[ext_resource type="Script" path="res://scripts/units/ability_data.gd" id="2_ad"]
+
+[sub_resource type="Resource" id="AbilityData_network_effect"]
+script = ExtResource("2_ad")
+ability_id = "NetworkEffect"
+display_name = "Network Effect"
+pct = 0.08
+max_pct = 0.5
+radius = 3
+telegraph_event = "telegraph_network_effect_stacks"
+telegraph_lead_time = 0.0
+
+[sub_resource type="Resource" id="AbilityData_surge_pricing"]
+script = ExtResource("2_ad")
+ability_id = "SurgePricing"
+display_name = "Surge Pricing"
+pct = 0.3
+duration = 4.0
+interval = 15.0
+telegraph_event = "telegraph_surge_siren"
+telegraph_lead_time = 1.5
+
+[resource]
+script = ExtResource("1_ud")
+id = "the_disruptor"
+display_name = "The Disruptor"
+faction = "swarm_syndicate"
+cost = 40
+base_hp = 1000.0
+speed = 0.9
+tags = Array[int]([0, 18])
+resistances = {}
+abilities = Array[ExtResource("2_ad")]([SubResource("AbilityData_network_effect"), SubResource("AbilityData_surge_pricing")])
+leak_cost = 20
+scrap_value = 20
+tier = 1

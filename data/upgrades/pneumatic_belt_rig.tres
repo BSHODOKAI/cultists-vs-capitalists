@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "pneumatic_belt_rig"
+display_name = "Pneumatic Belt Rig"
+description = "5-shot bursts; +50% damage vs Armored."
+tower_id = "hexed_nail_gun"
+tier = 4
+branch = 2
+currency = 1
+cost = 54
+prerequisite_id = "drone_feeder"
+corruption_delta = 0
+jank_set = 25
+behaviors = Array[String](["pneumatic_belt_rig"])
+behavior_params = {
+"armored_damage_bonus": 0.5,
+"burst_shots": 5
+}

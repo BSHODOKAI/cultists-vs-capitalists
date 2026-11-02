@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "more_candles"
+display_name = "More Candles"
+description = "Aura radius increased to 3 hexes."
+tower_id = "fever_shrine"
+tier = 2
+branch = 0
+currency = 0
+cost = 33
+prerequisite_id = ""
+corruption_delta = 0
+jank_set = 0
+range_add = 1
+behaviors = Array[String](["more_candles"])

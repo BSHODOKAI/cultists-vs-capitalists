@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="PathBalanceData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/path/path_balance_data.gd" id="1_balance"]
+
+[resource]
+script = ExtResource("1_balance")
+chunk_radius = 8
+blocked_terrain_fraction = 0.12
+build_zone_distance = 2
+terrain_margin = 4
+min_ext = 12
+max_ext = 20
+min_corner_spacing = 2
+pass_gap = 6
+overlap_min = 3
+overlap_soft_max = 8
+max_candidates = 200
+top_candidate_pool = 3
+max_drift_factor = 1.5
+preview_lead_waves = 2
+boss_wave_interval = 10

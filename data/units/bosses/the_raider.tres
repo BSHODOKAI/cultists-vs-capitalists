@@ -1,0 +1,40 @@
+[gd_resource type="Resource" script_class="UnitData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/units/unit_data.gd" id="1_ud"]
+[ext_resource type="Script" path="res://scripts/units/ability_data.gd" id="2_ad"]
+
+[sub_resource type="Resource" id="AbilityData_leveraged_buyout"]
+script = ExtResource("2_ad")
+ability_id = "LeveragedBuyout"
+display_name = "Leveraged Buyout"
+pct = 0.2
+radius = 4
+range_hexes = 4
+duration = 10.0
+interval = 20.0
+channel = 4.0
+shield_hp = 150.0
+effect = "highest_cost"
+cleanse_rules = {
+"interrupt": true,
+"kill_bid_drone": true,
+"pay_base_cost_ratio": 0.5,
+"target": "highest_cost"
+}
+telegraph_event = "telegraph_leveraged_buyout_beam"
+telegraph_lead_time = 4.0
+
+[resource]
+script = ExtResource("1_ud")
+id = "the_raider"
+display_name = "The Raider"
+faction = "hostile_takeover"
+cost = 50
+base_hp = 1200.0
+speed = 0.6
+tags = Array[int]([0, 12, 18])
+resistances = {}
+abilities = Array[ExtResource("2_ad")]([SubResource("AbilityData_leveraged_buyout")])
+leak_cost = 20
+scrap_value = 25
+tier = 1

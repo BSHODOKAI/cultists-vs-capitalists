@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "bigger_plate"
+display_name = "Bigger Plate"
+description = "+50% Offerings income."
+tower_id = "tithe_box"
+tier = 2
+branch = 0
+currency = 0
+cost = 21
+prerequisite_id = ""
+corruption_delta = 0
+jank_set = 0
+income_mult = 0.5
+behaviors = Array[String](["bigger_plate"])

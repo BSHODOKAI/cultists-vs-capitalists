@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "picket_line"
+display_name = "Picket Line"
+description = "Blockers get riot shields (+100% HP, -30% damage taken)."
+tower_id = "the_congregation"
+tier = 3
+branch = 2
+currency = 1
+cost = 45
+prerequisite_id = "bigger_flock"
+corruption_delta = 0
+jank_set = 10
+summon_hp_mult = 1.0
+behaviors = Array[String](["picket_line"])
+behavior_params = {
+"blocker_damage_reduction": 0.3
+}

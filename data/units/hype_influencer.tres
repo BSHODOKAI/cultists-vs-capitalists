@@ -1,0 +1,39 @@
+[gd_resource type="Resource" script_class="UnitData" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/units/unit_data.gd" id="1_ud"]
+[ext_resource type="Script" path="res://scripts/units/ability_data.gd" id="2_ad"]
+
+[sub_resource type="Resource" id="AbilityData_speed_aura"]
+script = ExtResource("2_ad")
+ability_id = "SpeedAura"
+display_name = "Speed Aura"
+pct = 0.2
+radius = 2
+telegraph_event = "telegraph_speed_aura"
+telegraph_lead_time = 0.0
+
+[sub_resource type="Resource" id="AbilityData_death_burst"]
+script = ExtResource("2_ad")
+ability_id = "DeathBurst"
+display_name = "Death Burst"
+pct = 0.4
+radius = 2
+duration = 3.0
+effect = "speed_boost"
+telegraph_event = "telegraph_death_burst"
+telegraph_lead_time = 0.0
+
+[resource]
+script = ExtResource("1_ud")
+id = "hype_influencer"
+display_name = "Hype Influencer"
+faction = "swarm_syndicate"
+cost = 6
+base_hp = 70.0
+speed = 1.0
+tags = Array[int]([0, 10, 11, 3])
+resistances = {}
+abilities = Array[ExtResource("2_ad")]([SubResource("AbilityData_speed_aura"), SubResource("AbilityData_death_burst")])
+leak_cost = 1
+scrap_value = 3
+tier = 1

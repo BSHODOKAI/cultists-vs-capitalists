@@ -1,0 +1,34 @@
+[gd_resource type="Resource" script_class="UnitData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/units/unit_data.gd" id="1_ud"]
+[ext_resource type="Script" path="res://scripts/units/ability_data.gd" id="2_ad"]
+
+[sub_resource type="Resource" id="AbilityData_spawn_on_timer"]
+script = ExtResource("2_ad")
+ability_id = "SpawnOnTimer"
+display_name = "Spawn On Timer"
+interval = 4.0
+unit_id = "courier_drone"
+cap = 6
+spawn_count = 2
+release_on_death = false
+telegraph_event = "telegraph_spawn_on_timer"
+telegraph_lead_time = 0.0
+
+[resource]
+script = ExtResource("1_ud")
+id = "drone_carrier"
+display_name = "Drone Carrier"
+faction = "skyline_logistics"
+cost = 18
+base_hp = 450.0
+speed = 0.6
+tags = Array[int]([1, 16, 9])
+resistances = {
+0: 0.75,
+4: 1.3
+}
+abilities = Array[ExtResource("2_ad")]([SubResource("AbilityData_spawn_on_timer")])
+leak_cost = 1
+scrap_value = 9
+tier = 1

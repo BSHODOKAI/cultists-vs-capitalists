@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "live_wire_flood"
+display_name = "Live Wire Flood"
+description = "Flooded hexes deal 12 Electric/s."
+tower_id = "tentacle_storm_drain"
+tier = 4
+branch = 2
+currency = 1
+cost = 63
+prerequisite_id = "flood_pump"
+corruption_delta = 0
+jank_set = 25
+behaviors = Array[String](["live_wire_flood"])
+behavior_params = {
+"electric_dps": 12.0
+}

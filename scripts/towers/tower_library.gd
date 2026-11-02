@@ -1,0 +1,161 @@
+## TowerLibrary
+##
+## The single list of the built-in sample tower definitions, so the placement
+## manager, the build menu and the demo stage all agree on the same set without
+## each hard-coding resource paths. Add a new sample .tres to [constant
+## SAMPLE_PATHS] to make it appear everywhere.
+class_name TowerLibrary
+extends RefCounted
+
+const BALANCE_PATH: String = "res://data/tower_balance.tres"
+
+## All 9 cult tower definitions under res://data/towers/, in spec order.
+const TOWER_PATHS: Array[String] = [
+	"res://data/towers/hexed_nail_gun.tres",
+	"res://data/towers/chanting_choir.tres",
+	"res://data/towers/gutter_ritual_circle.tres",
+	"res://data/towers/tentacle_storm_drain.tres",
+	"res://data/towers/watcher_in_the_billboard.tres",
+	"res://data/towers/rust_censer.tres",
+	"res://data/towers/fever_shrine.tres",
+	"res://data/towers/the_congregation.tres",
+	"res://data/towers/tithe_box.tres",
+]
+
+## All 45 upgrade node resources under res://data/upgrades/ (9 T2 + 18 T3 + 18 T4).
+const UPGRADE_PATHS: Array[String] = [
+	# 1. hexed_nail_gun
+	"res://data/upgrades/rapid_cycling.tres",
+	"res://data/upgrades/whispering_nails.tres",
+	"res://data/upgrades/nails_that_remember.tres",
+	"res://data/upgrades/drone_feeder.tres",
+	"res://data/upgrades/pneumatic_belt_rig.tres",
+	# 2. chanting_choir
+	"res://data/upgrades/deeper_harmony.tres",
+	"res://data/upgrades/dissonant_hymn.tres",
+	"res://data/upgrades/the_unspoken_verse.tres",
+	"res://data/upgrades/bullhorn_array.tres",
+	"res://data/upgrades/jammer_choir.tres",
+	# 3. gutter_ritual_circle
+	"res://data/upgrades/wider_circle.tres",
+	"res://data/upgrades/ichor_bloom.tres",
+	"res://data/upgrades/maw_beneath.tres",
+	"res://data/upgrades/propane_pulse.tres",
+	"res://data/upgrades/chain_detonator.tres",
+	# 4. tentacle_storm_drain
+	"res://data/upgrades/more_grates.tres",
+	"res://data/upgrades/deep_grasp.tres",
+	"res://data/upgrades/leviathan_awakens.tres",
+	"res://data/upgrades/flood_pump.tres",
+	"res://data/upgrades/live_wire_flood.tres",
+	# 5. watcher_in_the_billboard
+	"res://data/upgrades/dilated_pupil.tres",
+	"res://data/upgrades/gaze_of_unmaking.tres",
+	"res://data/upgrades/the_eye_opens.tres",
+	"res://data/upgrades/rooftop_scope_array.tres",
+	"res://data/upgrades/ad_hijack.tres",
+	# 6. rust_censer
+	"res://data/upgrades/heavier_incense.tres",
+	"res://data/upgrades/plague_incense.tres",
+	"res://data/upgrades/rust_communion.tres",
+	"res://data/upgrades/acid_sprayer.tres",
+	"res://data/upgrades/solvent_tank.tres",
+	# 7. fever_shrine
+	"res://data/upgrades/more_candles.tres",
+	"res://data/upgrades/frenzy_rites.tres",
+	"res://data/upgrades/ecstatic_vigil.tres",
+	"res://data/upgrades/server_rack_altar.tres",
+	"res://data/upgrades/mesh_network.tres",
+	# 8. the_congregation
+	"res://data/upgrades/bigger_flock.tres",
+	"res://data/upgrades/devoted.tres",
+	"res://data/upgrades/martyrs_chorus.tres",
+	"res://data/upgrades/picket_line.tres",
+	"res://data/upgrades/union_strike.tres",
+	# 9. tithe_box
+	"res://data/upgrades/bigger_plate.tres",
+	"res://data/upgrades/blood_tithe.tres",
+	"res://data/upgrades/dark_patron.tres",
+	"res://data/upgrades/scrap_collector.tres",
+	"res://data/upgrades/chop_shop.tres",
+]
+
+## Legacy sample tower resources, kept for backwards compatibility with older demos/tests.
+const SAMPLE_PATHS: Array[String] = [
+	"res://resources/towers/basic_tower.tres",   # PROJECTILE
+	"res://resources/towers/laser_tower.tres",   # INSTANT
+	"res://resources/towers/flame_tower.tres",   # INSTANT + BURN
+	"res://resources/towers/frost_tower.tres",   # AURA debuff (SLOW)
+	"res://resources/towers/beacon_tower.tres",  # AURA buff (FIRE_RATE)
+	"res://resources/towers/banner_tower.tres",  # AURA buff (DAMAGE)
+]
+
+
+## Loads the central TowerBalanceData resource from res://data/tower_balance.tres.
+static func load_balance() -> TowerBalanceData:
+	var bal := load(BALANCE_PATH) as TowerBalanceData
+	if bal == null:
+		bal = TowerBalanceData.new()
+	return bal
+
+
+## Loads all 9 cult TowerData definitions from res://data/towers/.
+static func load_towers() -> Array[TowerData]:
+	var out: Array[TowerData] = []
+	for path: String in TOWER_PATHS:
+		var data := load(path) as TowerData
+		if data != null:
+			out.append(data)
+	return out
+
+
+## Returns a Dictionary mapping tower_id (String) -> TowerData for all 9 towers.
+static func load_tower_map() -> Dictionary:
+	var out: Dictionary = {}
+	for td: TowerData in load_towers():
+		out[td.id] = td
+	return out
+
+
+## Returns a specific TowerData by id, or null if not found.
+static func get_tower(tower_id: String) -> TowerData:
+	for td: TowerData in load_towers():
+		if td.id == tower_id:
+			return td
+	return null
+
+
+## Loads all 45 UpgradeNode definitions from res://data/upgrades/.
+static func load_upgrades() -> Array[UpgradeNode]:
+	var out: Array[UpgradeNode] = []
+	for path: String in UPGRADE_PATHS:
+		var node := load(path) as UpgradeNode
+		if node != null:
+			out.append(node)
+	return out
+
+
+## Returns a Dictionary mapping node_id (String) -> UpgradeNode for all 45 nodes.
+static func load_upgrade_map() -> Dictionary:
+	var out: Dictionary = {}
+	for node: UpgradeNode in load_upgrades():
+		out[node.id] = node
+	return out
+
+
+## Returns a specific UpgradeNode by id, or null if not found.
+static func get_upgrade(node_id: String) -> UpgradeNode:
+	for node: UpgradeNode in load_upgrades():
+		if node.id == node_id:
+			return node
+	return null
+
+
+## Loads the sample tower definitions, skipping any path that fails to load.
+static func load_samples() -> Array[TowerData]:
+	var out: Array[TowerData] = []
+	for path in SAMPLE_PATHS:
+		var data := load(path) as TowerData
+		if data != null:
+			out.append(data)
+	return out

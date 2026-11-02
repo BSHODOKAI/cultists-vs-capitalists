@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "scrap_collector"
+display_name = "Scrap Collector"
+description = "+25% Scrap from kills (max 3 boxes count)."
+tower_id = "tithe_box"
+tier = 3
+branch = 2
+currency = 1
+cost = 35
+prerequisite_id = "bigger_plate"
+corruption_delta = 0
+jank_set = 10
+behaviors = Array[String](["scrap_collector"])
+behavior_params = {
+"kill_scrap_bonus": 0.25,
+"max_boxes": 3
+}

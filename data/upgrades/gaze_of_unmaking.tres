@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "gaze_of_unmaking"
+display_name = "Gaze of Unmaking"
+description = "Ignores shields and 50% of armor; marks target (+15% damage from all sources for 6 s)."
+tower_id = "watcher_in_the_billboard"
+tier = 3
+branch = 1
+currency = 0
+cost = 70
+prerequisite_id = "dilated_pupil"
+corruption_delta = 4
+jank_set = 0
+behaviors = Array[String](["gaze_of_unmaking"])
+behavior_params = {
+"ignore_armor_fraction": 0.5,
+"ignores_shields": true,
+"mark_damage_bonus": 0.15,
+"mark_duration": 6.0
+}

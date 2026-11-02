@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="TowerData" load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/tower_data.gd" id="1_td"]
+[ext_resource type="Resource" path="res://data/upgrades/dilated_pupil.tres" id="2_t2"]
+[ext_resource type="Resource" path="res://data/upgrades/gaze_of_unmaking.tres" id="3_rev3"]
+[ext_resource type="Resource" path="res://data/upgrades/the_eye_opens.tres" id="4_rev4"]
+[ext_resource type="Resource" path="res://data/upgrades/rooftop_scope_array.tres" id="5_rig3"]
+[ext_resource type="Resource" path="res://data/upgrades/ad_hijack.tres" id="6_rig4"]
+
+[resource]
+script = ExtResource("1_td")
+id = "watcher_in_the_billboard"
+display_name = "Watcher in the Billboard"
+description = "Fires 90 Void every 4 s at the highest-HP Ground or Air enemy; detects Cloaked enemies in range."
+cost = 70
+attack_range = 6.0
+range_hexes = 6
+damage = 90.0
+damage_tag = 3
+fire_rate = 0.25
+target_tags = Array[int]([0, 1])
+targeting_mode = 1
+detects_cloaked = true
+pulse_reveal_duration = 0.0
+starting_members = 1
+max_targets = 1
+base_behaviors = Array[String](["watcher_in_the_billboard"])
+t2_upgrade = ExtResource("2_t2")
+revealed_t3_upgrade = ExtResource("3_rev3")
+revealed_t4_upgrade = ExtResource("4_rev4")
+rigged_t3_upgrade = ExtResource("5_rig3")
+rigged_t4_upgrade = ExtResource("6_rig4")

@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="UnitBalanceData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/units/unit_balance_data.gd" id="1_unit_balance"]
+
+[resource]
+script = ExtResource("1_unit_balance")
+default_leak_cost = 1
+default_scrap_ratio = 0.5
+default_unit_tier = 1
+starting_lives = 20
+level_kills_divisor = 10.0
+level_hp_per_level = 0.12
+level_speed_per_level = 0.02
+level_speed_max_mult = 1.25
+boss_hp_per_index = 0.3
+boss_cycle_length = 5
+boss_cycle_timing_reduction = 0.15
+boss_min_timing_multiplier = 0.25
+boss_slow_and_dot_strength = 0.5
+loss_report_damage_window_seconds = 10.0

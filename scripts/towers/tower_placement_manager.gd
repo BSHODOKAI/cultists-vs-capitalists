@@ -19,6 +19,8 @@ const GROUP := "tower_placement"
 signal tower_placed(cell: Vector2i, tower: Node3D)
 ## Emitted when placement is refused because the player can't afford it.
 signal tower_placement_denied(cell: Vector2i, cost: int)
+## Emitted when the definition of the tower to place next changes.
+signal tower_selected(data: TowerData)
 
 ## The grid used for ray casting and cell math. Falls back to GridManager.of(self).
 @export var grid: GridManager
@@ -28,8 +30,15 @@ signal tower_placement_denied(cell: Vector2i, cost: int)
 @export var towers_parent: NodePath
 ## Optional level generator whose track cells block tower placement.
 @export var level_generator: LevelGenerator
-## Cost (in PlayerResources) to place one tower. Placeholder: 1.
+## Cost used when the selected definition has no cost of its own.
 @export var build_cost: int = 1
+## Tower definitions the player can choose from. When empty, the built-in samples
+## from [TowerLibrary] are used.
+@export var tower_types: Array[TowerData] = []
+
+## The definition of the tower that will be placed next; defaults to the first of
+## [member tower_types].
+var current_data: TowerData
 
 @export_group("Ghost tower")
 ## Optional ghost mesh. When empty a BoxMesh of [member ghost_size] is used.
@@ -53,6 +62,10 @@ func _ready() -> void:
 	add_to_group(GROUP)
 	if grid == null:
 		grid = GridManager.of(self)
+	if tower_types.is_empty():
+		tower_types = TowerLibrary.load_samples()
+	if current_data == null and not tower_types.is_empty():
+		current_data = tower_types[0]
 	_build_ghost()
 	if grid != null:
 		grid.cell_hovered.connect(_on_cell_hovered)
@@ -68,9 +81,15 @@ func _process(_delta: float) -> void:
 # --- Public API --------------------------------------------------------------
 
 ## True when a tower may be placed on [param cell]: on the grid, unoccupied,
-## not on the enemy track, and inside the buildable band around the track.
+## not on the enemy track, not reserved by a preview, not on blocked terrain,
+## and inside the buildable band around the track.
 func can_place(cell: Vector2i) -> bool:
-	if grid == null or not grid.is_in_bounds(cell) or occupied_cells.has(cell):
+	if occupied_cells.has(cell):
+		return false
+	if grid != null and not grid.is_in_bounds(cell):
+		return false
+	var gen := _resolve_level_generator()
+	if gen != null and not gen.can_place_tower(cell):
 		return false
 	if not is_in_build_range(cell):
 		return false
@@ -100,10 +119,36 @@ func is_protected_cell(cell: Vector2i) -> bool:
 	return gen.is_protected_cell(cell)
 
 
-## True when the player can currently afford to place a tower.
+## Cost of the tower that would be placed next.
+func current_cost() -> int:
+	return current_data.cost if current_data != null else build_cost
+
+
+## True when the player can currently afford to place the selected tower.
 func can_afford_build() -> bool:
 	var resources := PlayerResources.of(self)
-	return resources == null or resources.can_afford(build_cost)
+	return resources == null or resources.can_afford(current_cost())
+
+
+## The selectable tower definitions (never null; may be empty).
+func get_tower_types() -> Array[TowerData]:
+	return tower_types
+
+
+## Selects [param data] as the tower to place next and refreshes the ghost tint.
+func select_tower(data: TowerData) -> void:
+	if data == null:
+		return
+	current_data = data
+	tower_selected.emit(data)
+	if grid != null and grid.has_hover:
+		_update_ghost_at(grid.hovered_cell)
+
+
+## Selects the tower at [param index] of [member tower_types].
+func select_tower_index(index: int) -> void:
+	if index >= 0 and index < tower_types.size():
+		select_tower(tower_types[index])
 
 
 ## The level generator to consult: the export if set, else the first one in the
@@ -111,7 +156,8 @@ func can_afford_build() -> bool:
 func _resolve_level_generator() -> LevelGenerator:
 	if level_generator != null:
 		return level_generator
-	level_generator = get_tree().get_first_node_in_group(LevelGenerator.GROUP) as LevelGenerator
+	if is_inside_tree():
+		level_generator = get_tree().get_first_node_in_group(LevelGenerator.GROUP) as LevelGenerator
 	return level_generator
 
 
@@ -130,13 +176,18 @@ func get_tower_at(cell: Vector2i) -> Node3D:
 func place_tower(cell: Vector2i) -> Node3D:
 	if not can_place(cell) or tower_scene == null:
 		return null
+	var cost := current_cost()
 	var resources := PlayerResources.of(self)
-	if resources != null and not resources.can_afford(build_cost):
-		tower_placement_denied.emit(cell, build_cost)
+	if resources != null and not resources.can_afford(cost):
+		tower_placement_denied.emit(cell, cost)
 		return null
-	var tower := tower_scene.instantiate() as Node3D
+	var tower := tower_scene.instantiate() as Tower
 	if tower == null:
 		return null
+	# Stamp the selected definition before the tower enters the tree so its
+	# _ready() builds it (range, attack type, colour) from the right data.
+	if current_data != null:
+		tower.data = current_data
 	_towers_root().add_child(tower)
 	# Snap to the cell center on the X/Z plane, Y fixed on the ground.
 	var center := grid.cell_to_world(cell)
@@ -148,15 +199,34 @@ func place_tower(cell: Vector2i) -> Node3D:
 		occupied_cells.erase(cell)
 		tower.queue_free()
 		return null
-	# Placement is committed — charge the player.
+	# Placement is committed — charge the player and notify the level generator.
 	if resources != null:
-		resources.spend(build_cost)
+		resources.spend(cost)
+	var gen := _resolve_level_generator()
+	if gen != null:
+		gen.register_tower_placed(cell, tower)
 	tower.tree_exiting.connect(_on_tower_exiting.bind(cell))
 	_pop_in(tower)
 	tower_placed.emit(cell, tower)
 	# Refresh the ghost so it immediately reads as blocked on the new tower.
 	_update_ghost_at(cell)
 	return tower
+
+
+## Removes the tower at [param cell], freeing the cell and updating overlap hooks.
+func remove_tower(cell: Vector2i) -> bool:
+	if not occupied_cells.has(cell):
+		return false
+	var tower := occupied_cells[cell] as Node
+	occupied_cells.erase(cell)
+	if grid != null:
+		grid.release_cell(cell)
+	var gen := _resolve_level_generator()
+	if gen != null:
+		gen.register_tower_removed(cell)
+	if tower != null and is_instance_valid(tower):
+		tower.queue_free()
+	return true
 
 
 # --- Ghost -------------------------------------------------------------------
@@ -206,8 +276,18 @@ func _update_ghost_at(cell: Vector2i) -> void:
 	var center := grid.cell_to_world(cell)
 	_ghost.global_position = Vector3(center.x, 0.0, center.z)
 	# Recompute validity so track/occupied/unaffordable cells read as blocked too.
-	_ghost_material.albedo_color = valid_color if (can_place(cell) and can_afford_build()) else blocked_color
+	_ghost_material.albedo_color = _valid_tint() if (can_place(cell) and can_afford_build()) else blocked_color
 	_ghost.visible = true
+
+
+## Tint for a buildable cell: the selected tower's own colour when one is chosen,
+## otherwise [member valid_color].
+func _valid_tint() -> Color:
+	if current_data != null:
+		var c := current_data.color
+		c.a = valid_color.a
+		return c
+	return valid_color
 
 
 # --- Placement ---------------------------------------------------------------
@@ -229,6 +309,9 @@ func _on_tower_exiting(cell: Vector2i) -> void:
 	occupied_cells.erase(cell)
 	if grid != null:
 		grid.release_cell(cell)
+	var gen := _resolve_level_generator()
+	if gen != null:
+		gen.register_tower_removed(cell)
 
 
 func _towers_root() -> Node:

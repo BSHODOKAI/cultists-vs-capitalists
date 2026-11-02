@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="UnitData" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/units/unit_data.gd" id="1_ud"]
+[ext_resource type="Script" path="res://scripts/units/ability_data.gd" id="2_ad"]
+
+[resource]
+script = ExtResource("1_ud")
+id = "security_contractor"
+display_name = "Security Contractor"
+faction = "iron_board"
+cost = 4
+base_hp = 100.0
+speed = 0.8
+tags = Array[int]([0, 4])
+resistances = {
+0: 0.75
+}
+abilities = Array[ExtResource("2_ad")]([])
+leak_cost = 1
+scrap_value = 2
+tier = 1

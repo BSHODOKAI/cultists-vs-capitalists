@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="TowerData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/tower_data.gd" id="1_tower_data"]
+
+[resource]
+script = ExtResource("1_tower_data")
+display_name = "Laser Tower"
+description = "Long-range hitscan emitter that rapidly zaps enemies with an instant pinpoint beam."
+color = Color(1, 0.45, 0.4, 1)
+cost = 20
+attack_range = 4.5
+damage = 1.0
+fire_rate = 3.0
+attack_type = 1
+effect = 0

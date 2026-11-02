@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "rooftop_scope_array"
+display_name = "Rooftop Scope Array"
+description = "+25% crit chance (2x damage)."
+tower_id = "watcher_in_the_billboard"
+tier = 3
+branch = 2
+currency = 1
+cost = 70
+prerequisite_id = "dilated_pupil"
+corruption_delta = 0
+jank_set = 10
+behaviors = Array[String](["rooftop_scope_array"])
+behavior_params = {
+"crit_chance": 0.25,
+"crit_multiplier": 2.0
+}

@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "jammer_choir"
+display_name = "Jammer Choir"
+description = "Stuns Air and Cybernetic enemies 1.5 s every 8 s; interrupts Hacker channels in range."
+tower_id = "chanting_choir"
+tier = 4
+branch = 2
+currency = 1
+cost = 72
+prerequisite_id = "bullhorn_array"
+corruption_delta = 0
+jank_set = 25
+behaviors = Array[String](["jammer_choir"])
+behavior_params = {
+"interrupts_hacker": true,
+"stun_duration": 1.5,
+"stun_interval": 8.0
+}

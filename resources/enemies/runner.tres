@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="EnemyData" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/enemies/enemy_data.gd" id="1_enemy_data"]
+
+[sub_resource type="CapsuleMesh" id="Mesh_runner"]
+radius = 0.22
+height = 0.62
+
+[resource]
+script = ExtResource("1_enemy_data")
+display_name = "Runner"
+mesh = SubResource("Mesh_runner")
+color = Color(0.45, 0.9, 0.5, 1)
+max_health = 4.0
+speed = 5.0
+reward = 4
+damage = 1
+type_id = "runner"

@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "dark_patron"
+display_name = "Dark Patron"
+description = "+10% of each wave's kill Offerings (max 3 boxes count)."
+tower_id = "tithe_box"
+tier = 4
+branch = 1
+currency = 0
+cost = 63
+prerequisite_id = "blood_tithe"
+corruption_delta = 8
+jank_set = 0
+behaviors = Array[String](["dark_patron"])
+behavior_params = {
+"kill_offerings_bonus": 0.1,
+"max_boxes": 3
+}

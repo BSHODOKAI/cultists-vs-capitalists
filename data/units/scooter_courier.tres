@@ -1,0 +1,37 @@
+[gd_resource type="Resource" script_class="UnitData" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/units/unit_data.gd" id="1_ud"]
+[ext_resource type="Script" path="res://scripts/units/ability_data.gd" id="2_ad"]
+
+[sub_resource type="Resource" id="AbilityData_slow_resist"]
+script = ExtResource("2_ad")
+ability_id = "SlowResist"
+display_name = "Slow Resist"
+pct = 0.5
+telegraph_event = "telegraph_slow_resist"
+telegraph_lead_time = 0.0
+
+[sub_resource type="Resource" id="AbilityData_courier_pack"]
+script = ExtResource("2_ad")
+ability_id = "CourierPack"
+display_name = "Courier Pack"
+pct = 0.25
+radius = 2
+unit_id = "scooter_courier"
+telegraph_event = "telegraph_courier_pack"
+telegraph_lead_time = 0.0
+
+[resource]
+script = ExtResource("1_ud")
+id = "scooter_courier"
+display_name = "Scooter Courier"
+faction = "swarm_syndicate"
+cost = 4
+base_hp = 55.0
+speed = 2.0
+tags = Array[int]([0, 2])
+resistances = {}
+abilities = Array[ExtResource("2_ad")]([SubResource("AbilityData_slow_resist"), SubResource("AbilityData_courier_pack")])
+leak_cost = 1
+scrap_value = 2
+tier = 1

@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "ichor_bloom"
+display_name = "Ichor Bloom"
+description = "Each pulse leaves a 4 s puddle dealing 8 Void/s."
+tower_id = "gutter_ritual_circle"
+tier = 3
+branch = 1
+currency = 0
+cost = 50
+prerequisite_id = "wider_circle"
+corruption_delta = 4
+jank_set = 0
+behaviors = Array[String](["ichor_bloom"])
+behavior_params = {
+"puddle_dps": 8.0,
+"puddle_duration": 4.0
+}

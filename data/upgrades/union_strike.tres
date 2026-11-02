@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "union_strike"
+display_name = "Union Strike"
+description = "Blockers taunt enemies in melee and slow them 30%."
+tower_id = "the_congregation"
+tier = 4
+branch = 2
+currency = 1
+cost = 81
+prerequisite_id = "picket_line"
+corruption_delta = 0
+jank_set = 25
+behaviors = Array[String](["union_strike"])
+behavior_params = {
+"melee_slow": 0.3,
+"taunt_radius": 1
+}

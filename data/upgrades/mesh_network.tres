@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "mesh_network"
+display_name = "Mesh Network"
+description = "Replaces the flat buff with +6% fire rate per distinct tower type in the aura (max +30%)."
+tower_id = "fever_shrine"
+tier = 4
+branch = 2
+currency = 1
+cost = 99
+prerequisite_id = "server_rack_altar"
+corruption_delta = 0
+jank_set = 25
+behaviors = Array[String](["mesh_network"])
+behavior_params = {
+"max_rate_bonus": 0.3,
+"rate_per_distinct_type": 0.06
+}

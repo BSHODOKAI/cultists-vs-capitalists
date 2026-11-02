@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "frenzy_rites"
+display_name = "Frenzy Rites"
+description = "Aura +30% fire rate; upkeep 4 Offerings per buffed tower per wave."
+tower_id = "fever_shrine"
+tier = 3
+branch = 1
+currency = 0
+cost = 55
+prerequisite_id = "more_candles"
+corruption_delta = 4
+jank_set = 0
+aura_fire_rate_override = 0.3
+behaviors = Array[String](["frenzy_rites"])
+behavior_params = {
+"aura_fire_rate_bonus": 0.3,
+"offerings_upkeep_per_buffed_tower": 4
+}

@@ -12,6 +12,12 @@ extends Node3D
 @export var damage: float = 1.0
 ## Seconds before it despawns on its own.
 @export var lifetime: float = 3.0
+## Optional status carried to the target, as a [enum TowerData.Effect] value.
+@export var effect: int = TowerData.Effect.NONE
+## Strength of [member effect] (slow fraction for SLOW, damage-per-second for BURN).
+@export var effect_power: float = 0.0
+## How long the applied status lasts, in seconds.
+@export var effect_duration: float = 0.0
 
 ## Unit direction of travel.
 var direction: Vector3 = Vector3.FORWARD
@@ -48,7 +54,19 @@ func _on_body_entered(body: Node) -> void:
 		return
 	_spent = true
 	enemy.take_damage(damage)
+	_apply_status(enemy)
 	queue_free()
+
+
+## Applies the carried status (slow/burn) to [param enemy], if any.
+func _apply_status(enemy: BasicEnemy) -> void:
+	if effect == TowerData.Effect.NONE or effect_duration <= 0.0:
+		return
+	match effect:
+		TowerData.Effect.SLOW:
+			enemy.apply_slow(effect_power, effect_duration)
+		TowerData.Effect.BURN:
+			enemy.apply_burn(effect_power, effect_duration)
 
 
 func _look_forward() -> void:

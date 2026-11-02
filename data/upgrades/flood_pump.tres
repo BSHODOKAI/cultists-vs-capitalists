@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "flood_pump"
+display_name = "Flood Pump"
+description = "40% slow puddle on path hexes within radius 1; wet hexes conduct Electric."
+tower_id = "tentacle_storm_drain"
+tier = 3
+branch = 2
+currency = 1
+cost = 35
+prerequisite_id = "more_grates"
+corruption_delta = 0
+jank_set = 10
+behaviors = Array[String](["flood_pump"])
+behavior_params = {
+"conducts_electric": true,
+"flood_radius": 1,
+"flood_slow": 0.4
+}

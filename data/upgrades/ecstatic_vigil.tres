@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "ecstatic_vigil"
+display_name = "Ecstatic Vigil"
+description = "Every 20 s buffed towers fire at double rate for 3 s."
+tower_id = "fever_shrine"
+tier = 4
+branch = 1
+currency = 0
+cost = 99
+prerequisite_id = "frenzy_rites"
+corruption_delta = 8
+jank_set = 0
+behaviors = Array[String](["ecstatic_vigil"])
+behavior_params = {
+"burst_duration": 3.0,
+"burst_interval": 20.0,
+"burst_rate_multiplier": 2.0
+}

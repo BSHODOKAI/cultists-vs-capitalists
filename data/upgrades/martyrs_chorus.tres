@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "martyrs_chorus"
+display_name = "Martyr's Chorus"
+description = "Fallen blockers rise as ghosts for 8 s (10 Psychic/s)."
+tower_id = "the_congregation"
+tier = 4
+branch = 1
+currency = 0
+cost = 81
+prerequisite_id = "devoted"
+corruption_delta = 8
+jank_set = 0
+behaviors = Array[String](["martyrs_chorus"])
+behavior_params = {
+"ghost_dps": 10.0,
+"ghost_duration": 8.0
+}

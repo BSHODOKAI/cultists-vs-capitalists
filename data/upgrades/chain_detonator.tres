@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "chain_detonator"
+display_name = "Chain Detonator"
+description = "Pulse kills explode for 40% of the victim's max HP in radius 1; chains."
+tower_id = "gutter_ritual_circle"
+tier = 4
+branch = 2
+currency = 1
+cost = 90
+prerequisite_id = "propane_pulse"
+corruption_delta = 0
+jank_set = 25
+behaviors = Array[String](["chain_detonator"])
+behavior_params = {
+"explosion_max_hp_ratio": 0.4,
+"explosion_radius": 1
+}

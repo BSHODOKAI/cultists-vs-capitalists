@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "plague_incense"
+display_name = "Plague Incense"
+description = "On death, remaining DoT spreads to enemies within 1 hex."
+tower_id = "rust_censer"
+tier = 3
+branch = 1
+currency = 0
+cost = 40
+prerequisite_id = "heavier_incense"
+corruption_delta = 4
+jank_set = 0
+behaviors = Array[String](["plague_incense"])
+behavior_params = {
+"spread_radius": 1
+}

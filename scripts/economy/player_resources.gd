@@ -21,7 +21,7 @@ const GROUP := "player_resources"
 ## PLACEHOLDER display name for the currency.
 @export var resource_name: String = "Essence"
 ## Amount the player starts a level with.
-@export var starting_amount: int = 5
+@export var starting_amount: int = 30
 
 ## Current amount.
 var amount: int = 0

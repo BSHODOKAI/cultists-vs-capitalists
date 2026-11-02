@@ -1,0 +1,158 @@
+[gd_scene load_steps=16 format=3]
+
+[ext_resource type="Script" path="res://scripts/world/main_scene_controller.gd" id="1_main"]
+[ext_resource type="Script" path="res://scripts/world/terrain_view.gd" id="2_terrain"]
+[ext_resource type="Script" path="res://scripts/world/path_view.gd" id="3_path"]
+[ext_resource type="Script" path="res://scripts/world/overlay_view.gd" id="4_overlay"]
+[ext_resource type="Script" path="res://scripts/world/combat_effects_view.gd" id="5_effects"]
+[ext_resource type="Script" path="res://scripts/world/camera_rig.gd" id="6_camrig"]
+[ext_resource type="Script" path="res://scripts/ui/top_bar.gd" id="7_topbar"]
+[ext_resource type="Script" path="res://scripts/ui/build_palette.gd" id="8_palette"]
+[ext_resource type="Script" path="res://scripts/ui/tower_panel.gd" id="9_tpanel"]
+[ext_resource type="Script" path="res://scripts/ui/intel_panel.gd" id="10_intel"]
+[ext_resource type="Script" path="res://scripts/ui/wave_controls.gd" id="11_wctrl"]
+[ext_resource type="Script" path="res://scripts/ui/boss_bar.gd" id="12_bossbar"]
+[ext_resource type="Script" path="res://scripts/ui/telegraph_layer.gd" id="13_tele"]
+[ext_resource type="Script" path="res://scripts/ui/game_over_screen.gd" id="14_gameover"]
+[ext_resource type="Script" path="res://scripts/ui/debug_panel.gd" id="15_debug"]
+
+[sub_resource type="Environment" id="Environment_main"]
+background_mode = 1
+background_color = Color(0.06, 0.05, 0.09, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.55, 0.50, 0.68, 1)
+ambient_light_energy = 0.75
+
+[node name="Main" type="Node"]
+script = ExtResource("1_main")
+
+[node name="GameWorld" type="Node3D" parent="."]
+
+[node name="Environment" type="Node3D" parent="GameWorld"]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="GameWorld/Environment"]
+environment = SubResource("Environment_main")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="GameWorld/Environment"]
+transform = Transform3D(0.707107, -0.5, 0.5, 0, 0.707107, 0.707107, -0.707107, -0.5, 0.5, 16, 24, 16)
+light_energy = 1.15
+shadow_enabled = true
+
+[node name="TerrainView" type="Node3D" parent="GameWorld"]
+script = ExtResource("2_terrain")
+
+[node name="PathView" type="Node3D" parent="GameWorld"]
+script = ExtResource("3_path")
+
+[node name="OverlayView" type="Node3D" parent="GameWorld"]
+script = ExtResource("4_overlay")
+
+[node name="Towers" type="Node3D" parent="GameWorld"]
+
+[node name="Enemies" type="Node3D" parent="GameWorld"]
+
+[node name="Effects" type="Node3D" parent="GameWorld"]
+script = ExtResource("5_effects")
+
+[node name="CameraRig" type="Node3D" parent="GameWorld"]
+script = ExtResource("6_camrig")
+
+[node name="Camera3D" type="Camera3D" parent="GameWorld/CameraRig"]
+current = true
+projection = 1
+size = 18.0
+
+[node name="HUD" type="CanvasLayer" parent="."]
+
+[node name="TopBar" type="PanelContainer" parent="HUD"]
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 44.0
+grow_horizontal = 2
+script = ExtResource("7_topbar")
+
+[node name="IntelPanel" type="PanelContainer" parent="HUD"]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -310.0
+offset_top = 54.0
+offset_right = -12.0
+offset_bottom = 220.0
+grow_horizontal = 0
+script = ExtResource("10_intel")
+
+[node name="TowerPanel" type="PanelContainer" parent="HUD"]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -330.0
+offset_top = 230.0
+offset_right = -12.0
+offset_bottom = 560.0
+grow_horizontal = 0
+script = ExtResource("9_tpanel")
+
+[node name="WaveControls" type="PanelContainer" parent="HUD"]
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = -124.0
+offset_right = 460.0
+offset_bottom = -74.0
+grow_vertical = 0
+script = ExtResource("11_wctrl")
+
+[node name="BuildPalette" type="PanelContainer" parent="HUD"]
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = -66.0
+offset_right = -12.0
+offset_bottom = -8.0
+grow_horizontal = 2
+grow_vertical = 0
+script = ExtResource("8_palette")
+
+[node name="BossBar" type="PanelContainer" parent="HUD"]
+visible = false
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -230.0
+offset_top = 52.0
+offset_right = 230.0
+offset_bottom = 120.0
+grow_horizontal = 2
+script = ExtResource("12_bossbar")
+
+[node name="TelegraphLayer" type="Control" parent="HUD"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("13_tele")
+
+[node name="GameOverScreen" type="PanelContainer" parent="HUD"]
+visible = false
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -270.0
+offset_top = -210.0
+offset_right = 270.0
+offset_bottom = 210.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("14_gameover")
+
+[node name="DebugPanel" type="CanvasLayer" parent="."]
+script = ExtResource("15_debug")

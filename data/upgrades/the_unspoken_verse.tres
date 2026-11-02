@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "the_unspoken_verse"
+display_name = "The Unspoken Verse"
+description = "Enemies at 5 Fear stacks flee backward 2 s (once per enemy per 10 s)."
+tower_id = "chanting_choir"
+tier = 4
+branch = 1
+currency = 0
+cost = 72
+prerequisite_id = "dissonant_hymn"
+corruption_delta = 8
+jank_set = 0
+behaviors = Array[String](["the_unspoken_verse"])
+behavior_params = {
+"flee_cooldown": 10.0,
+"flee_duration": 2.0,
+"required_fear_stacks": 5
+}

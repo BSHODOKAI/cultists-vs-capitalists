@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "bullhorn_array"
+display_name = "Bullhorn Array"
+description = "+1 range; can hit Air."
+tower_id = "chanting_choir"
+tier = 3
+branch = 2
+currency = 1
+cost = 40
+prerequisite_id = "deeper_harmony"
+corruption_delta = 0
+jank_set = 10
+range_add = 1
+grants_air_targeting = true
+behaviors = Array[String](["bullhorn_array"])

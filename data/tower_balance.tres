@@ -1,0 +1,48 @@
+[gd_resource type="Resource" script_class="TowerBalanceData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/tower_balance_data.gd" id="1_tower_balance"]
+
+[resource]
+script = ExtResource("1_tower_balance")
+starting_offerings = 150
+starting_scrap = 0
+starting_lives = 20
+build_distance = 2
+sell_refund_ratio = 0.7
+cost_escalation_per_copy = 0.1
+cost_escalation_start_copies = 10
+t2_cost_multiplier = 0.6
+t3_cost_multiplier = 1.0
+t4_cost_multiplier = 1.8
+revealed_t3_corruption_add = 4
+revealed_t4_corruption_add = 8
+rigged_t3_jank_set = 10
+rigged_t4_jank_set = 25
+corruption_min = 0
+corruption_max = 100
+corruption_damage_bonus_per_point = 0.0025
+corruption_misfire_low_threshold = 50
+corruption_misfire_low_chance = 0.1
+corruption_misfire_high_threshold = 75
+corruption_misfire_high_chance = 0.2
+corruption_rogue_entity_threshold = 100
+rogue_entity_leak_lives = 2
+rogue_entity_kill_offerings = 10
+penance_offerings_cost = 40
+penance_corruption_reduction = 5
+jank_min = 0
+jank_cap = 60
+jank_disable_duration = 10.0
+maintenance_scrap_cost = 15
+maintenance_jank_reduction = 10
+stars_are_right_wave_interval = 5
+boss_wave_interval = 10
+stars_are_right_revealed_bonus = 0.2
+variety_bonus_radius_hexes = 3
+variety_bonus_per_distinct_type = 0.03
+variety_bonus_max = 0.12
+entangled_gutter_pulse_bonus = 0.25
+armor_shred_bonus_per_stack = 0.05
+armor_shred_default_max_stacks = 5
+gutter_pulse_reveal_seconds = 3.0
+boss_slow_and_dot_strength = 0.5

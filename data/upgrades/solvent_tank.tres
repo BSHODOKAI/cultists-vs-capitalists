@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "solvent_tank"
+display_name = "Solvent Tank"
+description = "Shred cap 10; +100% DoT vs Armored; consumes 4 Scrap per wave and is disabled at 0 Scrap."
+tower_id = "rust_censer"
+tier = 4
+branch = 2
+currency = 1
+cost = 72
+prerequisite_id = "acid_sprayer"
+corruption_delta = 0
+jank_set = 25
+shred_cap_override = 10
+behaviors = Array[String](["solvent_tank"])
+behavior_params = {
+"armored_dot_bonus": 1.0,
+"scrap_upkeep_per_wave": 4,
+"shred_cap": 10
+}

@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "deep_grasp"
+display_name = "Deep Grasp"
+description = "Root 2.5 s and drag 1 hex backward (not Bosses)."
+tower_id = "tentacle_storm_drain"
+tier = 3
+branch = 1
+currency = 0
+cost = 35
+prerequisite_id = "more_grates"
+corruption_delta = 4
+jank_set = 0
+behaviors = Array[String](["deep_grasp"])
+behavior_params = {
+"drag_hexes": 1,
+"root_duration": 2.5
+}

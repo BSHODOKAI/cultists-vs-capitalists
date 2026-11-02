@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "rapid_cycling"
+display_name = "Rapid Cycling"
+description = "+30% fire rate."
+tower_id = "hexed_nail_gun"
+tier = 2
+branch = 0
+currency = 0
+cost = 18
+prerequisite_id = ""
+corruption_delta = 0
+jank_set = 0
+fire_rate_mult = 0.3
+behaviors = Array[String](["rapid_cycling"])

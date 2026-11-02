@@ -1,0 +1,41 @@
+[gd_resource type="Resource" script_class="UnitData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/units/unit_data.gd" id="1_ud"]
+[ext_resource type="Script" path="res://scripts/units/ability_data.gd" id="2_ad"]
+
+[sub_resource type="Resource" id="AbilityData_tower_convert"]
+script = ExtResource("2_ad")
+ability_id = "TowerConvert"
+display_name = "Tower Convert"
+pct = 0.2
+radius = 3
+range_hexes = 3
+duration = 8.0
+interval = 15.0
+channel = 3.0
+effect = "highest_cost"
+cleanse_rules = {
+"interrupt": true,
+"kill_rep": true,
+"pay_base_cost_ratio": 0.5,
+"target": "highest_cost"
+}
+telegraph_event = "telegraph_tower_convert_channel"
+telegraph_lead_time = 3.0
+
+[resource]
+script = ExtResource("1_ud")
+id = "acquisitions_rep"
+display_name = "Acquisitions Rep"
+faction = "hostile_takeover"
+cost = 12
+base_hp = 140.0
+speed = 0.7
+tags = Array[int]([0, 12, 10])
+resistances = {
+4: 0.7
+}
+abilities = Array[ExtResource("2_ad")]([SubResource("AbilityData_tower_convert")])
+leak_cost = 1
+scrap_value = 6
+tier = 1

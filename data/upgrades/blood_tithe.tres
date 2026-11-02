@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "blood_tithe"
+display_name = "Blood Tithe"
+description = "+50% income; +1 Corruption per wave per box."
+tower_id = "tithe_box"
+tier = 3
+branch = 1
+currency = 0
+cost = 35
+prerequisite_id = "bigger_plate"
+corruption_delta = 4
+jank_set = 0
+income_mult = 0.5
+behaviors = Array[String](["blood_tithe"])
+behavior_params = {
+"corruption_per_wave": 1
+}

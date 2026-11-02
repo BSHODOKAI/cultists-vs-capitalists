@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "the_eye_opens"
+display_name = "The Eye Opens"
+description = "Every 4th shot adds 12% of target max HP as Void (Bosses 4%)."
+tower_id = "watcher_in_the_billboard"
+tier = 4
+branch = 1
+currency = 0
+cost = 126
+prerequisite_id = "gaze_of_unmaking"
+corruption_delta = 8
+jank_set = 0
+behaviors = Array[String](["the_eye_opens"])
+behavior_params = {
+"boss_max_hp_ratio": 0.04,
+"max_hp_ratio": 0.12,
+"nth_shot": 4
+}

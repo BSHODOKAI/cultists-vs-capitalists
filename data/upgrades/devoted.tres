@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "devoted"
+display_name = "Devoted"
+description = "Blockers explode on death for 40 Void in radius 1."
+tower_id = "the_congregation"
+tier = 3
+branch = 1
+currency = 0
+cost = 45
+prerequisite_id = "bigger_flock"
+corruption_delta = 4
+jank_set = 0
+behaviors = Array[String](["devoted"])
+behavior_params = {
+"death_explosion_damage": 40.0,
+"death_explosion_radius": 1
+}
