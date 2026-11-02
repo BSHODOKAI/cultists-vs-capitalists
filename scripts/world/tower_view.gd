@@ -11,6 +11,7 @@ extends Node3D
 const _HexMath = preload("res://scripts/core/hex_math.gd")
 const _UpgradeNode = preload("res://scripts/towers/upgrade_node.gd")
 const _Theme = preload("res://scripts/core/visual_theme_data.gd")
+const _PlaceholderModels = preload("res://scripts/world/placeholder_models.gd")
 
 const TOWER_LETTERS: Dictionary = {
 	"hexed_nail_gun": "N",
@@ -52,37 +53,33 @@ func setup(inst: TowerInstance, theme: VisualThemeData = null) -> void:
 func _build_visuals() -> void:
 	# Total height strictly under TOWER_MAX_HEIGHT = 1.5
 	_base_mesh = MeshInstance3D.new()
-	var cyl := CylinderMesh.new()
-	cyl.top_radius = 0.44
-	cyl.bottom_radius = 0.54
-	cyl.height = 0.45
-	_base_mesh.mesh = cyl
-	_base_mesh.position = Vector3(0.0, 0.225, 0.0)
+	_base_mesh.position = Vector3.ZERO
 	_base_mat = StandardMaterial3D.new()
+	_base_mat.vertex_color_use_as_albedo = true
+	_base_mat.roughness = 0.55
 	_base_mesh.material_override = _base_mat
 	add_child(_base_mesh)
 
 	_top_mesh = MeshInstance3D.new()
-	var box := BoxMesh.new()
-	box.size = Vector3(0.46, 0.46, 0.46)
-	_top_mesh.mesh = box
-	_top_mesh.position = Vector3(0.0, 0.68, 0.0)
+	_top_mesh.position = Vector3.ZERO
 	_top_mat = StandardMaterial3D.new()
+	_top_mat.vertex_color_use_as_albedo = true
+	_top_mat.roughness = 0.35
 	_top_mesh.material_override = _top_mat
 	add_child(_top_mesh)
 
 	_icon_label = Label3D.new()
 	_icon_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	_icon_label.font_size = 32
-	_icon_label.pixel_size = 0.0085
-	_icon_label.position = Vector3(0.0, 1.12, 0.0)
+	_icon_label.font_size = 28
+	_icon_label.pixel_size = 0.0080
+	_icon_label.position = Vector3(0.0, 1.24, 0.0)
 	add_child(_icon_label)
 
 	_status_label = Label3D.new()
 	_status_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	_status_label.font_size = 24
 	_status_label.pixel_size = 0.0075
-	_status_label.position = Vector3(0.0, 1.38, 0.0)
+	_status_label.position = Vector3(0.0, 1.44, 0.0)
 	_status_label.visible = false
 	add_child(_status_label)
 
@@ -107,26 +104,30 @@ func refresh_from_instance() -> void:
 		return
 
 	var tid: String = tower_instance.get_type_id()
+	var clamped_tier: int = clampi(tower_instance.tier, 1, 4)
 	var letter: String = String(TOWER_LETTERS.get(tid, "?"))
-	var pips: String = "*".repeat(clampi(tower_instance.tier, 1, 4))
+	var pips: String = "*".repeat(clamped_tier)
 	_icon_label.text = "%s [%s]" % [letter, pips]
 
-	var base_col: Color = tower_instance.def.color
-	_base_mat.albedo_color = base_col
+	_base_mesh.mesh = _PlaceholderModels.get_tower_base_mesh(tid, clamped_tier)
+	_top_mesh.mesh = _PlaceholderModels.get_tower_accent_mesh(tid, clamped_tier)
+	_base_mat.albedo_color = Color.WHITE
 
 	if tower_instance.branch == _UpgradeNode.Branch.REVEALED:
 		_top_mat.albedo_color = theme_data.branch_revealed_color
 		_top_mat.emission_enabled = true
-		_top_mat.emission = theme_data.branch_revealed_color * 0.55
+		_top_mat.emission = theme_data.branch_revealed_color * 0.65
 		_icon_label.modulate = Color(0.90, 0.65, 1.0, 1.0)
 	elif tower_instance.branch == _UpgradeNode.Branch.RIGGED:
 		_top_mat.albedo_color = theme_data.branch_rigged_color
 		_top_mat.emission_enabled = true
-		_top_mat.emission = theme_data.branch_rigged_color * 0.55
+		_top_mat.emission = theme_data.branch_rigged_color * 0.65
 		_icon_label.modulate = Color(1.0, 0.78, 0.45, 1.0)
 	else:
-		_top_mat.albedo_color = base_col.lightened(0.2)
-		_top_mat.emission_enabled = false
+		var sig_col: Color = _PlaceholderModels.get_tower_signature_color(tid)
+		_top_mat.albedo_color = sig_col
+		_top_mat.emission_enabled = true
+		_top_mat.emission = sig_col * 0.32
 		_icon_label.modulate = Color.WHITE
 
 
@@ -167,14 +168,14 @@ func update_combat_status() -> void:
 
 func _sync_blocker_meshes() -> void:
 	var count: int = tower_instance.active_blockers.size()
+	var blocker_mesh: ArrayMesh = _PlaceholderModels.get_blocker_mesh(tower_instance.branch)
 	while _blocker_container.get_child_count() < count:
 		var bm := MeshInstance3D.new()
-		var cap := CapsuleMesh.new()
-		cap.radius = 0.16
-		cap.height = 0.45
-		bm.mesh = cap
+		bm.mesh = blocker_mesh
 		var mat := StandardMaterial3D.new()
-		mat.albedo_color = Color(0.75, 0.65, 0.95, 1.0)
+		mat.vertex_color_use_as_albedo = true
+		mat.roughness = 0.5
+		mat.albedo_color = Color.WHITE
 		bm.material_override = mat
 		_blocker_container.add_child(bm)
 	while _blocker_container.get_child_count() > count:
@@ -185,8 +186,9 @@ func _sync_blocker_meshes() -> void:
 	for i in range(count):
 		var b_info: Dictionary = tower_instance.active_blockers[i]
 		var b_hex: Vector2i = b_info.get("hex", tower_instance.hex) as Vector2i
-		var b_world: Vector3 = _HexMath.hex_to_world(b_hex, 0.25)
+		var b_world: Vector3 = _HexMath.hex_to_world(b_hex, 0.08)
 		var angle: float = float(i) * TAU / float(maxi(1, count))
 		var offset := Vector3(cos(angle) * 0.28, 0.0, sin(angle) * 0.28)
-		var node: Node3D = _blocker_container.get_child(i) as Node3D
+		var node: MeshInstance3D = _blocker_container.get_child(i) as MeshInstance3D
+		node.mesh = blocker_mesh
 		node.global_position = b_world + offset

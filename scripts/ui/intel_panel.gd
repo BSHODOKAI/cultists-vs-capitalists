@@ -8,8 +8,11 @@ class_name IntelPanel
 extends PanelContainer
 
 const _HexMath = preload("res://scripts/core/hex_math.gd")
+const _PlaceholderIcons = preload("res://scripts/ui/placeholder_icons.gd")
 
+var _faction_icon: TextureRect
 var _header_label: Label
+var _unit_icons_row: HBoxContainer
 var _categories_label: Label
 var _boss_label: Label
 var _stars_banner: Label
@@ -37,11 +40,26 @@ func _build_ui() -> void:
 	vbox.add_theme_constant_override("separation", 6)
 	add_child(vbox)
 
+	var header_hbox := HBoxContainer.new()
+	header_hbox.add_theme_constant_override("separation", 8)
+	vbox.add_child(header_hbox)
+
+	_faction_icon = TextureRect.new()
+	_faction_icon.custom_minimum_size = Vector2(28.0, 28.0)
+	_faction_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	header_hbox.add_child(_faction_icon)
+
 	_header_label = Label.new()
 	_header_label.text = "WAVE INTEL"
+	_header_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_header_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_header_label.add_theme_font_size_override("font_size", 15)
 	_header_label.add_theme_color_override("font_color", Color(0.65, 0.90, 1.0))
-	vbox.add_child(_header_label)
+	header_hbox.add_child(_header_label)
+
+	_unit_icons_row = HBoxContainer.new()
+	_unit_icons_row.add_theme_constant_override("separation", 4)
+	vbox.add_child(_unit_icons_row)
 
 	_categories_label = Label.new()
 	_categories_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -105,9 +123,31 @@ func refresh() -> void:
 		return
 
 	var intel: Dictionary = roster.intel
-	var fac_str: String = String(intel.get("active_faction", roster.active_faction)).replace("_", " ").to_upper()
+	var raw_fac: String = String(intel.get("active_faction", roster.active_faction))
+	var fac_str: String = raw_fac.replace("_", " ").to_upper()
 	var logo_str: String = String(intel.get("active_faction_logo", ""))
+	if _faction_icon != null:
+		_faction_icon.texture = _PlaceholderIcons.get_faction_icon(raw_fac, 28)
 	_header_label.text = "INTEL: WAVE %d — %s (%s)" % [roster.wave_number, fac_str, logo_str]
+
+	if _unit_icons_row != null:
+		for c: Node in _unit_icons_row.get_children():
+			_unit_icons_row.remove_child(c)
+			c.queue_free()
+		for entry: Dictionary in roster.entries:
+			var uid: String = String(entry.get("unit_id", ""))
+			if not uid.is_empty():
+				var u_icon := TextureRect.new()
+				u_icon.custom_minimum_size = Vector2(28.0, 28.0)
+				u_icon.texture = _PlaceholderIcons.get_unit_icon(uid, raw_fac, 28)
+				u_icon.tooltip_text = uid.replace("_", " ").capitalize()
+				_unit_icons_row.add_child(u_icon)
+		if roster.is_boss_wave and not roster.boss_id.is_empty():
+			var b_icon := TextureRect.new()
+			b_icon.custom_minimum_size = Vector2(32.0, 32.0)
+			b_icon.texture = _PlaceholderIcons.get_unit_icon(roster.boss_id, raw_fac, 32)
+			b_icon.tooltip_text = roster.boss_display_name
+			_unit_icons_row.add_child(b_icon)
 
 	var cat_text: String = String(intel.get("unit_categories_text", ""))
 	if cat_text.is_empty():

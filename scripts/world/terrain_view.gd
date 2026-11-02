@@ -1,24 +1,31 @@
 ## TerrainView
 ##
-## Lazily renders hex terrain chunks around the camera using one MultiMeshInstance3D
-## per terrain chunk. Draws pointy-top hex prisms in 3 colors/heights:
-##   • Buildable terrain (and highlighted build-zone hexes within distance 2 of path)
-##   • Blocked terrain (raised rubble/dumpster hex prisms)
-##   • Path hexes (recessed dark road prisms)
+## Lazily renders hex terrain chunks around the camera using the active [BiomeData]
+## (defaulting to the "urban_center" biome):
+##   • Unbuildable (BLOCKED) tiles -> Skyscrapers (4 high-rise architectural variants)
+##   • Buildable tiles -> Urban Districts (Commercial, Industrial, Residential, Plaza)
+##   • Tower-occupied tiles -> Cleared Street Lots (buildings removed, leaving street,
+##     curb, crosswalk, manhole, and perimeter street furniture beneath the tower)
+##   • Path tiles -> Recessed urban avenue roadway
 class_name TerrainView
 extends Node3D
 
 const _C = preload("res://scripts/path/path_constants.gd")
 const _HexMath = preload("res://scripts/core/hex_math.gd")
 const _Theme = preload("res://scripts/core/visual_theme_data.gd")
+const _BiomeLibrary = preload("res://scripts/world/biome_library.gd")
+const _BiomeTileModels = preload("res://scripts/world/biome_tile_models.gd")
 
 @export var theme_data: VisualThemeData
+@export var biome_data: BiomeData
 
-## Maps chunk_coord (Vector2i) -> MultiMeshInstance3D
+## Maps chunk_coord (Vector2i) -> Node3D container holding MultiMeshInstance3D layers
 var _chunk_nodes: Dictionary = {}
-var _prism_mesh: ArrayMesh
 var _chunk_material: StandardMaterial3D
+var _road_material: StandardMaterial3D
 var _last_center_chunk: Vector2i = Vector2i(999999, 999999)
+var is_build_mode_dimmed: bool = false
+const BUILD_MODE_TILESET_ALPHA: float = 0.45
 
 
 func _ready() -> void:
@@ -26,19 +33,64 @@ func _ready() -> void:
 		theme_data = load("res://data/visual_theme.tres") as VisualThemeData
 	if theme_data == null:
 		theme_data = _Theme.new()
+	if biome_data == null:
+		biome_data = _BiomeLibrary.get_default_biome()
 
-	_prism_mesh = _HexMath.build_hex_prism_mesh(_HexMath.HEX_SIZE * 0.95, 1.0)
 	_chunk_material = StandardMaterial3D.new()
 	_chunk_material.vertex_color_use_as_albedo = true
-	_chunk_material.roughness = 0.88
+	_chunk_material.roughness = 0.72
+
+	_road_material = StandardMaterial3D.new()
+	_road_material.vertex_color_use_as_albedo = true
+	_road_material.roughness = 0.65
+
+
+## Lowers the opacity of urban buildings/skyscrapers while in tower-placement build mode
+## so the construction ghost and hex grid are effortless to see.
+func set_build_mode_active(active: bool) -> void:
+	is_build_mode_dimmed = active
+	if _chunk_material == null:
+		return
+	if active:
+		_chunk_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_chunk_material.albedo_color = Color(0.75, 0.80, 0.88, BUILD_MODE_TILESET_ALPHA)
+	else:
+		_chunk_material.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
+		_chunk_material.albedo_color = Color.WHITE
 
 
 func clear_all_chunks() -> void:
-	for mmi: MultiMeshInstance3D in _chunk_nodes.values():
-		if is_instance_valid(mmi):
-			mmi.queue_free()
+	for chunk_node: Node in _chunk_nodes.values():
+		if is_instance_valid(chunk_node):
+			chunk_node.queue_free()
 	_chunk_nodes.clear()
 	_last_center_chunk = Vector2i(999999, 999999)
+
+
+## Returns the active BiomeData (from GameState if available, else local biome_data).
+func get_active_biome() -> BiomeData:
+	var gs: Node = get_node_or_null("/root/GameState")
+	if gs != null and gs.get("active_biome") != null:
+		return gs.get("active_biome") as BiomeData
+	if biome_data == null:
+		biome_data = _BiomeLibrary.get_default_biome()
+	return biome_data
+
+
+## Resolves the exact tile archetype ID for [param hex] given current grid/path/tower state:
+##   • Path hex -> "road_tile"
+##   • Blocked (unbuildable) hex -> skyscraper variant ("skyscraper_*")
+##   • Tower-occupied hex -> cleared street lot ("street_lot_*", buildings removed)
+##   • Open buildable/urban hex -> urban district ("*_district")
+func get_hex_tile_archetype(hex: Vector2i, grid: HexGrid, _pgen: PathGenerator = null) -> String:
+	var b: BiomeData = get_active_biome()
+	if grid.is_path_hex(hex):
+		return "road_tile"
+	if grid.is_blocked(hex):
+		return b.pick_unbuildable_variant(grid.run_seed, hex)
+	if grid.is_tower_occupied(hex):
+		return b.pick_street_lot_variant(grid.run_seed, hex)
+	return b.pick_district_type(grid.run_seed, hex)
 
 
 ## Ensures chunks around [param focus_hex] are generated in HexGrid and rendered,
@@ -78,7 +130,7 @@ func refresh_around_hex(focus_hex: Vector2i, view_radius_chunks: int = 1, force_
 		if not active_chunks.has(existing_cc):
 			to_remove.append(existing_cc)
 	for rem_cc: Vector2i in to_remove:
-		var node: MultiMeshInstance3D = _chunk_nodes[rem_cc] as MultiMeshInstance3D
+		var node: Node = _chunk_nodes[rem_cc] as Node
 		if is_instance_valid(node):
 			node.queue_free()
 		_chunk_nodes.erase(rem_cc)
@@ -92,47 +144,73 @@ func refresh_around_hex(focus_hex: Vector2i, view_radius_chunks: int = 1, force_
 
 func _build_or_update_chunk(chunk_coord: Vector2i, grid: HexGrid, pgen: PathGenerator) -> void:
 	var hexes: Array[Vector2i] = grid.get_chunk_hexes(chunk_coord)
-	var mmi: MultiMeshInstance3D
+	var b: BiomeData = get_active_biome()
+
+	var chunk_root: Node3D
 	if _chunk_nodes.has(chunk_coord) and is_instance_valid(_chunk_nodes[chunk_coord]):
-		mmi = _chunk_nodes[chunk_coord] as MultiMeshInstance3D
+		chunk_root = _chunk_nodes[chunk_coord] as Node3D
+		for child: Node in chunk_root.get_children():
+			chunk_root.remove_child(child)
+			child.queue_free()
 	else:
-		mmi = MultiMeshInstance3D.new()
-		mmi.name = "Chunk_%d_%d" % [chunk_coord.x, chunk_coord.y]
-		mmi.material_override = _chunk_material
-		add_child(mmi)
-		_chunk_nodes[chunk_coord] = mmi
+		chunk_root = Node3D.new()
+		chunk_root.name = "Chunk_%d_%d" % [chunk_coord.x, chunk_coord.y]
+		add_child(chunk_root)
+		_chunk_nodes[chunk_coord] = chunk_root
 
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.use_colors = true
-	mm.mesh = _prism_mesh
-	mm.instance_count = hexes.size()
-
-	for i in range(hexes.size()):
-		var h: Vector2i = hexes[i]
-		var world_p: Vector3 = _HexMath.hex_to_world(h, 0.0)
+	# Group hex instances by (archetype_id, in_zone) so each archetype in the chunk
+	# renders in a single MultiMeshInstance3D draw call.
+	var buckets: Dictionary = {}
+	for h: Vector2i in hexes:
 		var is_path: bool = grid.is_path_hex(h)
 		var is_blk: bool = grid.is_blocked(h) and not is_path
 		var in_zone: bool = pgen.is_in_build_zone(h) and not is_path and not is_blk
+		var archetype_id: String = get_hex_tile_archetype(h, grid, pgen)
+		var bucket_key: String = "%s|%s" % [archetype_id, "1" if in_zone else "0"]
 
-		var height: float = theme_data.hex_prism_height
-		var col: Color = theme_data.buildable_color
-		var y_center: float = -height * 0.5
+		if not buckets.has(bucket_key):
+			buckets[bucket_key] = {
+				"archetype": archetype_id,
+				"in_zone": in_zone,
+				"transforms": [],
+				"colors": [],
+			}
 
-		if is_path:
-			height = theme_data.path_prism_height
-			col = theme_data.path_color
-			y_center = -height * 0.5 - 0.02
-		elif is_blk:
-			height = theme_data.blocked_prism_height
-			col = theme_data.blocked_color
-			y_center = height * 0.5 - 0.08
-		elif in_zone:
-			col = theme_data.buildable_zone_color
+		var world_p: Vector3 = _HexMath.hex_to_world(h, 0.0)
+		var rot_steps: int = 0 if is_path else b.pick_orientation_steps(grid.run_seed, h)
+		var yaw_rad: float = float(rot_steps) * (PI / 3.0)
+		var xform := Transform3D(Basis(Vector3.UP, yaw_rad), world_p)
 
-		var inst_basis := Basis.from_scale(Vector3(1.0, height, 1.0))
-		var xform := Transform3D(inst_basis, Vector3(world_p.x, y_center, world_p.z))
-		mm.set_instance_transform(i, xform)
-		mm.set_instance_color(i, col)
+		var inst_col: Color = Color.WHITE
+		if not is_path and not in_zone and not is_blk:
+			# Subtle dimming for outer urban blocks outside the 2-hex buildable band
+			inst_col = Color(0.80, 0.82, 0.88, 1.0)
 
-	mmi.multimesh = mm
+		var bucket: Dictionary = buckets[bucket_key]
+		(bucket["transforms"] as Array).append(xform)
+		(bucket["colors"] as Array).append(inst_col)
+
+	for bucket_key: String in buckets.keys():
+		var bucket: Dictionary = buckets[bucket_key]
+		var arch_id: String = String(bucket["archetype"])
+		var in_z: bool = bool(bucket["in_zone"])
+		var xforms: Array = bucket["transforms"]
+		var cols: Array = bucket["colors"]
+
+		var mmi := MultiMeshInstance3D.new()
+		mmi.name = "%s_%s" % [arch_id, "zone" if in_z else "outer"]
+		mmi.material_override = _road_material if arch_id == "road_tile" else _chunk_material
+
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_colors = true
+		mm.mesh = _BiomeTileModels.get_tile_mesh(b, arch_id, in_z)
+		mm.instance_count = xforms.size()
+
+		for idx in range(xforms.size()):
+			mm.set_instance_transform(idx, xforms[idx] as Transform3D)
+			mm.set_instance_color(idx, cols[idx] as Color)
+
+		mmi.multimesh = mm
+		chunk_root.add_child(mmi)
+

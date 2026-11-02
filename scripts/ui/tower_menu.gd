@@ -16,6 +16,7 @@ signal menu_toggled(is_open: bool)
 
 ## Group used to find the menu from elsewhere (there is only ever one).
 const GROUP := "tower_menu"
+const _PlaceholderIcons = preload("res://scripts/ui/placeholder_icons.gd")
 
 ## Placement manager whose tower list and selection this menu drives. Auto-found
 ## from its group when left empty.
@@ -302,6 +303,7 @@ func _refresh() -> void:
 			var button := Button.new()
 			button.focus_mode = Control.FOCUS_NONE
 			button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			button.icon = _PlaceholderIcons.get_tower_icon(data.id if not data.id.is_empty() else data.display_name.to_snake_case(), 28)
 			var prefix: String = "\u25b8 " if is_inspected else "   "
 			var active_suffix: String = " [Building]" if is_active else ""
 			button.text = "%s%d. %s   %dc%s" % [prefix, i + 1, data.display_name, data.cost, active_suffix]

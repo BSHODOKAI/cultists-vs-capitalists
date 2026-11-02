@@ -46,9 +46,9 @@ var current_data: TowerData
 ## Size of the built-in box ghost mesh (ignored when [member ghost_mesh] is set).
 @export var ghost_size: Vector3 = Vector3(0.8, 1.0, 0.8)
 ## Tint shown when the hovered cell can be built on.
-@export var valid_color: Color = Color(0.3, 0.9, 0.4, 0.45)
+@export var valid_color: Color = Color(0.3, 0.95, 0.45, 0.88)
 ## Tint shown when the hovered cell is blocked (out of bounds or occupied).
-@export var blocked_color: Color = Color(0.9, 0.3, 0.3, 0.45)
+@export var blocked_color: Color = Color(0.95, 0.3, 0.3, 0.88)
 
 ## Occupied cells: Vector2i(grid_x, grid_z) -> the tower node occupying it.
 var occupied_cells: Dictionary = {}
@@ -251,6 +251,8 @@ func _build_ghost() -> void:
 	_ghost_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_ghost_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	_ghost_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_ghost_material.no_depth_test = true
+	_ghost_material.render_priority = 5
 	_ghost_material.albedo_color = valid_color
 	_ghost_mesh_instance.material_override = _ghost_material
 	_ghost.add_child(_ghost_mesh_instance)

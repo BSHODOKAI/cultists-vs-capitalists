@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="BiomeData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/world/biome_data.gd" id="1_bd"]
+
+[resource]
+script = ExtResource("1_bd")
+id = "urban_center"
+display_name = "Urban Center"
+description = "Dense corporate metropolis of glass skyscrapers, neon-lit commercial avenues, industrial warehouses, tenement blocks, and paved street intersections."
+street_asphalt_color = Color(0.15, 0.16, 0.2, 1)
+sidewalk_curb_color = Color(0.3, 0.33, 0.38, 1)
+build_zone_curb_color = Color(0.32, 0.44, 0.38, 1)
+road_surface_color = Color(0.11, 0.12, 0.16, 1)
+road_marking_color = Color(0.92, 0.76, 0.22, 1)
+skyscraper_glass_color = Color(0.16, 0.22, 0.3, 1)
+skyscraper_frame_color = Color(0.28, 0.32, 0.38, 1)
+window_glow_primary = Color(0.35, 0.88, 1, 1)
+window_glow_secondary = Color(0.98, 0.78, 0.3, 1)
+window_glow_accent = Color(0.95, 0.32, 0.68, 1)
+unbuildable_variants = PackedStringArray("skyscraper_monolith", "skyscraper_stepped", "skyscraper_twin_spire", "skyscraper_helipad")
+district_types = PackedStringArray("commercial_district", "industrial_district", "residential_district", "plaza_district")
+street_lot_variants = PackedStringArray("street_lot_crosswalk", "street_lot_plaza", "street_lot_utility")

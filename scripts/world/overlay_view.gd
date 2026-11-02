@@ -11,12 +11,15 @@ extends Node3D
 
 const _HexMath = preload("res://scripts/core/hex_math.gd")
 const _Theme = preload("res://scripts/core/visual_theme_data.gd")
+const _PlaceholderModels = preload("res://scripts/world/placeholder_models.gd")
 
 @export var theme_data: VisualThemeData
 
 var _hover_root: Node3D
 var _hover_ring: MeshInstance3D
 var _hover_ring_mat: StandardMaterial3D
+var _ghost_base_pad: MeshInstance3D
+var _ghost_base_pad_mat: StandardMaterial3D
 var _ghost_tower_mesh: MeshInstance3D
 var _ghost_tower_mat: StandardMaterial3D
 var _reason_label: Label3D
@@ -59,14 +62,29 @@ func _build_hover_nodes() -> void:
 	add_child(_hover_root)
 
 	_hover_ring = MeshInstance3D.new()
-	_hover_ring.mesh = _ring_mesh
+	_hover_ring.mesh = _HexMath.build_hex_ring_mesh(_HexMath.HEX_SIZE * 0.96, _HexMath.HEX_SIZE * 0.74)
 	_hover_ring.position = Vector3(0.0, 0.04, 0.0)
 	_hover_ring_mat = StandardMaterial3D.new()
 	_hover_ring_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_hover_ring_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_hover_ring_mat.no_depth_test = true
+	_hover_ring_mat.render_priority = 4
 	_hover_ring_mat.albedo_color = theme_data.hover_neutral_color
 	_hover_ring.material_override = _hover_ring_mat
 	_hover_root.add_child(_hover_ring)
+
+	_ghost_base_pad = MeshInstance3D.new()
+	_ghost_base_pad.mesh = _HexMath.build_hex_prism_mesh(_HexMath.HEX_SIZE * 0.74, 0.03)
+	_ghost_base_pad.position = Vector3(0.0, 0.025, 0.0)
+	_ghost_base_pad_mat = StandardMaterial3D.new()
+	_ghost_base_pad_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_ghost_base_pad_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_ghost_base_pad_mat.no_depth_test = true
+	_ghost_base_pad_mat.render_priority = 3
+	_ghost_base_pad_mat.albedo_color = Color(0.20, 0.95, 0.45, 0.65)
+	_ghost_base_pad.material_override = _ghost_base_pad_mat
+	_ghost_base_pad.visible = false
+	_hover_root.add_child(_ghost_base_pad)
 
 	_ghost_tower_mesh = MeshInstance3D.new()
 	var cyl := CylinderMesh.new()
@@ -74,11 +92,14 @@ func _build_hover_nodes() -> void:
 	cyl.bottom_radius = 0.48
 	cyl.height = 0.95
 	_ghost_tower_mesh.mesh = cyl
-	_ghost_tower_mesh.position = Vector3(0.0, 0.48, 0.0)
+	_ghost_tower_mesh.position = Vector3.ZERO
 	_ghost_tower_mat = StandardMaterial3D.new()
 	_ghost_tower_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_ghost_tower_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_ghost_tower_mat.albedo_color = theme_data.hover_valid_color
+	_ghost_tower_mat.vertex_color_use_as_albedo = true
+	_ghost_tower_mat.no_depth_test = true
+	_ghost_tower_mat.render_priority = 5
+	_ghost_tower_mat.albedo_color = Color(0.45, 1.0, 0.62, 0.92)
 	_ghost_tower_mesh.material_override = _ghost_tower_mat
 	_ghost_tower_mesh.visible = false
 	_hover_root.add_child(_ghost_tower_mesh)
@@ -129,9 +150,14 @@ func update_hover(
 	if build_tower != null:
 		var valid: bool = bool(validation.get("ok", false))
 		var reason: String = String(validation.get("reason", ""))
-		var col: Color = theme_data.hover_valid_color if valid else theme_data.hover_invalid_color
-		_hover_ring_mat.albedo_color = col
-		_ghost_tower_mat.albedo_color = col
+		var ring_col: Color = Color(0.20, 1.0, 0.48, 0.96) if valid else Color(1.0, 0.22, 0.25, 0.96)
+		var ghost_col: Color = Color(0.55, 1.0, 0.68, 0.92) if valid else Color(1.0, 0.32, 0.32, 0.90)
+		var pad_col: Color = Color(0.15, 0.88, 0.40, 0.58) if valid else Color(0.92, 0.18, 0.20, 0.58)
+		_hover_ring_mat.albedo_color = ring_col
+		_ghost_base_pad_mat.albedo_color = pad_col
+		_ghost_base_pad.visible = true
+		_ghost_tower_mesh.mesh = _PlaceholderModels.get_tower_ghost_mesh(build_tower.id)
+		_ghost_tower_mat.albedo_color = ghost_col
 		_ghost_tower_mesh.visible = true
 		if not valid and not reason.is_empty():
 			_reason_label.text = _format_rejection_reason(reason)
@@ -141,6 +167,7 @@ func update_hover(
 		_update_range_ring(null, build_tower, hex, true, tower_system)
 	else:
 		_hover_ring_mat.albedo_color = theme_data.hover_neutral_color
+		_ghost_base_pad.visible = false
 		_ghost_tower_mesh.visible = false
 		_reason_label.visible = false
 		_update_range_ring(selected_tower, null, hex, false, tower_system)

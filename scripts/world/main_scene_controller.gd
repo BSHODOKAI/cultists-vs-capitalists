@@ -238,6 +238,8 @@ func _refresh_hover_and_overlays() -> void:
 	var sel_t: TowerInstance = gs.get("selected_placed_tower") as TowerInstance
 
 	var val: Dictionary = gs.call("validate_placement", h_hex, build_td) if build_td != null else {"ok": true, "reason": ""}
+	if terrain_view != null:
+		terrain_view.set_build_mode_active(build_td != null)
 	overlay_view.update_hover(h_hex, has_h, build_td, val, sel_t, tsys)
 	if pgen != null:
 		overlay_view.refresh_path_overlays(pgen)
@@ -298,9 +300,9 @@ func _on_tower_damaged_enemy(
 	var tv: TowerView = tower_factory.views[tower_id] as TowerView
 	var ev: EnemyMoverView = enemy_pool.active_views[unit_id] as EnemyMoverView
 	if is_instance_valid(tv) and is_instance_valid(ev):
-		var from_p: Vector3 = tv.global_position + Vector3(0.0, 0.7, 0.0)
-		var to_p: Vector3 = ev.global_position + Vector3(0.0, 0.5, 0.0)
-		effects_view.spawn_beam(from_p, to_p, damage_tag, 0.10, 0.06)
+		var from_p: Vector3 = tv.global_position + Vector3(0.0, 0.72, 0.0)
+		var to_p: Vector3 = ev.global_position + Vector3(0.0, 0.50, 0.0)
+		effects_view.spawn_projectile(from_p, to_p, _tower_type, damage_tag)
 
 
 func _on_currency_earned(currency: int, amount: int, _reason: String) -> void:

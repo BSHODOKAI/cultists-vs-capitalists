@@ -13,6 +13,7 @@ signal tower_inspected(tower_def: TowerData)
 signal menu_toggled(is_open: bool)
 
 const _TowerLibrary = preload("res://scripts/towers/tower_library.gd")
+const _PlaceholderIcons = preload("res://scripts/ui/placeholder_icons.gd")
 
 const CLOSED_TOP_OFFSET: float = -66.0
 const OPEN_TOP_OFFSET: float = -340.0
@@ -28,6 +29,7 @@ var _root_vbox: VBoxContainer
 var _menu_drawer: PanelContainer
 var _tower_grid: GridContainer
 
+var _detail_icon_rect: TextureRect
 var _detail_title_label: Label
 var _detail_cost_label: Label
 var _detail_desc_label: Label
@@ -38,6 +40,7 @@ var _close_menu_button: Button
 
 var _bottom_bar: HBoxContainer
 var _toggle_menu_button: Button
+var _active_build_icon: TextureRect
 var _active_build_label: Label
 var _cancel_build_button: Button
 
@@ -107,6 +110,7 @@ func _build_ui() -> void:
 		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		btn.focus_mode = Control.FOCUS_NONE
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		btn.icon = _PlaceholderIcons.get_tower_icon(_towers[i].id, 34)
 		btn.pressed.connect(_on_tower_button_pressed.bind(i))
 		_tower_grid.add_child(btn)
 		_buttons.append(btn)
@@ -125,6 +129,12 @@ func _build_ui() -> void:
 	var header_row := HBoxContainer.new()
 	header_row.add_theme_constant_override("separation", 12)
 	detail_vbox.add_child(header_row)
+
+	_detail_icon_rect = TextureRect.new()
+	_detail_icon_rect.name = "DetailIconRect"
+	_detail_icon_rect.custom_minimum_size = Vector2(44.0, 44.0)
+	_detail_icon_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	header_row.add_child(_detail_icon_rect)
 
 	_detail_title_label = Label.new()
 	_detail_title_label.name = "DetailTitleLabel"
@@ -193,6 +203,13 @@ func _build_ui() -> void:
 	_toggle_menu_button.focus_mode = Control.FOCUS_NONE
 	_toggle_menu_button.pressed.connect(toggle_menu)
 	_bottom_bar.add_child(_toggle_menu_button)
+
+	_active_build_icon = TextureRect.new()
+	_active_build_icon.name = "ActiveBuildIcon"
+	_active_build_icon.custom_minimum_size = Vector2(34.0, 34.0)
+	_active_build_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_active_build_icon.visible = false
+	_bottom_bar.add_child(_active_build_icon)
 
 	_active_build_label = Label.new()
 	_active_build_label.name = "ActiveBuildLabel"
@@ -347,6 +364,8 @@ func refresh() -> void:
 	if inspected_tower != null and _detail_title_label != null:
 		var insp_cost: int = tsys.get_tower_build_cost(inspected_tower) if tsys != null else inspected_tower.cost
 		var can_afford: bool = (gs == null or cur_offerings >= insp_cost)
+		if _detail_icon_rect != null:
+			_detail_icon_rect.texture = _PlaceholderIcons.get_tower_icon(inspected_tower.id, 44)
 		_detail_title_label.text = inspected_tower.display_name
 		_detail_cost_label.text = "Cost: %d Offerings%s" % [
 			insp_cost,
@@ -370,6 +389,9 @@ func refresh() -> void:
 	if _active_build_label != null:
 		if selected != null:
 			var sel_cost: int = tsys.get_tower_build_cost(selected) if tsys != null else selected.cost
+			if _active_build_icon != null:
+				_active_build_icon.texture = _PlaceholderIcons.get_tower_icon(selected.id, 34)
+				_active_build_icon.visible = true
 			_active_build_label.text = "BUILDING: %s (%d Off) — %s" % [
 				selected.display_name,
 				sel_cost,
@@ -378,6 +400,8 @@ func refresh() -> void:
 			_active_build_label.add_theme_color_override("font_color", Color(0.78, 1.0, 0.84))
 			_cancel_build_button.visible = true
 		else:
+			if _active_build_icon != null:
+				_active_build_icon.visible = false
 			_active_build_label.text = "Press [B] to open the Build Tower Menu, inspect tower descriptions, and select one to build."
 			_active_build_label.add_theme_color_override("font_color", Color(0.76, 0.80, 0.88))
 			_cancel_build_button.visible = false

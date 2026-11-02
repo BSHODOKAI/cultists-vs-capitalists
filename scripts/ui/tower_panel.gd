@@ -9,7 +9,9 @@ class_name TowerPanel
 extends PanelContainer
 
 const _UpgradeNode = preload("res://scripts/towers/upgrade_node.gd")
+const _PlaceholderIcons = preload("res://scripts/ui/placeholder_icons.gd")
 
+var _icon_rect: TextureRect
 var _title_label: Label
 var _stats_label: Label
 var _tier_container: VBoxContainer
@@ -40,11 +42,23 @@ func _build_ui() -> void:
 	vbox.add_theme_constant_override("separation", 8)
 	add_child(vbox)
 
+	var title_hbox := HBoxContainer.new()
+	title_hbox.add_theme_constant_override("separation", 8)
+	vbox.add_child(title_hbox)
+
+	_icon_rect = TextureRect.new()
+	_icon_rect.custom_minimum_size = Vector2(38.0, 38.0)
+	_icon_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_icon_rect.visible = false
+	title_hbox.add_child(_icon_rect)
+
 	_title_label = Label.new()
 	_title_label.text = "No Tower Selected"
+	_title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_title_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_title_label.add_theme_font_size_override("font_size", 16)
 	_title_label.add_theme_color_override("font_color", Color(0.95, 0.88, 1.0))
-	vbox.add_child(_title_label)
+	title_hbox.add_child(_title_label)
 
 	_stats_label = Label.new()
 	_stats_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -113,6 +127,9 @@ func refresh() -> void:
 		var build_td: TowerData = gs.get("selected_build_tower") as TowerData
 		if build_td != null:
 			var build_cost: int = tsys.get_tower_build_cost(build_td) if tsys != null else build_td.cost
+			if _icon_rect != null:
+				_icon_rect.texture = _PlaceholderIcons.get_tower_icon(build_td.id, 38)
+				_icon_rect.visible = true
 			_title_label.text = "Building: %s (%d Off)" % [build_td.display_name, build_cost]
 			var upg_text: String = build_td.get_upgrade_preview_summary()
 			var details: String = "%s\n%s" % [
@@ -127,6 +144,8 @@ func refresh() -> void:
 				_sep.visible = false
 			_penance_button.visible = false
 		else:
+			if _icon_rect != null:
+				_icon_rect.visible = false
 			_title_label.text = "Click a Tower on the Hex Grid"
 			_stats_label.text = "Select a placed tower to inspect stats, upgrade its tech tree, perform Rigged maintenance, or sell.\nPress [B] to open the Build Tower Menu."
 			if _sep != null:
@@ -147,6 +166,9 @@ func refresh() -> void:
 	elif inst.is_rigged():
 		branch_str = "RIGGED (Jank %d%%)" % inst.jank
 
+	if _icon_rect != null:
+		_icon_rect.texture = _PlaceholderIcons.get_tower_icon(inst.get_type_id(), 38)
+		_icon_rect.visible = true
 	_title_label.text = "%s (T%d - %s)" % [inst.def.display_name, inst.tier, branch_str]
 
 	var eff_range: int = tsys.get_effective_tower_range_hexes(inst)

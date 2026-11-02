@@ -15,6 +15,7 @@ extends Node3D
 const _C = preload("res://scripts/path/path_constants.gd")
 const _HexMath = preload("res://scripts/core/hex_math.gd")
 const _Theme = preload("res://scripts/core/visual_theme_data.gd")
+const _PlaceholderModels = preload("res://scripts/world/placeholder_models.gd")
 
 var unit: CombatUnit
 var theme_data: VisualThemeData
@@ -53,6 +54,7 @@ func _build_nodes() -> void:
 	_occlusion_mat.albedo_color = Color(1.0, 0.25, 0.65, 0.28)
 
 	_body_mat = StandardMaterial3D.new()
+	_body_mat.vertex_color_use_as_albedo = true
 	_body_mat.roughness = 0.45
 	_body_mat.next_pass = _occlusion_mat
 
@@ -112,15 +114,14 @@ func bind_unit(p_unit: CombatUnit, p_theme: VisualThemeData) -> void:
 	elif unit.is_supply_pod:
 		fac_col = Color(0.35, 0.90, 1.0, 1.0)
 
-	_body_mat.albedo_color = fac_col
+	_body_mat.albedo_color = Color.WHITE
 	_occlusion_mat.albedo_color = Color(fac_col.r, fac_col.g, fac_col.b, 0.26)
+	_body_mesh.mesh = _PlaceholderModels.get_unit_mesh_for_combat_unit(unit, fac_col)
 
 	if unit.is_boss():
-		_body_mesh.mesh = _boss_box_mesh
 		_info_label.position = Vector3(0.0, 1.35, 0.0)
 		_status_label.position = Vector3(0.0, 1.62, 0.0)
 	else:
-		_body_mesh.mesh = _capsule_mesh
 		_info_label.position = Vector3(0.0, 0.98, 0.0)
 		_status_label.position = Vector3(0.0, 1.20, 0.0)
 
@@ -138,12 +139,11 @@ func update_visual(path_hexes: Array[Vector2i], prev_path_pos: float, alpha: flo
 	var interp_pos: float = lerpf(prev_path_pos, unit.path_position, alpha)
 	var is_air: bool = unit.is_air()
 	var altitude: float = _HexMath.AIR_ALTITUDE if is_air else 0.0
-	var body_half_h: float = 0.48 if unit.is_boss() else 0.34
 
 	var ground_world: Vector3 = _HexMath.path_position_to_world(path_hexes, interp_pos, 0.0)
 	global_position = ground_world
 
-	_body_mesh.position = Vector3(0.0, altitude + body_half_h, 0.0)
+	_body_mesh.position = Vector3(0.0, altitude, 0.0)
 	_shadow_blob.visible = is_air
 	if is_air:
 		_shadow_blob.position = Vector3(0.0, 0.02, 0.0)

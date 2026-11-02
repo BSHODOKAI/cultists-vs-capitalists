@@ -23,6 +23,7 @@ const _WaveRoster = preload("res://scripts/director/wave_roster.gd")
 const _CoverageTracker = preload("res://scripts/director/coverage_tracker.gd")
 const _UnitLibrary = preload("res://scripts/units/unit_library.gd")
 const _UnitLeveling = preload("res://scripts/units/unit_leveling.gd")
+const _BiomeLibrary = preload("res://scripts/world/biome_library.gd")
 
 enum RunState {
 	RUN_SETUP = 0,
@@ -72,6 +73,7 @@ signal tower_maintained(tower: TowerInstance)
 signal selected_tower_changed(tower: TowerInstance)
 signal build_mode_changed(tower_def: TowerData)
 signal camera_focus_requested(world_pos: Vector3, label: String)
+signal biome_changed(biome: BiomeData)
 
 # --- Core Systems (RefCounted pure logic) ------------------------------------
 var hex_grid: HexGrid
@@ -89,6 +91,8 @@ var pending_seed_override: int = -1
 var current_wave: int = 0
 var current_interval: int = 1
 var active_faction: String = "swarm_syndicate"
+var active_biome_id: String = _BiomeLibrary.DEFAULT_BIOME_ID
+var active_biome: BiomeData = null
 var max_lives: int = _C.STARTING_LIVES
 var god_mode: bool = false
 var auto_start_waves: bool = false
@@ -166,6 +170,13 @@ var corruption: int:
 			corruption_changed.emit(tower_system.corruption)
 
 
+## Switches the active map biome by ID and emits [signal biome_changed].
+func set_biome(biome_id: String) -> void:
+	active_biome_id = biome_id if not biome_id.is_empty() else _BiomeLibrary.DEFAULT_BIOME_ID
+	active_biome = _BiomeLibrary.get_biome(active_biome_id)
+	biome_changed.emit(active_biome)
+
+
 # --- FSM Transitions ---------------------------------------------------------
 
 static func is_valid_transition(from_state: int, to_state: int) -> bool:
@@ -218,6 +229,8 @@ func start_new_run(seed_val: int = -1) -> void:
 	prev_unit_positions.clear()
 	selected_build_tower = null
 	selected_placed_tower = null
+	if active_biome == null or active_biome.id != active_biome_id:
+		set_biome(active_biome_id)
 	locked_roster = null
 	_spawn_cursor = 0
 	_all_scheduled_spawned = false

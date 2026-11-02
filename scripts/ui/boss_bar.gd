@@ -6,6 +6,7 @@ class_name BossBar
 extends PanelContainer
 
 const _C = preload("res://scripts/path/path_constants.gd")
+const _PlaceholderIcons = preload("res://scripts/ui/placeholder_icons.gd")
 
 const DAMAGE_TAG_LABELS: Dictionary = {
 	_C.DamageTag.KINETIC: "KINETIC",
@@ -15,6 +16,7 @@ const DAMAGE_TAG_LABELS: Dictionary = {
 	_C.DamageTag.ELECTRIC: "ELECTRIC",
 }
 
+var _boss_icon: TextureRect
 var _title_label: Label
 var _hp_bar: ProgressBar
 var _details_label: Label
@@ -35,9 +37,19 @@ func _build_ui() -> void:
 	style.set_content_margin_all(8)
 	add_theme_stylebox_override("panel", style)
 
+	var hbox := HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 10)
+	add_child(hbox)
+
+	_boss_icon = TextureRect.new()
+	_boss_icon.custom_minimum_size = Vector2(44.0, 44.0)
+	_boss_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	hbox.add_child(_boss_icon)
+
 	var vbox := VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	vbox.add_theme_constant_override("separation", 4)
-	add_child(vbox)
+	hbox.add_child(vbox)
 
 	_title_label = Label.new()
 	_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -68,6 +80,8 @@ func update_from_units(units: Array[CombatUnit]) -> void:
 		return
 
 	visible = true
+	if _boss_icon != null:
+		_boss_icon.texture = _PlaceholderIcons.get_unit_icon(boss.unit_type_id, boss.faction, 44)
 	_hp_bar.max_value = maxf(1.0, boss.max_hp)
 	_hp_bar.value = clampf(boss.hp, 0.0, boss.max_hp)
 	_title_label.text = "%s — %d / %d HP" % [boss.unit_name.to_upper(), ceili(boss.hp), ceili(boss.max_hp)]

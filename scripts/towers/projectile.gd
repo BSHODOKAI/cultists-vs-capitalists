@@ -26,7 +26,21 @@ var _age: float = 0.0
 var _spent: bool = false
 
 
+const _PlaceholderModels = preload("res://scripts/world/placeholder_models.gd")
+
 func _ready() -> void:
+	var mesh_inst := get_node_or_null("Mesh") as MeshInstance3D
+	if mesh_inst != null:
+		var dtag: int = 0
+		if effect == TowerData.Effect.BURN:
+			dtag = 1
+		elif effect == TowerData.Effect.SLOW:
+			dtag = 4
+		mesh_inst.mesh = _PlaceholderModels.get_projectile_mesh("hexed_nail_gun" if dtag == 0 else "", dtag)
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.vertex_color_use_as_albedo = true
+		mesh_inst.material_override = mat
 	var hitbox := get_node_or_null("Hitbox") as Area3D
 	if hitbox != null:
 		hitbox.body_entered.connect(_on_body_entered)
