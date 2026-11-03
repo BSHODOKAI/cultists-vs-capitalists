@@ -1,4 +1,4 @@
-[gd_scene load_steps=17 format=3]
+[gd_scene load_steps=18 format=3]
 
 [ext_resource type="Script" path="res://scripts/world/main_scene_controller.gd" id="1_main"]
 [ext_resource type="Script" path="res://scripts/world/terrain_view.gd" id="2_terrain"]
@@ -16,6 +16,7 @@
 [ext_resource type="Script" path="res://scripts/ui/game_over_screen.gd" id="14_gameover"]
 [ext_resource type="Script" path="res://scripts/ui/debug_panel.gd" id="15_debug"]
 [ext_resource type="Script" path="res://scripts/ui/in_game_menu.gd" id="16_ingamemenu"]
+[ext_resource type="Script" path="res://scripts/audio/sound_manager.gd" id="17_soundmgr"]
 
 [sub_resource type="Environment" id="Environment_main"]
 background_mode = 1
@@ -169,3 +170,6 @@ script = ExtResource("16_ingamemenu")
 
 [node name="DebugPanel" type="CanvasLayer" parent="."]
 script = ExtResource("15_debug")
+
+[node name="SoundManager" type="Node" parent="."]
+script = ExtResource("17_soundmgr")

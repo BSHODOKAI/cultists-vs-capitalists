@@ -116,14 +116,14 @@ func is_operational() -> bool:
 ## Attempts to apply an enemy disable or conversion effect; blocked if protected by server_rack_altar.
 func apply_enemy_disable(
 	duration: float,
-	convert: bool = false,
+	is_conversion: bool = false,
 	p_converter_unit_id: int = -1,
 	p_speed_aura_pct: float = 0.20,
 	p_cleanse_cost_ratio: float = 0.50
 ) -> bool:
 	if protected_from_enemies:
 		return false
-	if convert:
+	if is_conversion:
 		converted_by_enemy = true
 		conversion_timer = maxf(conversion_timer, duration)
 		converter_unit_id = p_converter_unit_id

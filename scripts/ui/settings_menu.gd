@@ -13,19 +13,24 @@ extends PanelContainer
 signal closed
 signal display_settings_changed(settings: DisplaySettings)
 signal display_settings_reverted(settings: DisplaySettings)
+signal audio_settings_changed(settings: AudioSettings)
 
 const _DisplaySettings = preload("res://scripts/core/display_settings.gd")
+const _AudioSettings = preload("res://scripts/audio/audio_settings.gd")
 const CONFIRM_TIMEOUT_SECONDS: float = 5.0
 
 ## Committed (active) display settings.
 var display_settings: DisplaySettings = _DisplaySettings.new()
 ## Staged settings modified by the dropdowns before the user clicks Apply.
 var pending_settings: DisplaySettings = _DisplaySettings.new()
+## Active audio settings (Background Audio 0..100 and FX Audio 0..100, 0 = muted).
+var audio_settings: AudioSettings = _AudioSettings.new()
 
 var _screen_size_override: Vector2i = Vector2i.ZERO
 var _revert_snapshot: Dictionary = {}
 var _confirm_active: bool = false
 var _confirm_remaining: float = 0.0
+var _updating_audio_ui: bool = false
 
 var _aspect_ratio_row: HBoxContainer
 var _aspect_ratio_select: OptionButton
@@ -34,6 +39,12 @@ var _resolution_select: OptionButton
 var _window_mode_row: HBoxContainer
 var _window_mode_select: OptionButton
 var _active_status_label: Label
+var _background_audio_row: HBoxContainer
+var _background_audio_slider: HSlider
+var _background_audio_value_label: Label
+var _fx_audio_row: HBoxContainer
+var _fx_audio_slider: HSlider
+var _fx_audio_value_label: Label
 var _button_row: HBoxContainer
 var _apply_button: Button
 var _back_button: Button
@@ -52,6 +63,8 @@ func _ready() -> void:
 	_build_ui()
 	display_settings.load_or_detect(_screen_size_override)
 	pending_settings.restore_snapshot(display_settings.to_snapshot())
+	audio_settings.load_or_default()
+	audio_settings.apply_active(false)
 	refresh_options()
 	display_settings.apply_to_window(get_window(), false)
 
@@ -70,6 +83,12 @@ func _build_ui() -> void:
 		_window_mode_row = get_node_or_null("VBox/WindowModeRow") as HBoxContainer
 		_window_mode_select = get_node_or_null("VBox/WindowModeRow/WindowModeSelect") as OptionButton
 		_active_status_label = get_node_or_null("VBox/ActiveStatusLabel") as Label
+		_background_audio_row = get_node_or_null("VBox/BackgroundAudioRow") as HBoxContainer
+		_background_audio_slider = get_node_or_null("VBox/BackgroundAudioRow/BackgroundAudioSlider") as HSlider
+		_background_audio_value_label = get_node_or_null("VBox/BackgroundAudioRow/BackgroundAudioValueLabel") as Label
+		_fx_audio_row = get_node_or_null("VBox/FxAudioRow") as HBoxContainer
+		_fx_audio_slider = get_node_or_null("VBox/FxAudioRow/FxAudioSlider") as HSlider
+		_fx_audio_value_label = get_node_or_null("VBox/FxAudioRow/FxAudioValueLabel") as Label
 		_button_row = get_node_or_null("VBox/ButtonRow") as HBoxContainer
 		_apply_button = get_node_or_null("VBox/ButtonRow/ApplyButton") as Button
 		_back_button = get_node_or_null("VBox/ButtonRow/BackButton") as Button
@@ -173,6 +192,79 @@ func _build_ui() -> void:
 	_window_mode_select.custom_minimum_size = Vector2(0.0, 34.0)
 	_window_mode_row.add_child(_window_mode_select)
 
+	# Audio Settings Section (0..100 scale, 0 = Muted)
+	var audio_sep := HSeparator.new()
+	audio_sep.name = "AudioSeparator"
+	vbox.add_child(audio_sep)
+
+	var audio_header := Label.new()
+	audio_header.name = "AudioHeader"
+	audio_header.text = "Audio"
+	audio_header.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	audio_header.add_theme_font_size_override("font_size", 14)
+	audio_header.add_theme_color_override("font_color", Color(0.68, 0.72, 0.82, 1.0))
+	vbox.add_child(audio_header)
+
+	# Background Audio Row
+	_background_audio_row = HBoxContainer.new()
+	_background_audio_row.name = "BackgroundAudioRow"
+	_background_audio_row.add_theme_constant_override("separation", 12)
+	vbox.add_child(_background_audio_row)
+
+	var bg_label := Label.new()
+	bg_label.name = "BackgroundAudioLabel"
+	bg_label.text = "Background Audio:"
+	bg_label.custom_minimum_size = Vector2(140.0, 0.0)
+	_background_audio_row.add_child(bg_label)
+
+	_background_audio_slider = HSlider.new()
+	_background_audio_slider.name = "BackgroundAudioSlider"
+	_background_audio_slider.min_value = float(_AudioSettings.MIN_VOLUME_SCALE)
+	_background_audio_slider.max_value = float(_AudioSettings.MAX_VOLUME_SCALE)
+	_background_audio_slider.step = 1.0
+	_background_audio_slider.value = float(_AudioSettings.DEFAULT_BACKGROUND_VOLUME)
+	_background_audio_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_background_audio_slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_background_audio_slider.custom_minimum_size = Vector2(140.0, 24.0)
+	_background_audio_row.add_child(_background_audio_slider)
+
+	_background_audio_value_label = Label.new()
+	_background_audio_value_label.name = "BackgroundAudioValueLabel"
+	_background_audio_value_label.text = "100%"
+	_background_audio_value_label.custom_minimum_size = Vector2(88.0, 0.0)
+	_background_audio_value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_background_audio_row.add_child(_background_audio_value_label)
+
+	# FX Audio Row
+	_fx_audio_row = HBoxContainer.new()
+	_fx_audio_row.name = "FxAudioRow"
+	_fx_audio_row.add_theme_constant_override("separation", 12)
+	vbox.add_child(_fx_audio_row)
+
+	var fx_label := Label.new()
+	fx_label.name = "FxAudioLabel"
+	fx_label.text = "FX Audio:"
+	fx_label.custom_minimum_size = Vector2(140.0, 0.0)
+	_fx_audio_row.add_child(fx_label)
+
+	_fx_audio_slider = HSlider.new()
+	_fx_audio_slider.name = "FxAudioSlider"
+	_fx_audio_slider.min_value = float(_AudioSettings.MIN_VOLUME_SCALE)
+	_fx_audio_slider.max_value = float(_AudioSettings.MAX_VOLUME_SCALE)
+	_fx_audio_slider.step = 1.0
+	_fx_audio_slider.value = float(_AudioSettings.DEFAULT_FX_VOLUME)
+	_fx_audio_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_fx_audio_slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_fx_audio_slider.custom_minimum_size = Vector2(140.0, 24.0)
+	_fx_audio_row.add_child(_fx_audio_slider)
+
+	_fx_audio_value_label = Label.new()
+	_fx_audio_value_label.name = "FxAudioValueLabel"
+	_fx_audio_value_label.text = "100%"
+	_fx_audio_value_label.custom_minimum_size = Vector2(88.0, 0.0)
+	_fx_audio_value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_fx_audio_row.add_child(_fx_audio_value_label)
+
 	# 5-second Confirmation Box (hidden until Apply is pressed)
 	_confirm_box = PanelContainer.new()
 	_confirm_box.name = "ConfirmBox"
@@ -249,6 +341,10 @@ func _connect_ui_signals() -> void:
 		_resolution_select.item_selected.connect(_on_resolution_selected)
 	if _window_mode_select != null and not _window_mode_select.item_selected.is_connected(_on_window_mode_selected):
 		_window_mode_select.item_selected.connect(_on_window_mode_selected)
+	if _background_audio_slider != null and not _background_audio_slider.value_changed.is_connected(_on_background_audio_slider_changed):
+		_background_audio_slider.value_changed.connect(_on_background_audio_slider_changed)
+	if _fx_audio_slider != null and not _fx_audio_slider.value_changed.is_connected(_on_fx_audio_slider_changed):
+		_fx_audio_slider.value_changed.connect(_on_fx_audio_slider_changed)
 	if _apply_button != null and not _apply_button.pressed.is_connected(_on_apply_pressed):
 		_apply_button.pressed.connect(_on_apply_pressed)
 	if _back_button != null and not _back_button.pressed.is_connected(_on_back_pressed):
@@ -267,6 +363,7 @@ func refresh_options() -> void:
 	_populate_aspect_ratios()
 	_populate_resolutions()
 	_populate_window_modes()
+	_refresh_audio_controls()
 	_update_active_status_label()
 	_update_controls_interactivity()
 
@@ -488,3 +585,54 @@ func get_available_resolutions() -> Array[Vector2i]:
 
 func get_available_aspect_ratios() -> PackedStringArray:
 	return _available_aspects.duplicate()
+
+
+# --- Audio Volume Controls (0..100 scale, 0 = Muted) -------------------------
+
+func _refresh_audio_controls() -> void:
+	if audio_settings == null:
+		return
+	_updating_audio_ui = true
+	if _background_audio_slider != null:
+		_background_audio_slider.value = float(audio_settings.background_volume)
+	if _background_audio_value_label != null:
+		_background_audio_value_label.text = _AudioSettings.format_scale_label(audio_settings.background_volume)
+	if _fx_audio_slider != null:
+		_fx_audio_slider.value = float(audio_settings.fx_volume)
+	if _fx_audio_value_label != null:
+		_fx_audio_value_label.text = _AudioSettings.format_scale_label(audio_settings.fx_volume)
+	_updating_audio_ui = false
+
+
+func _on_background_audio_slider_changed(value: float) -> void:
+	if _updating_audio_ui:
+		return
+	set_background_volume(roundi(value))
+
+
+func _on_fx_audio_slider_changed(value: float) -> void:
+	if _updating_audio_ui:
+		return
+	set_fx_volume(roundi(value))
+
+
+## Sets Background Audio volume on the 0..100 scale (0 = muted), applies live, and saves.
+func set_background_volume(scale_0_to_100: int, persist: bool = true) -> void:
+	audio_settings.set_background_volume(scale_0_to_100, persist)
+	_refresh_audio_controls()
+	audio_settings_changed.emit(audio_settings)
+
+
+## Sets FX Audio volume on the 0..100 scale (0 = muted), applies live, and saves.
+func set_fx_volume(scale_0_to_100: int, persist: bool = true) -> void:
+	audio_settings.set_fx_volume(scale_0_to_100, persist)
+	_refresh_audio_controls()
+	audio_settings_changed.emit(audio_settings)
+
+
+func get_background_volume() -> int:
+	return audio_settings.background_volume
+
+
+func get_fx_volume() -> int:
+	return audio_settings.fx_volume

@@ -53,7 +53,7 @@ func _init(p_seed: int = 1, p_chunk_radius: int = _C.CHUNK_RADIUS, p_blocked_fra
 static func hex_distance(a: Vector2i, b: Vector2i) -> int:
 	var dq: int = a.x - b.x
 	var dr: int = a.y - b.y
-	return (absi(dq) + absi(dr) + absi(dq + dr)) / 2
+	return (absi(dq) + absi(dr) + absi(dq + dr)) >> 1
 
 
 ## Float axial hex distance between a hex [param a] and a float axial point [param b].

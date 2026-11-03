@@ -38,13 +38,20 @@ const _UnitLibrary = preload("res://scripts/units/unit_library.gd")
 const _UnitLeveling = preload("res://scripts/units/unit_leveling.gd")
 
 # --- Cross-system signals (per engineering conventions) ----------------------
+@warning_ignore("unused_signal")
 signal wave_started(wave_number: int)
+@warning_ignore("unused_signal")
 signal wave_ended(wave_number: int)
+@warning_ignore("unused_signal")
 signal enemy_died(unit_id: int)
+@warning_ignore("unused_signal")
 signal enemy_leaked(unit_id: int, leak_cost: int)
 signal boss_killed(wave_number: int)
+@warning_ignore("unused_signal")
 signal boss_leaked(wave_number: int)
+@warning_ignore("unused_signal")
 signal path_extended(growth_result: Dictionary)
+@warning_ignore("unused_signal")
 signal tower_damaged_enemy(tower_id: int, tower_type: String, unit_id: int, unit_tags: Array, amount: float, damage_tag: int)
 signal intel_preview_updated(intel: Dictionary)
 signal next_faction_revealed(next_faction_id: String, next_faction_logo: String)
@@ -1557,7 +1564,7 @@ func _build_spawn_schedule(
 		for sh_i in range(support_healer_units.size()):
 			var sh_item: Dictionary = support_healer_units[sh_i]
 			var insert_idx: int = clampi(
-				(pack_body.size() / 2) + (sh_i - support_healer_units.size() / 2),
+				(pack_body.size() >> 1) + (sh_i - (support_healer_units.size() >> 1)),
 				mini(1, pack_body.size()),
 				pack_body.size()
 			)

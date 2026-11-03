@@ -48,6 +48,8 @@ const GROUP := "grid_manager"
 @export_group("Input")
 ## If true, the manager watches mouse motion/clicks and emits hover/click signals.
 @export var handle_input: bool = true
+## Minimum touch drag distance in pixels before a touch is treated as a camera pan rather than a cell tap.
+@export var touch_drag_threshold_px: float = 8.0
 
 @export_group("Visuals")
 ## Show a colored tile under the hovered cell.
@@ -78,6 +80,8 @@ var _occupants: Dictionary = {}
 var _hover_valid: bool = false
 var _highlight: MeshInstance3D
 var _highlight_material: StandardMaterial3D
+var _touch_start_positions: Dictionary = {}
+var _touch_dragged: bool = false
 
 
 func _ready() -> void:
@@ -214,9 +218,48 @@ func place_at(occupant: Node3D, cell: Vector2i) -> bool:
 func _unhandled_input(event: InputEvent) -> void:
 	if not handle_input:
 		return
+	if event is InputEventScreenTouch:
+		var st: InputEventScreenTouch = event as InputEventScreenTouch
+		if st.pressed:
+			_touch_start_positions[st.index] = st.position
+			if _touch_start_positions.size() == 1:
+				_touch_dragged = false
+				_update_hover(st.position)
+			else:
+				_touch_dragged = true
+		else:
+			var was_drag: bool = _touch_dragged or st.canceled or _touch_start_positions.size() > 1
+			if _touch_start_positions.has(st.index):
+				var start_pos: Vector2 = _touch_start_positions[st.index] as Vector2
+				if st.position.distance_to(start_pos) >= touch_drag_threshold_px:
+					was_drag = true
+			_touch_start_positions.erase(st.index)
+			if _touch_start_positions.is_empty():
+				_touch_dragged = false
+			if not was_drag:
+				_update_hover(st.position)
+				var touch_hit: Variant = raycast_plane(st.position)
+				if touch_hit != null:
+					var touch_cell := world_to_cell(touch_hit)
+					if is_in_bounds(touch_cell):
+						cell_clicked.emit(touch_cell, MOUSE_BUTTON_LEFT)
+		return
+	if event is InputEventScreenDrag:
+		var sd: InputEventScreenDrag = event as InputEventScreenDrag
+		if _touch_start_positions.has(sd.index):
+			var start_pos: Vector2 = _touch_start_positions[sd.index] as Vector2
+			if sd.position.distance_to(start_pos) >= touch_drag_threshold_px or sd.relative.length() >= touch_drag_threshold_px:
+				_touch_dragged = true
+		else:
+			_touch_dragged = true
+		return
 	if event is InputEventMouseMotion:
+		if event.device == InputEvent.DEVICE_ID_EMULATION or not _touch_start_positions.is_empty():
+			return
 		_update_hover(event.position)
 	elif event is InputEventMouseButton and event.pressed and _is_click_button(event.button_index):
+		if event.device == InputEvent.DEVICE_ID_EMULATION or not _touch_start_positions.is_empty():
+			return
 		var hit: Variant = raycast_plane(event.position)
 		if hit != null:
 			var cell := world_to_cell(hit)

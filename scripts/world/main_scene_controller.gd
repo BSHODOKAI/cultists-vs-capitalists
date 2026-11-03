@@ -11,6 +11,7 @@ extends Node
 const _HexMath = preload("res://scripts/core/hex_math.gd")
 const _TowerFactory = preload("res://scripts/world/tower_factory.gd")
 const _EnemyVisualPool = preload("res://scripts/world/enemy_visual_pool.gd")
+const _SoundManager = preload("res://scripts/audio/sound_manager.gd")
 
 @onready var game_world: Node3D = $GameWorld
 @onready var terrain_view: TerrainView = $GameWorld/TerrainView
@@ -32,6 +33,7 @@ const _EnemyVisualPool = preload("res://scripts/world/enemy_visual_pool.gd")
 @onready var game_over_screen: GameOverScreen = $HUD/GameOverScreen
 @onready var in_game_menu: InGameMenu = get_node_or_null("HUD/InGameMenu") as InGameMenu
 @onready var debug_panel: DebugPanel = $DebugPanel
+@onready var sound_manager: SoundManager = get_node_or_null("SoundManager") as SoundManager
 
 var tower_factory: TowerFactory
 var enemy_pool: EnemyVisualPool
@@ -43,14 +45,24 @@ func _ready() -> void:
 	tower_factory = _TowerFactory.new(towers_container, theme_data)
 	enemy_pool = _EnemyVisualPool.new(enemies_container, theme_data)
 
+	if sound_manager == null:
+		sound_manager = _SoundManager.new()
+		sound_manager.name = "SoundManager"
+		add_child(sound_manager)
+
 	_connect_signals()
 
 	var gs: Node = get_node_or_null("/root/GameState")
 	if gs != null:
+		sound_manager.bind_to_game_state(gs)
 		gs.call("start_new_run", -1)
 		_rebuild_world_views()
 		if camera_rig != null:
 			camera_rig.focus_base()
+	if effects_view != null:
+		sound_manager.bind_to_effects_view(effects_view)
+	if hud != null:
+		sound_manager.bind_ui_buttons(hud)
 
 
 func _connect_signals() -> void:
@@ -124,8 +136,36 @@ func _unhandled_input(event: InputEvent) -> void:
 	if in_game_menu != null and in_game_menu.is_menu_open():
 		return
 
-	# Mouse motion -> update hovered hex via camera ray to Y = 0
+	# Touchscreen tap & drag handling (delegates drag panning to CameraRig; taps select/place on release)
+	if event is InputEventScreenDrag and camera_rig != null:
+		if camera_rig._last_handled_touch_event != event:
+			camera_rig._unhandled_input(event)
+		return
+
+	if event is InputEventScreenTouch and camera_rig != null:
+		var st: InputEventScreenTouch = event as InputEventScreenTouch
+		if camera_rig._last_handled_touch_event != event:
+			camera_rig._unhandled_input(event)
+		if camera_rig._last_touch_event_consumed:
+			return
+		if st.pressed:
+			var touched_hex: Variant = camera_rig.pick_hex_at_screen(st.position)
+			if touched_hex != null:
+				gs.set("hovered_hex", touched_hex as Vector2i)
+				gs.set("has_hovered_hex", true)
+			else:
+				gs.set("has_hovered_hex", false)
+			_refresh_hover_and_overlays()
+		elif not st.canceled:
+			_handle_hex_tap_or_click(st.position, false, gs)
+			if get_viewport() != null:
+				get_viewport().set_input_as_handled()
+		return
+
+	# Mouse motion -> update hovered hex via camera ray to Y = 0 (ignore touch-emulated motion during touch)
 	if event is InputEventMouseMotion and camera_rig != null:
+		if event.device == InputEvent.DEVICE_ID_EMULATION or camera_rig.has_active_touch():
+			return
 		var mm: InputEventMouseMotion = event as InputEventMouseMotion
 		var picked: Variant = camera_rig.pick_hex_at_screen(mm.position)
 		if picked != null:
@@ -135,30 +175,18 @@ func _unhandled_input(event: InputEvent) -> void:
 			gs.set("has_hovered_hex", false)
 		_refresh_hover_and_overlays()
 
-	# Mouse button clicks on the hex grid
+	# Mouse button clicks on the hex grid (ignore touch-emulated left clicks; touch taps fire on release above)
 	if event is InputEventMouseButton and event.pressed and camera_rig != null:
 		var mb: InputEventMouseButton = event as InputEventMouseButton
+		if mb.device == InputEvent.DEVICE_ID_EMULATION or camera_rig.has_active_touch():
+			return
 		if mb.button_index == MOUSE_BUTTON_RIGHT:
 			if gs.get("selected_build_tower") != null:
 				gs.call("cancel_build_mode")
 				get_viewport().set_input_as_handled()
 				return
 		elif mb.button_index == MOUSE_BUTTON_LEFT:
-			var picked_hex: Variant = camera_rig.pick_hex_at_screen(mb.position)
-			if picked_hex != null:
-				var hex: Vector2i = picked_hex as Vector2i
-				var build_def: TowerData = gs.get("selected_build_tower") as TowerData
-				if build_def != null:
-					var placed: TowerInstance = gs.call("request_place_tower", hex, build_def) as TowerInstance
-					if placed != null and not mb.shift_pressed:
-						gs.call("cancel_build_mode")
-						gs.call("select_placed_tower", placed)
-					_refresh_hover_and_overlays()
-				else:
-					# Select placed tower by hex lookup (never physics picking)
-					var existing: TowerInstance = gs.call("get_tower_at_hex", hex) as TowerInstance
-					gs.call("select_placed_tower", existing)
-					_refresh_hover_and_overlays()
+			if _handle_hex_tap_or_click(mb.position, mb.shift_pressed, gs):
 				get_viewport().set_input_as_handled()
 				return
 
@@ -200,6 +228,33 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 ## Returns true if any item or build menu is currently selected/open.
+func _handle_hex_tap_or_click(screen_pos: Vector2, keep_build_mode: bool, gs: Node) -> bool:
+	if camera_rig == null or gs == null:
+		return false
+	var picked_hex: Variant = camera_rig.pick_hex_at_screen(screen_pos)
+	if picked_hex == null:
+		return false
+	var hex: Vector2i = picked_hex as Vector2i
+	gs.set("hovered_hex", hex)
+	gs.set("has_hovered_hex", true)
+	var build_def: TowerData = gs.get("selected_build_tower") as TowerData
+	if build_def != null:
+		var placed: TowerInstance = gs.call("request_place_tower", hex, build_def) as TowerInstance
+		if placed != null:
+			if not keep_build_mode:
+				gs.call("cancel_build_mode")
+				gs.call("select_placed_tower", placed)
+		elif sound_manager != null:
+			sound_manager.play_ui_error("placement_rejected")
+		_refresh_hover_and_overlays()
+	else:
+		# Select placed tower by hex lookup (never physics picking)
+		var existing: TowerInstance = gs.call("get_tower_at_hex", hex) as TowerInstance
+		gs.call("select_placed_tower", existing)
+		_refresh_hover_and_overlays()
+	return true
+
+
 func has_active_selection() -> bool:
 	if build_palette != null and build_palette.is_menu_open:
 		return true
@@ -345,6 +400,8 @@ func _on_tower_damaged_enemy(
 	_amount: float,
 	damage_tag: int
 ) -> void:
+	if _amount < 0.75:
+		return
 	if effects_view == null or tower_factory == null or enemy_pool == null:
 		return
 	if not tower_factory.views.has(tower_id) or not enemy_pool.active_views.has(unit_id):

@@ -1,0 +1,335 @@
+[gd_resource type="Resource" script_class="AudioBalanceData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/audio/audio_balance_data.gd" id="1_audio_balance"]
+
+[resource]
+script = ExtResource("1_audio_balance")
+sfx_pool_size = 16
+master_sfx_volume_db = 0.0
+environment_volume_db = -14.0
+polyphony_attenuation_per_voice_db = 2.5
+biome_environment_cues = {
+"urban_center": "environment_urban"
+}
+cues = {
+"boss_death": {
+"active_duration": 2.5,
+"loop": false,
+"max_voices": 1,
+"min_interval": 0.5,
+"path": "res://Sound FX Starter Pack Vol. 1/Hollywood/Mega Bomb.wav",
+"pitch_max": 1.02,
+"pitch_min": 0.95,
+"volume_db": -2.5
+},
+"boss_hit": {
+"active_duration": 0.32,
+"loop": false,
+"max_voices": 2,
+"min_interval": 0.1,
+"path": "res://Sound FX Starter Pack Vol. 1/Medieval/Shield Block.wav",
+"pitch_max": 1.02,
+"pitch_min": 0.9,
+"volume_db": -8.0
+},
+"boss_special_ability": {
+"active_duration": 1.3,
+"loop": false,
+"max_voices": 2,
+"min_interval": 0.35,
+"path": "res://Sound FX Starter Pack Vol. 1/Sci-Fi/Gravipanzer.wav",
+"pitch_max": 1.05,
+"pitch_min": 0.95,
+"volume_db": -4.0
+},
+"enemy_ability": {
+"active_duration": 1.5,
+"loop": false,
+"max_voices": 2,
+"min_interval": 0.3,
+"path": "res://Sound FX Starter Pack Vol. 1/Horror/Pain Glitch.wav",
+"pitch_max": 1.05,
+"pitch_min": 0.95,
+"volume_db": -7.0
+},
+"enemy_leaked": {
+"active_duration": 0.3,
+"loop": false,
+"max_voices": 2,
+"min_interval": 0.12,
+"path": "res://Sound FX Starter Pack Vol. 1/Jingles & Stingers/Health Low.wav",
+"pitch_max": 1.04,
+"pitch_min": 0.96,
+"volume_db": -5.0
+},
+"environment_urban": {
+"active_duration": 60.0,
+"loop": true,
+"max_voices": 1,
+"min_interval": 0.0,
+"path": "res://Sound FX Starter Pack Vol. 1/Environment/Rainy City Alley Loop.wav",
+"pitch_max": 1.0,
+"pitch_min": 1.0,
+"volume_db": -14.0
+},
+"game_over": {
+"active_duration": 4.4,
+"loop": false,
+"max_voices": 1,
+"min_interval": 1.0,
+"path": "res://Sound FX Starter Pack Vol. 1/Jingles & Stingers/Game Over.wav",
+"pitch_max": 1.0,
+"pitch_min": 1.0,
+"volume_db": -3.0
+},
+"mob_death": {
+"active_duration": 0.75,
+"loop": false,
+"max_voices": 3,
+"min_interval": 0.09,
+"path": "res://Sound FX Starter Pack Vol. 1/Hollywood/Wooden Crate Destruction.wav",
+"pitch_max": 1.07,
+"pitch_min": 0.93,
+"volume_db": -8.5
+},
+"mob_hit": {
+"active_duration": 0.25,
+"loop": false,
+"max_voices": 3,
+"min_interval": 0.08,
+"path": "res://Sound FX Starter Pack Vol. 1/Retro/Damage.wav",
+"pitch_max": 1.08,
+"pitch_min": 0.92,
+"volume_db": -13.5
+},
+"path_extended": {
+"active_duration": 1.7,
+"loop": false,
+"max_voices": 1,
+"min_interval": 0.4,
+"path": "res://Sound FX Starter Pack Vol. 1/Motions and Impacts/Impact Metal Hatch.wav",
+"pitch_max": 1.02,
+"pitch_min": 0.96,
+"volume_db": -4.5
+},
+"penance": {
+"active_duration": 0.55,
+"loop": false,
+"max_voices": 2,
+"min_interval": 0.15,
+"path": "res://Sound FX Starter Pack Vol. 1/Jingles & Stingers/Full Heal.wav",
+"pitch_max": 1.02,
+"pitch_min": 0.98,
+"volume_db": -6.0
+},
+"projectile_fire": {
+"active_duration": 0.45,
+"loop": false,
+"max_voices": 3,
+"min_interval": 0.07,
+"path": "res://Sound FX Starter Pack Vol. 1/Medieval/Bow Shoot.wav",
+"pitch_max": 1.08,
+"pitch_min": 0.94,
+"volume_db": -11.0
+},
+"projectile_fire_censer": {
+"active_duration": 0.85,
+"loop": false,
+"max_voices": 2,
+"min_interval": 0.25,
+"path": "res://Sound FX Starter Pack Vol. 1/Steampunk/Steampunk Gas Ignite.wav",
+"pitch_max": 1.05,
+"pitch_min": 0.95,
+"volume_db": -11.5
+},
+"projectile_fire_sniper": {
+"active_duration": 0.55,
+"loop": false,
+"max_voices": 2,
+"min_interval": 0.2,
+"path": "res://Sound FX Starter Pack Vol. 1/Sci-Fi/Pulse Sniper.wav",
+"pitch_max": 1.04,
+"pitch_min": 0.96,
+"volume_db": -7.5
+},
+"projectile_hit": {
+"active_duration": 0.28,
+"loop": false,
+"max_voices": 3,
+"min_interval": 0.06,
+"path": "res://Sound FX Starter Pack Vol. 1/Medieval/Arrow Hit.wav",
+"pitch_max": 1.1,
+"pitch_min": 0.92,
+"volume_db": -12.5
+},
+"stars_are_right": {
+"active_duration": 3.65,
+"loop": false,
+"max_voices": 1,
+"min_interval": 0.5,
+"path": "res://Sound FX Starter Pack Vol. 1/Horror/Bleak Moon Piano.wav",
+"pitch_max": 1.0,
+"pitch_min": 1.0,
+"volume_db": -4.5
+},
+"tower_cd_choir_special": {
+"active_duration": 2.22,
+"loop": false,
+"max_voices": 2,
+"min_interval": 0.3,
+"path": "res://Sound FX Starter Pack Vol. 1/Magic/Necromantic Attack.wav",
+"pitch_max": 1.04,
+"pitch_min": 0.96,
+"volume_db": -5.5
+},
+"tower_cd_congregation_respawn": {
+"active_duration": 1.85,
+"loop": false,
+"max_voices": 2,
+"min_interval": 0.3,
+"path": "res://Sound FX Starter Pack Vol. 1/Magic/Resurrection.wav",
+"pitch_max": 1.03,
+"pitch_min": 0.97,
+"volume_db": -5.5
+},
+"tower_cd_default": {
+"active_duration": 2.36,
+"loop": false,
+"max_voices": 2,
+"min_interval": 0.3,
+"path": "res://Sound FX Starter Pack Vol. 1/Magic/Water Attack.wav",
+"pitch_max": 1.05,
+"pitch_min": 0.95,
+"volume_db": -6.0
+},
+"tower_cd_gutter_pulse": {
+"active_duration": 1.65,
+"loop": false,
+"max_voices": 2,
+"min_interval": 0.3,
+"path": "res://Sound FX Starter Pack Vol. 1/Magic/Acid Attack.wav",
+"pitch_max": 1.05,
+"pitch_min": 0.95,
+"volume_db": -8.5
+},
+"tower_cd_leviathan_sweep": {
+"active_duration": 1.85,
+"loop": false,
+"max_voices": 1,
+"min_interval": 0.4,
+"path": "res://Sound FX Starter Pack Vol. 1/Magic/Earth Attack.wav",
+"pitch_max": 1.0,
+"pitch_min": 0.92,
+"volume_db": -4.5
+},
+"tower_cd_maw_beneath": {
+"active_duration": 2.8,
+"loop": false,
+"max_voices": 1,
+"min_interval": 0.4,
+"path": "res://Sound FX Starter Pack Vol. 1/Horror/Reality Rift.wav",
+"pitch_max": 1.03,
+"pitch_min": 0.95,
+"volume_db": -5.0
+},
+"tower_cd_shrine_burst": {
+"active_duration": 2.22,
+"loop": false,
+"max_voices": 1,
+"min_interval": 0.4,
+"path": "res://Sound FX Starter Pack Vol. 1/Magic/Magic Seal.wav",
+"pitch_max": 1.03,
+"pitch_min": 0.97,
+"volume_db": -5.5
+},
+"tower_cd_tentacle_root": {
+"active_duration": 2.36,
+"loop": false,
+"max_voices": 2,
+"min_interval": 0.3,
+"path": "res://Sound FX Starter Pack Vol. 1/Magic/Water Attack.wav",
+"pitch_max": 1.04,
+"pitch_min": 0.94,
+"volume_db": -6.0
+},
+"tower_construct": {
+"active_duration": 0.7,
+"loop": false,
+"max_voices": 2,
+"min_interval": 0.08,
+"path": "res://Sound FX Starter Pack Vol. 1/Community Requests/Hammer Fall.wav",
+"pitch_max": 1.04,
+"pitch_min": 0.96,
+"volume_db": -5.0
+},
+"tower_maintained": {
+"active_duration": 1.05,
+"loop": false,
+"max_voices": 2,
+"min_interval": 0.12,
+"path": "res://Sound FX Starter Pack Vol. 1/Sci-Fi/Turret Reload.wav",
+"pitch_max": 1.03,
+"pitch_min": 0.97,
+"volume_db": -6.5
+},
+"tower_sold": {
+"active_duration": 0.25,
+"loop": false,
+"max_voices": 2,
+"min_interval": 0.08,
+"path": "res://Sound FX Starter Pack Vol. 1/Medieval/Loot Gold.wav",
+"pitch_max": 1.04,
+"pitch_min": 0.96,
+"volume_db": -6.0
+},
+"tower_upgrade": {
+"active_duration": 0.35,
+"loop": false,
+"max_voices": 2,
+"min_interval": 0.08,
+"path": "res://Sound FX Starter Pack Vol. 1/Medieval/Weapon Upgrade.wav",
+"pitch_max": 1.05,
+"pitch_min": 0.98,
+"volume_db": -4.5
+},
+"ui_click": {
+"active_duration": 0.16,
+"loop": false,
+"max_voices": 2,
+"min_interval": 0.04,
+"path": "res://Sound FX Starter Pack Vol. 1/UI & Menus/Click Bounce.wav",
+"pitch_max": 1.03,
+"pitch_min": 0.97,
+"volume_db": -9.0
+},
+"ui_error": {
+"active_duration": 0.55,
+"loop": false,
+"max_voices": 1,
+"min_interval": 0.1,
+"path": "res://Sound FX Starter Pack Vol. 1/UI & Menus/Error.wav",
+"pitch_max": 1.02,
+"pitch_min": 0.98,
+"volume_db": -7.0
+},
+"wave_ended": {
+"active_duration": 1.0,
+"loop": false,
+"max_voices": 1,
+"min_interval": 0.25,
+"path": "res://Sound FX Starter Pack Vol. 1/Hollywood/Reward.wav",
+"pitch_max": 1.02,
+"pitch_min": 0.98,
+"volume_db": -6.0
+},
+"wave_started": {
+"active_duration": 2.2,
+"loop": false,
+"max_voices": 1,
+"min_interval": 0.25,
+"path": "res://Sound FX Starter Pack Vol. 1/Motions and Impacts/Whoosh Gong.wav",
+"pitch_max": 1.02,
+"pitch_min": 0.98,
+"volume_db": -5.0
+}
+}

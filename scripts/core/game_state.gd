@@ -70,6 +70,8 @@ signal tower_placed_on_hex(tower: TowerInstance)
 signal tower_upgraded_on_hex(tower: TowerInstance, node_id: String)
 signal tower_sold_from_hex(tower_id: int, hex: Vector2i, refund: Dictionary)
 signal tower_maintained(tower: TowerInstance)
+signal tower_cooldown_used(tower_id: int, tower_type: String, ability_id: String, hex: Vector2i)
+signal penance_performed(corruption: int)
 signal selected_tower_changed(tower: TowerInstance)
 signal build_mode_changed(tower_def: TowerData)
 signal camera_focus_requested(world_pos: Vector3, label: String)
@@ -285,6 +287,7 @@ func start_new_run(seed_val: int = -1) -> void:
 
 func _wire_system_signals() -> void:
 	tower_system.tower_damaged_enemy.connect(_on_tower_damaged_enemy)
+	tower_system.tower_cooldown_used.connect(_on_tower_system_cooldown_used)
 	tower_system.enemy_died.connect(_on_tower_system_enemy_died)
 	tower_system.enemy_leaked.connect(_on_tower_system_enemy_leaked)
 	tower_system.boss_killed.connect(_on_tower_system_boss_killed)
@@ -788,6 +791,7 @@ func request_penance() -> bool:
 	tower_system.add_corruption(-tower_system.balance.penance_corruption_reduction)
 	_log_event("penance_performed", {"corruption": tower_system.corruption})
 	corruption_changed.emit(tower_system.corruption)
+	penance_performed.emit(tower_system.corruption)
 	return true
 
 
@@ -870,6 +874,15 @@ func _on_tower_damaged_enemy(
 		tower_id, tower_type, unit_id, unit_tags, amount, damage_tag, current_wave
 	)
 	tower_damaged_enemy.emit(tower_id, tower_type, unit_id, unit_tags, amount, damage_tag)
+
+
+func _on_tower_system_cooldown_used(
+	tower_id: int,
+	tower_type: String,
+	ability_id: String,
+	hex: Vector2i
+) -> void:
+	tower_cooldown_used.emit(tower_id, tower_type, ability_id, hex)
 
 
 func _on_tower_system_enemy_died(unit_id: int) -> void:

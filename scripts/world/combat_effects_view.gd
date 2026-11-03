@@ -13,6 +13,9 @@ const _HexMath = preload("res://scripts/core/hex_math.gd")
 const _Theme = preload("res://scripts/core/visual_theme_data.gd")
 const _PlaceholderModels = preload("res://scripts/world/placeholder_models.gd")
 
+signal projectile_fired(from_world: Vector3, to_world: Vector3, tower_type: String, damage_tag: int)
+signal projectile_hit(world_pos: Vector3, tower_type: String, damage_tag: int)
+
 @export var theme_data: VisualThemeData
 
 var _beam_pool: Array[MeshInstance3D] = []
@@ -127,9 +130,11 @@ func spawn_projectile(
 	damage_tag: int = 0,
 	travel_time: float = 0.13
 ) -> void:
+	projectile_fired.emit(from_world, to_world, tower_type, damage_tag)
 	var dist: float = from_world.distance_to(to_world)
 	if dist < 0.05:
 		spawn_impact_burst(to_world, damage_tag)
+		projectile_hit.emit(to_world, tower_type, damage_tag)
 		return
 
 	# Subtle tracer line behind the projectile
@@ -151,6 +156,7 @@ func spawn_projectile(
 		"elapsed": 0.0,
 		"duration": maxf(0.05, travel_time),
 		"arc_height": arc_h,
+		"tower_type": tower_type,
 		"damage_tag": damage_tag,
 	})
 
@@ -223,6 +229,7 @@ func _process(delta: float) -> void:
 				pmi.visible = false
 				_projectile_pool.append(pmi)
 			spawn_impact_burst(p["to"] as Vector3, int(p["damage_tag"]))
+			projectile_hit.emit(p["to"] as Vector3, String(p.get("tower_type", "")), int(p["damage_tag"]))
 			_active_projectiles.remove_at(i)
 
 	for i in range(_active_impacts.size() - 1, -1, -1):

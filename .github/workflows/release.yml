@@ -1,0 +1,112 @@
+name: Release and Deploy to itch.io
+
+on:
+  push:
+    tags:
+      - "**"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: "4.7.2"
+  GODOT_RELEASE_TAG: "4.7.2-stable"
+  EXPORT_PRESET: "Web CVC"
+  BUILD_DIR: "build/web"
+  ITCH_USER: ${{ vars.ITCH_USER || 'bshodokai' }}
+  ITCH_GAME: ${{ vars.ITCH_GAME || 'cultists-vs-capitalists' }}
+  ITCH_CHANNEL: ${{ vars.ITCH_CHANNEL || 'html5' }}
+
+jobs:
+  release-and-deploy:
+    name: Build Web CVC, Release & Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Cache Godot binary and export templates
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/bin/godot
+            ~/.local/share/godot/export_templates/${{ env.GODOT_VERSION }}.stable
+          key: godot-${{ runner.os }}-${{ env.GODOT_RELEASE_TAG }}
+
+      - name: Install Godot and export templates
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.local/bin"
+          mkdir -p "$HOME/.local/share/godot/export_templates"
+
+          GODOT_BASE_URL="https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE_TAG}"
+          GODOT_ZIP="Godot_v${GODOT_RELEASE_TAG}_linux.x86_64.zip"
+          TEMPLATES_TPZ="Godot_v${GODOT_RELEASE_TAG}_export_templates.tpz"
+
+          curl -fsSL "${GODOT_BASE_URL}/${GODOT_ZIP}" -o "/tmp/${GODOT_ZIP}"
+          unzip -q "/tmp/${GODOT_ZIP}" -d /tmp
+          mv "/tmp/Godot_v${GODOT_RELEASE_TAG}_linux.x86_64" "$HOME/.local/bin/godot"
+          chmod +x "$HOME/.local/bin/godot"
+
+          curl -fsSL "${GODOT_BASE_URL}/${TEMPLATES_TPZ}" -o "/tmp/${TEMPLATES_TPZ}"
+          unzip -q "/tmp/${TEMPLATES_TPZ}" -d "$HOME/.local/share/godot/export_templates"
+          rm -rf "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          mv "$HOME/.local/share/godot/export_templates/templates" \
+            "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+
+          rm -f "/tmp/${GODOT_ZIP}" "/tmp/${TEMPLATES_TPZ}"
+
+      - name: Export Web build (${{ env.EXPORT_PRESET }})
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.local/bin:$PATH"
+          godot --version
+          mkdir -p "${BUILD_DIR}"
+          godot --headless --verbose --export-release "${EXPORT_PRESET}" "${BUILD_DIR}/index.html"
+          test -f "${BUILD_DIR}/index.html"
+
+      - name: Package Web artifact
+        id: package
+        run: |
+          set -euo pipefail
+          ARTIFACT_NAME="cultists-vs-capitalists-web-${GITHUB_REF_NAME}.zip"
+          (cd "${BUILD_DIR}" && zip -r "${GITHUB_WORKSPACE}/${ARTIFACT_NAME}" .)
+          echo "artifact_name=${ARTIFACT_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Web build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.artifact_name }}
+          path: ${{ steps.package.outputs.artifact_name }}
+          retention-days: 30
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.package.outputs.artifact_name }}
+          generate_release_notes: true
+
+      - name: Install Butler and deploy to itch.io
+        env:
+          BUTLER_API_KEY: ${{ secrets.ITCH_IO_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BUTLER_API_KEY}" ]; then
+            echo "::error::ITCH_IO_API_KEY secret is not set in repository secrets."
+            exit 1
+          fi
+
+          curl -fsSL https://broth.itch.zone/butler/linux-amd64/LATEST/archive/default -o /tmp/butler.zip
+          unzip -q /tmp/butler.zip -d /tmp/butler
+          chmod +x /tmp/butler/butler
+          /tmp/butler/butler -V
+
+          VERSION="${GITHUB_REF_NAME#v}"
+          /tmp/butler/butler push "${BUILD_DIR}" "${ITCH_USER}/${ITCH_GAME}:${ITCH_CHANNEL}" --userversion "${VERSION}"

@@ -8,6 +8,7 @@ extends Control
 
 const MAIN_SCENE_PATH := "res://scenes/main.tscn"
 const _SettingsMenu = preload("res://scripts/ui/settings_menu.gd")
+const _SoundManager = preload("res://scripts/audio/sound_manager.gd")
 
 @onready var _center: CenterContainer = get_node_or_null("Center") as CenterContainer
 @onready var _main_vbox: VBoxContainer = get_node_or_null("Center/VBox") as VBoxContainer
@@ -16,6 +17,7 @@ const _SettingsMenu = preload("res://scripts/ui/settings_menu.gd")
 @onready var _quit_button: Button = get_node_or_null("Center/VBox/QuitButton") as Button
 @onready var _seed_input: LineEdit = get_node_or_null("Center/VBox/SeedBox/SeedInput") as LineEdit
 @onready var _settings_menu: SettingsMenu = get_node_or_null("Center/SettingsMenu") as SettingsMenu
+var _sound_manager: SoundManager = null
 
 
 func _ready() -> void:
@@ -42,6 +44,14 @@ func _ready() -> void:
 		_quit_button.pressed.connect(_on_quit_pressed)
 	if _settings_menu != null and not _settings_menu.closed.is_connected(_on_settings_closed):
 		_settings_menu.closed.connect(_on_settings_closed)
+
+	_sound_manager = get_node_or_null("SoundManager") as SoundManager
+	if _sound_manager == null:
+		_sound_manager = _SoundManager.new()
+		_sound_manager.name = "SoundManager"
+		_sound_manager.auto_start_environment = false
+		add_child(_sound_manager)
+	_sound_manager.bind_ui_buttons(self)
 
 
 func open_settings() -> void:

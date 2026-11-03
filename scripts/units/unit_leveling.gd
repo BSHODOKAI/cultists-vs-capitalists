@@ -60,7 +60,7 @@ static func compute_boss_hp(base_hp: float, boss_index: int) -> float:
 static func compute_boss_cycle(boss_index: int, cycle_length: int = _Balance.BOSS_CYCLE_LENGTH) -> int:
 	var n: int = maxi(1, boss_index)
 	var clen: int = maxi(1, cycle_length)
-	return (n - 1) / clen
+	return floori(float(n - 1) / float(clen))
 
 
 ## Computes the telegraph and cooldown multiplier after [param full_cycles] completed cycles.

@@ -42,8 +42,10 @@ signal enemy_died(unit_id: int)
 signal enemy_leaked(unit_id: int, leak_cost: int)
 signal boss_killed(wave_number: int)
 signal boss_leaked(wave_number: int)
+@warning_ignore("unused_signal")
 signal path_extended(growth_result: Dictionary)
 signal tower_damaged_enemy(tower_id: int, tower_type: String, unit_id: int, unit_tags: Array, amount: float, damage_tag: int)
+signal tower_cooldown_used(tower_id: int, tower_type: String, ability_id: String, hex: Vector2i)
 signal ability_telegraphed(event: Dictionary)
 signal loss_report_generated(report: LossReport)
 
@@ -1309,8 +1311,12 @@ func _step_tower(tower: TowerInstance, delta: float, rng: RandomNumberGenerator)
 		TowerData.TargetingMode.DOT_CENSER:
 			_step_rust_censer_tower(tower, delta)
 		TowerData.TargetingMode.BUFF_SHRINE:
-			# Handled continuously via get_shrine_buffs_for_tower
-			pass
+			# Handled continuously via get_shrine_buffs_for_tower; emit cooldown event when ecstatic_vigil burst begins
+			if tower.has_behavior("ecstatic_vigil"):
+				var burst_int: float = maxf(1.0, float(tower.get_behavior_param("ecstatic_vigil", "burst_interval", 20.0)))
+				var prev_t: float = maxf(0.0, wave_elapsed_time - delta)
+				if floori(wave_elapsed_time / burst_int) > floori(prev_t / burst_int) or (prev_t <= 0.0 and wave_elapsed_time > 0.0):
+					tower_cooldown_used.emit(tower.tower_id, tower.get_type_id(), "ecstatic_vigil", tower.hex)
 		TowerData.TargetingMode.SUMMON_CONGREGATION:
 			_step_congregation_tower(tower, delta)
 		TowerData.TargetingMode.ECONOMY_TITHE:
@@ -1373,6 +1379,7 @@ func _step_choir_tower(tower: TowerInstance, delta: float) -> void:
 				did_stun = true
 		if did_stun:
 			tower.special_cooldown = float(tower.get_behavior_param("jammer_choir", "stun_interval", 8.0))
+			tower_cooldown_used.emit(tower.tower_id, tower.get_type_id(), "jammer_choir", tower.hex)
 
 	tower.attack_cooldown -= delta
 	if tower.attack_cooldown <= 0.0:
@@ -1389,7 +1396,8 @@ func _step_choir_tower(tower: TowerInstance, delta: float) -> void:
 			if tower.has_behavior("the_unspoken_verse") and target.fear_stacks >= max_f:
 				var flee_dur: float = float(tower.get_behavior_param("the_unspoken_verse", "flee_duration", 2.0))
 				var flee_cd: float = float(tower.get_behavior_param("the_unspoken_verse", "flee_cooldown", 10.0))
-				target.try_trigger_flee(flee_dur, flee_cd)
+				if target.try_trigger_flee(flee_dur, flee_cd):
+					tower_cooldown_used.emit(tower.tower_id, tower.get_type_id(), "the_unspoken_verse", tower.hex)
 
 		var hit_dmg: float = calculate_hit_damage(tower, target, dps_total * tick_interval, tower.def.damage_tag)
 		deal_damage_from_tower(tower, target, hit_dmg, tower.def.damage_tag)
@@ -1415,6 +1423,7 @@ func _step_gutter_circle_tower(tower: TowerInstance, delta: float) -> void:
 					executed_any = true
 			if executed_any:
 				tower.special_cooldown = float(tower.get_behavior_param("maw_beneath", "maw_interval", 12.0))
+				tower_cooldown_used.emit(tower.tower_id, tower.get_type_id(), "maw_beneath", tower.hex)
 
 	var rate: float = get_effective_tower_fire_rate(tower)
 	if rate <= 0.0:
@@ -1436,6 +1445,7 @@ func _step_gutter_circle_tower(tower: TowerInstance, delta: float) -> void:
 
 	tower.attack_cooldown += 1.0 / rate
 	var center_hex: Vector2i = get_unit_hex(pulse_center_unit)
+	tower_cooldown_used.emit(tower.tower_id, tower.get_type_id(), "gutter_pulse", center_hex)
 	var has_wider: bool = tower.has_behavior("wider_circle")
 	var ring_2_ratio: float = float(tower.get_behavior_param("wider_circle", "ring_2_damage_ratio", 0.50))
 
@@ -1513,6 +1523,7 @@ func _step_storm_drain_tower(tower: TowerInstance, delta: float) -> void:
 					hit_any = true
 			if hit_any:
 				tower.special_cooldown = float(tower.get_behavior_param("leviathan_awakens", "sweep_interval", 25.0))
+				tower_cooldown_used.emit(tower.tower_id, tower.get_type_id(), "leviathan_awakens", tower.hex)
 
 	# Periodic root (every 8 s) & continuous Kinetic DPS on up to max_targets
 	var in_range_targets: Array[CombatUnit] = []
@@ -1530,14 +1541,17 @@ func _step_storm_drain_tower(tower: TowerInstance, delta: float) -> void:
 			tower.root_cooldown = tower.def.root_interval if tower.def.root_interval > 0.0 else 8.0
 			var root_dur: float = tower.def.root_duration
 			var drag_hexes: float = 0.0
+			var root_ability_id: String = "tentacle_root"
 			if tower.has_behavior("deep_grasp"):
 				root_dur = float(tower.get_behavior_param("deep_grasp", "root_duration", 2.5))
 				drag_hexes = float(tower.get_behavior_param("deep_grasp", "drag_hexes", 1))
+				root_ability_id = "deep_grasp"
 			for idx in range(max_t):
 				var tgt: CombatUnit = in_range_targets[idx]
 				tgt.apply_root(root_dur, true)
 				if drag_hexes > 0.0:
 					tgt.displace_along_path(drag_hexes, get_spawn_path_index())
+			tower_cooldown_used.emit(tower.tower_id, tower.get_type_id(), root_ability_id, tower.hex)
 
 	tower.attack_cooldown -= delta
 	if tower.attack_cooldown <= 0.0 and max_t > 0:
@@ -1629,6 +1643,7 @@ func _step_rust_censer_tower(tower: TowerInstance, delta: float) -> void:
 		tower.attack_cooldown = 0.0
 		return
 	tower.attack_cooldown += 1.0 / rate
+	tower_cooldown_used.emit(tower.tower_id, tower.get_type_id(), "rust_censer_cast", tower.hex)
 
 	var shred_cap: int = tower.get_shred_cap()
 	var cyber_double: bool = tower.has_behavior("rust_communion")
@@ -1685,6 +1700,7 @@ func _step_congregation_tower(tower: TowerInstance, delta: float) -> void:
 				"engaged_unit_id": -1,
 			})
 			_next_blocker_id += 1
+			tower_cooldown_used.emit(tower.tower_id, tower.get_type_id(), "congregation_respawn", default_hex)
 
 	# Engage Ground units at the adjacent blocker hex and resolve melee combat
 	tower.attack_cooldown -= delta

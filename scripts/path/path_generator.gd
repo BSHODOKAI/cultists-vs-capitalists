@@ -40,6 +40,7 @@ signal enemy_leaked(unit_id: int, leak_cost: int)
 signal boss_killed(wave_number: int)
 signal boss_leaked(wave_number: int)
 signal path_extended(growth_result: Dictionary)
+@warning_ignore("unused_signal")
 signal tower_damaged_enemy(tower_id: int, tower_type: String, unit_id: int, unit_tags: Array, amount: float, damage_tag: int)
 
 # --- State & UI hooks --------------------------------------------------------
@@ -1109,8 +1110,8 @@ func has_valid_next_extension_for_path(arbitrary_path: Array[Vector2i]) -> bool:
 		var empty_map: Dictionary = {}
 		var tail: Vector2i = path_hexes[n - 1]
 		var inc_dir: Vector2i = path_hexes[n - 1] - path_hexes[n - 2]
-		var budget: Array[int] = [120]
-		return _dfs_lookahead(tail, inc_dir, _last_corner_index, n, 0, min_ext, _bounding_center(), empty_map, budget)
+		var fast_budget: Array[int] = [120]
+		return _dfs_lookahead(tail, inc_dir, _last_corner_index, n, 0, min_ext, _bounding_center(), empty_map, fast_budget)
 
 	var path_map: Dictionary = {}
 	var last_corner: int = -1
@@ -1257,7 +1258,7 @@ func _score_candidate(cand: Dictionary) -> float:
 	var new_hexes: Array[Vector2i] = cand["new_hexes"]
 	var old_spawn: Vector2i = path_hexes[path_hexes.size() - 1]
 	var new_spawn: Vector2i = new_hexes[new_hexes.size() - 1]
-	var anchor: Vector2i = path_hexes[maxi(0, path_hexes.size() / 3)]
+	var anchor: Vector2i = path_hexes[maxi(0, floori(float(path_hexes.size()) / 3.0))]
 	var old_dist_anchor: int = _HexGrid.hex_distance(old_spawn, anchor)
 	var new_dist_anchor: int = _HexGrid.hex_distance(new_spawn, anchor)
 	if new_dist_anchor < old_dist_anchor:

@@ -3,8 +3,8 @@
 ## Fixed isometric-style camera rig (Node3D pivot + Camera3D child):
 ##   • Default yaw 45 deg, pitch CAMERA_PITCH = 35 deg.
 ##   • Orthographic projection by default, with CAMERA_PROJECTION flag for low-FOV perspective.
-##   • Pans on the ground plane (WASD / arrow keys, optional edge scroll, middle-mouse drag).
-##   • Zoom changes orthographic size (or perspective distance) within min/max.
+##   • Pans on the ground plane (WASD / arrow keys, optional edge scroll, middle-mouse drag, touchscreen drag).
+##   • Zoom changes orthographic size (or perspective distance) within min/max (mouse wheel or two-finger pinch).
 ##   • Home recenters on the player's base (path index 0); End focuses the spawn end or path preview.
 ##   • Optional rotation in 90-degree steps behind CAMERA_ROTATION_ENABLED (default false).
 class_name CameraRig
@@ -37,10 +37,19 @@ const ZOOM_STEP_FACTOR: float = 0.14
 @export var min_ortho_size: float = MIN_ORTHO_SIZE
 @export var max_ortho_size: float = MAX_ORTHO_SIZE
 @export var pan_speed: float = PAN_SPEED_WORLD
+@export var touch_pan_enabled: bool = true
+@export var touch_zoom_enabled: bool = true
+@export var touch_drag_threshold_px: float = 8.0
 
 var camera: Camera3D
 var _middle_dragging: bool = false
 var _last_drag_world: Vector3 = Vector3.ZERO
+var _active_touches: Dictionary = {}
+var _touch_start_positions: Dictionary = {}
+var _touch_drag_distance: float = 0.0
+var _is_touch_panning: bool = false
+var _last_handled_touch_event: InputEvent = null
+var _last_touch_event_consumed: bool = false
 
 
 func _ready() -> void:
@@ -92,6 +101,72 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("camera_zoom_out"):
 		set_ortho_size(ortho_size * (1.0 + ZOOM_STEP_FACTOR))
 		get_viewport().set_input_as_handled()
+		return
+
+	if event is InputEventScreenTouch and touch_pan_enabled:
+		var st: InputEventScreenTouch = event as InputEventScreenTouch
+		_last_handled_touch_event = event
+		_last_touch_event_consumed = false
+		if st.pressed:
+			_active_touches[st.index] = st.position
+			_touch_start_positions[st.index] = st.position
+			if _active_touches.size() == 1:
+				_touch_drag_distance = 0.0
+				_is_touch_panning = false
+			else:
+				_is_touch_panning = true
+		else:
+			var was_panning: bool = _is_touch_panning or st.canceled or _active_touches.size() > 1
+			if _touch_start_positions.has(st.index):
+				var start_pos: Vector2 = _touch_start_positions[st.index] as Vector2
+				if st.position.distance_to(start_pos) >= touch_drag_threshold_px:
+					was_panning = true
+			_active_touches.erase(st.index)
+			_touch_start_positions.erase(st.index)
+			if _active_touches.is_empty():
+				_is_touch_panning = false
+				_touch_drag_distance = 0.0
+			if was_panning:
+				_last_touch_event_consumed = true
+				if get_viewport() != null:
+					get_viewport().set_input_as_handled()
+		return
+
+	if event is InputEventScreenDrag and touch_pan_enabled:
+		var sd: InputEventScreenDrag = event as InputEventScreenDrag
+		_last_handled_touch_event = event
+		_last_touch_event_consumed = true
+		var prev_pos: Vector2 = sd.position
+		if _active_touches.has(sd.index):
+			prev_pos = _active_touches[sd.index] as Vector2
+			if prev_pos == sd.position and sd.relative != Vector2.ZERO:
+				prev_pos = sd.position - sd.relative
+		elif sd.relative != Vector2.ZERO:
+			prev_pos = sd.position - sd.relative
+		var step_dist: float = sd.position.distance_to(prev_pos)
+		_touch_drag_distance += step_dist
+		if not _touch_start_positions.has(sd.index):
+			_touch_start_positions[sd.index] = prev_pos
+			_is_touch_panning = true
+		elif _touch_drag_distance >= touch_drag_threshold_px or sd.position.distance_to(_touch_start_positions[sd.index] as Vector2) >= touch_drag_threshold_px:
+			_is_touch_panning = true
+		_active_touches[sd.index] = sd.position
+
+		if _active_touches.size() <= 1:
+			pan_by_screen_delta(prev_pos, sd.position)
+		else:
+			_is_touch_panning = true
+			var other_pos: Vector2 = _get_other_touch_pos(sd.index, sd.position)
+			var prev_mid: Vector2 = (prev_pos + other_pos) * 0.5
+			var cur_mid: Vector2 = (sd.position + other_pos) * 0.5
+			pan_by_screen_delta(prev_mid, cur_mid)
+			if touch_zoom_enabled:
+				var prev_span: float = prev_pos.distance_to(other_pos)
+				var cur_span: float = sd.position.distance_to(other_pos)
+				if prev_span > 10.0 and cur_span > 10.0:
+					set_ortho_size(ortho_size * (prev_span / cur_span))
+		if get_viewport() != null:
+			get_viewport().set_input_as_handled()
 		return
 
 	if event is InputEventMouseButton:
@@ -206,6 +281,68 @@ func pick_hex_at_screen(screen_pos: Vector2) -> Variant:
 	if camera == null:
 		return null
 	return _HexMath.pick_hex_from_camera(camera, screen_pos, 0.0)
+
+
+## Pans the camera on the Y = 0 ground plane so the ground point under [param prev_screen_pos]
+## moves to [param cur_screen_pos]. Returns the world-space delta applied.
+func pan_by_screen_delta(prev_screen_pos: Vector2, cur_screen_pos: Vector2) -> Vector3:
+	if prev_screen_pos == cur_screen_pos:
+		return Vector3.ZERO
+	if camera != null and camera.is_inside_tree():
+		var prev_hit: Variant = _HexMath.intersect_ray_ground(
+			camera.project_ray_origin(prev_screen_pos),
+			camera.project_ray_normal(prev_screen_pos),
+			0.0
+		)
+		var cur_hit: Variant = _HexMath.intersect_ray_ground(
+			camera.project_ray_origin(cur_screen_pos),
+			camera.project_ray_normal(cur_screen_pos),
+			0.0
+		)
+		if prev_hit != null and cur_hit != null:
+			var delta_world: Vector3 = (prev_hit as Vector3) - (cur_hit as Vector3)
+			delta_world.y = 0.0
+			global_position += delta_world
+			global_position.y = 0.0
+			_emit_view_moved()
+			return delta_world
+
+	var screen_delta: Vector2 = cur_screen_pos - prev_screen_pos
+	var vp_size := Vector2(1152.0, 648.0)
+	if is_inside_tree() and get_viewport() != null:
+		var rect_size: Vector2 = get_viewport().get_visible_rect().size
+		if rect_size.y > 0.0:
+			vp_size = rect_size
+	var units_per_px: float = ortho_size / maxf(1.0, vp_size.y)
+	var fallback_delta: Vector3 = (-_ground_right() * screen_delta.x + _ground_forward() * screen_delta.y) * units_per_px
+	fallback_delta.y = 0.0
+	global_position += fallback_delta
+	global_position.y = 0.0
+	_emit_view_moved()
+	return fallback_delta
+
+
+## True when a touchscreen drag gesture has exceeded [member touch_drag_threshold_px] (or is multi-touch).
+func is_touch_panning() -> bool:
+	return _is_touch_panning
+
+
+## True when at least one finger is currently touching the screen.
+func has_active_touch() -> bool:
+	return not _active_touches.is_empty()
+
+
+## Returns the number of currently active touch points.
+func get_active_touch_count() -> int:
+	return _active_touches.size()
+
+
+func _get_other_touch_pos(exclude_index: int, fallback: Vector2) -> Vector2:
+	for k: Variant in _active_touches.keys():
+		var idx: int = int(k)
+		if idx != exclude_index:
+			return _active_touches[idx] as Vector2
+	return fallback
 
 
 func _apply_camera_transform() -> void:
