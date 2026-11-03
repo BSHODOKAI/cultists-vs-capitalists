@@ -13,7 +13,6 @@ id = "chanting_choir"
 display_name = "Chanting Choir"
 description = "Deals 3 Psychic per member per second (starts with 3 members) to Ground targets; detects Cloaked enemies in range."
 cost = 40
-attack_range = 2.0
 range_hexes = 2
 damage = 3.0
 damage_tag = 2

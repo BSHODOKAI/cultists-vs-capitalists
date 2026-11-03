@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "voice_in_the_static"
+display_name = "Voice in the Static"
+description = "Every 10s calls down a Ball Lightning storm on the densest cluster in range (45 Electric AoE + 35% slow for 3s)."
+tower_id = "substation_effigy"
+tier = 4
+branch = 1
+currency = 0
+cost = 90
+prerequisite_id = "astral_conduction"
+corruption_delta = 8
+jank_set = 0
+behaviors = Array[String](["voice_in_the_static"])
+behavior_params = {
+"storm_damage": 45.0,
+"storm_interval": 10.0,
+"storm_radius": 1,
+"storm_slow": 0.35,
+"storm_slow_duration": 3.0
+}

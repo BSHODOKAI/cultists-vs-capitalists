@@ -10,6 +10,7 @@ extends Resource
 const CUE_PROJECTILE_FIRE: String = "projectile_fire"
 const CUE_PROJECTILE_FIRE_SNIPER: String = "projectile_fire_sniper"
 const CUE_PROJECTILE_FIRE_CENSER: String = "projectile_fire_censer"
+const CUE_PROJECTILE_FIRE_TESLA: String = "projectile_fire_tesla"
 const CUE_PROJECTILE_HIT: String = "projectile_hit"
 const CUE_TOWER_CONSTRUCT: String = "tower_construct"
 const CUE_TOWER_CD_DEFAULT: String = "tower_cd_default"
@@ -20,6 +21,7 @@ const CUE_TOWER_CD_GUTTER_PULSE: String = "tower_cd_gutter_pulse"
 const CUE_TOWER_CD_MAW_BENEATH: String = "tower_cd_maw_beneath"
 const CUE_TOWER_CD_CHOIR_SPECIAL: String = "tower_cd_choir_special"
 const CUE_TOWER_CD_SHRINE_BURST: String = "tower_cd_shrine_burst"
+const CUE_TOWER_CD_STATIC_STORM: String = "tower_cd_static_storm"
 const CUE_TOWER_UPGRADE: String = "tower_upgrade"
 const CUE_MOB_HIT: String = "mob_hit"
 const CUE_MOB_DEATH: String = "mob_death"
@@ -107,6 +109,16 @@ static func build_default_cues() -> Dictionary:
 			"pitch_min": 0.95,
 			"pitch_max": 1.05,
 			"active_duration": 0.85,
+			"loop": false,
+		},
+		CUE_PROJECTILE_FIRE_TESLA: {
+			"path": "res://Sound FX Starter Pack Vol. 1/Sci-Fi/Phase Missile.wav",
+			"volume_db": -9.5,
+			"min_interval": 0.16,
+			"max_voices": 2,
+			"pitch_min": 0.95,
+			"pitch_max": 1.06,
+			"active_duration": 0.50,
 			"loop": false,
 		},
 
@@ -213,6 +225,16 @@ static func build_default_cues() -> Dictionary:
 			"pitch_min": 0.97,
 			"pitch_max": 1.03,
 			"active_duration": 2.22,
+			"loop": false,
+		},
+		CUE_TOWER_CD_STATIC_STORM: {
+			"path": "res://Sound FX Starter Pack Vol. 1/Motions and Impacts/Swoosh Thunder.wav",
+			"volume_db": -6.5,
+			"min_interval": 0.45,
+			"max_voices": 1,
+			"pitch_min": 0.94,
+			"pitch_max": 1.04,
+			"active_duration": 1.45,
 			"loop": false,
 		},
 

@@ -219,8 +219,6 @@ static func is_buff_tower_def(td: TowerData, inst: TowerInstance = null) -> bool
 		return false
 	if td.targeting_mode == TowerData.TargetingMode.BUFF_SHRINE:
 		return true
-	if td.attack_type == TowerData.AttackType.AURA and td.aura_target == TowerData.AuraTarget.TOWERS:
-		return true
 	return false
 
 

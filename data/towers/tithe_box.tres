@@ -13,7 +13,6 @@ id = "tithe_box"
 display_name = "Tithe Box"
 description = "No attack; generates +4 Offerings every 5 s."
 cost = 35
-attack_range = 0.0
 range_hexes = 0
 damage = 0.0
 damage_tag = 0

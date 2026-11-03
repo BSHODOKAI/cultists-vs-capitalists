@@ -1,9 +1,8 @@
 ## TowerLibrary
 ##
-## The single list of the built-in sample tower definitions, so the placement
-## manager, the build menu and the demo stage all agree on the same set without
-## each hard-coding resource paths. Add a new sample .tres to [constant
-## SAMPLE_PATHS] to make it appear everywhere.
+## Central catalog loader for all 9 cult tower definitions (under res://data/towers/),
+## all 45 upgrade node resources (under res://data/upgrades/), and the central
+## TowerBalanceData resource (at res://data/tower_balance.tres).
 class_name TowerLibrary
 extends RefCounted
 
@@ -20,6 +19,7 @@ const TOWER_PATHS: Array[String] = [
 	"res://data/towers/fever_shrine.tres",
 	"res://data/towers/the_congregation.tres",
 	"res://data/towers/tithe_box.tres",
+	"res://data/towers/substation_effigy.tres",
 ]
 
 ## All 45 upgrade node resources under res://data/upgrades/ (9 T2 + 18 T3 + 18 T4).
@@ -78,16 +78,12 @@ const UPGRADE_PATHS: Array[String] = [
 	"res://data/upgrades/dark_patron.tres",
 	"res://data/upgrades/scrap_collector.tres",
 	"res://data/upgrades/chop_shop.tres",
-]
-
-## Legacy sample tower resources, kept for backwards compatibility with older demos/tests.
-const SAMPLE_PATHS: Array[String] = [
-	"res://resources/towers/basic_tower.tres",   # PROJECTILE
-	"res://resources/towers/laser_tower.tres",   # INSTANT
-	"res://resources/towers/flame_tower.tres",   # INSTANT + BURN
-	"res://resources/towers/frost_tower.tres",   # AURA debuff (SLOW)
-	"res://resources/towers/beacon_tower.tres",  # AURA buff (FIRE_RATE)
-	"res://resources/towers/banner_tower.tres",  # AURA buff (DAMAGE)
+	# 10. substation_effigy
+	"res://data/upgrades/copper_thieves.tres",
+	"res://data/upgrades/astral_conduction.tres",
+	"res://data/upgrades/voice_in_the_static.tres",
+	"res://data/upgrades/substation_tap.tres",
+	"res://data/upgrades/breaker_cascade.tres",
 ]
 
 
@@ -149,13 +145,3 @@ static func get_upgrade(node_id: String) -> UpgradeNode:
 		if node.id == node_id:
 			return node
 	return null
-
-
-## Loads the sample tower definitions, skipping any path that fails to load.
-static func load_samples() -> Array[TowerData]:
-	var out: Array[TowerData] = []
-	for path in SAMPLE_PATHS:
-		var data := load(path) as TowerData
-		if data != null:
-			out.append(data)
-	return out

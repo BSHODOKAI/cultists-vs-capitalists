@@ -13,7 +13,6 @@ id = "hexed_nail_gun"
 display_name = "Hexed Nail Gun"
 description = "Single-target Kinetic nail gun that targets Ground and Air enemies."
 cost = 30
-attack_range = 3.0
 range_hexes = 3
 damage = 8.0
 damage_tag = 0

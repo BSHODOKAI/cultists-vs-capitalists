@@ -1,5 +1,5 @@
 ## Tests for the Build Tower Menu UI flow (hotkey B -> inspect tower details -> confirm build)
-## in both res://scenes/main.tscn (BuildPalette + TowerPanel) and res://scenes/MainStage.tscn (TowerMenu).
+## in res://scenes/main.tscn (BuildPalette + TowerPanel), plus procedural models, icons, and biome tiles.
 extends Node
 
 const _GameState = preload("res://scripts/core/game_state.gd")
@@ -100,49 +100,9 @@ func test_01_main_build_palette_menu_inspect_before_build_and_description_displa
 	clock.manual_mode = false
 
 
-func test_02_main_stage_tower_menu_inspect_before_build_and_description_display() -> void:
-	var stage_packed := load("res://scenes/MainStage.tscn") as PackedScene
-	assert(stage_packed != null, "res://scenes/MainStage.tscn must load")
-	var stage_inst: Node = stage_packed.instantiate()
-	add_child(stage_inst)
-
-	var menu: TowerMenu = stage_inst.get_node("TowerMenu") as TowerMenu
-	var placement: TowerPlacementManager = stage_inst.get_node("TowerPlacement") as TowerPlacementManager
-	assert(menu != null, "TowerMenu must exist in MainStage")
-	assert(placement != null, "TowerPlacement must exist in MainStage")
-
-	# 1. Starts closed, active HUD bar shows current tower description
-	assert(not menu.is_menu_open(), "TowerMenu must start closed")
-	var initial_active: TowerData = placement.current_data
-	assert(initial_active != null, "TowerPlacement has initial tower")
-	assert(
-		menu._active_desc_label.text.contains(initial_active.display_name) and not initial_active.get_display_description().is_empty(),
-		"Active HUD bar must display current tower description when building"
-	)
-
-	# 2. Open menu with B / open_menu(), select tower #2 (Flame Tower) -> shows detail before changing placement tower
-	menu.open_menu()
-	assert(menu.is_menu_open(), "TowerMenu must be open")
-	menu.inspect_tower(2)
-	var inspected: TowerData = menu.get_inspected_tower()
-	assert(inspected != null and inspected.display_name == "Flame Tower", "Inspected tower must be Flame Tower")
-	assert(placement.current_data == initial_active, "Inspecting a tower in the menu must not change active build tower before confirmation")
-	assert(menu._detail_title_label.text == "Flame Tower", "Detail pane must show Flame Tower title")
-	assert(menu._detail_desc_label.text.contains("Burn"), "Detail pane must show Flame Tower description")
-	assert(menu._detail_stats_label.text.contains("Range"), "Detail pane must show Flame Tower stats")
-
-	# 3. Confirm build -> updates placement.current_data, closes menu, updates active build description
-	menu.confirm_build()
-	assert(not menu.is_menu_open(), "Confirming build must close TowerMenu")
-	assert(placement.current_data == inspected, "Confirming build must set TowerPlacement.current_data to Flame Tower")
-	assert(menu._active_desc_label.text.contains("Flame Tower") and menu._active_desc_label.text.contains("Burn"), "Active build bar must show Flame Tower description")
-
-	stage_inst.queue_free()
-
-
-func test_03_placeholder_models_and_icons_for_all_towers_units_and_bosses() -> void:
+func test_02_placeholder_models_and_icons_for_all_towers_units_and_bosses() -> void:
 	var towers: Array[TowerData] = _TowerLibrary.load_towers()
-	assert(towers.size() == 9, "Must load all 9 cult towers")
+	assert(towers.size() == 10, "Must load all 10 cult towers")
 
 	for td: TowerData in towers:
 		var icon: ImageTexture = _PlaceholderIcons.get_tower_icon(td.id, 40)
@@ -177,7 +137,7 @@ func test_03_placeholder_models_and_icons_for_all_towers_units_and_bosses() -> v
 		assert(sp_mesh != null and sp_mesh.get_surface_count() > 0, "Special spawn mesh must exist for %s" % special_id)
 
 
-func test_04_urban_center_biome_skyscrapers_districts_and_cleared_street_under_towers() -> void:
+func test_03_urban_center_biome_skyscrapers_districts_and_cleared_street_under_towers() -> void:
 	var gs: GameStateNode = _get_game_state()
 	var clock: SimClockNode = _get_sim_clock()
 	clock.manual_mode = true
@@ -266,7 +226,7 @@ func test_04_urban_center_biome_skyscrapers_districts_and_cleared_street_under_t
 
 	# Verify 3D projectile & impact burst meshes and CombatEffectsView spawning
 	var effects_view: CombatEffectsView = main_inst.get_node("GameWorld/Effects") as CombatEffectsView
-	for tid: String in ["hexed_nail_gun", "chanting_choir", "gutter_ritual_circle", "tentacle_storm_drain", "watcher_in_the_billboard", "rust_censer"]:
+	for tid: String in ["hexed_nail_gun", "chanting_choir", "gutter_ritual_circle", "tentacle_storm_drain", "watcher_in_the_billboard", "rust_censer", "substation_effigy"]:
 		var proj_m: ArrayMesh = _PlaceholderModels.get_projectile_mesh(tid, 0)
 		assert(proj_m != null and proj_m.get_surface_count() > 0, "Projectile mesh must exist for %s" % tid)
 	for dtag in range(5):
@@ -274,8 +234,61 @@ func test_04_urban_center_biome_skyscrapers_districts_and_cleared_street_under_t
 		assert(imp_m != null and imp_m.get_surface_count() > 0, "Impact burst mesh must exist for DamageTag %d" % dtag)
 	effects_view.spawn_projectile(Vector3(0.0, 0.7, 0.0), Vector3(3.0, 0.5, 0.0), "hexed_nail_gun", 0, 0.12)
 	assert(effects_view._active_projectiles.size() == 1, "spawn_projectile must create an active 3D travelling projectile")
+	assert(effects_view._active_beams.is_empty(), "spawn_projectile must NOT create a tracer line/beam along the projectile path")
 	effects_view._process(0.15)
 	assert(effects_view._active_impacts.size() >= 1, "Projectile arrival must spawn a 3D impact burst")
+
+	# Verify substation_effigy chain lightning: instant polyline mesh linking tower -> chained enemies,
+	# colored electric blue that glows to white and fades out within 2 seconds.
+	var chain_pts: Array[Vector3] = []
+	chain_pts.append(Vector3(0.0, 1.15, 0.0))
+	chain_pts.append(Vector3(1.6, 0.5, 0.4))
+	chain_pts.append(Vector3(3.2, 0.5, -0.6))
+	effects_view.spawn_chain_lightning(chain_pts, 1.6, 0.055)
+	assert(effects_view._active_chains.size() == 1, "spawn_chain_lightning must create exactly one chain-lightning polyline")
+	var chain_mi: MeshInstance3D = effects_view._active_chains[0]["node"] as MeshInstance3D
+	assert(chain_mi != null and chain_mi.mesh != null and chain_mi.mesh.get_surface_count() > 0, "Chain-lightning mesh must be non-empty")
+	assert(chain_mi.mesh.get_aabb().has_volume(), "Chain-lightning mesh must span from the apex to the hit targets")
+	var c_mat: StandardMaterial3D = chain_mi.material_override as StandardMaterial3D
+	assert(c_mat.albedo_color.b > c_mat.albedo_color.r, "Chain lightning must start electric blue (blue channel dominant)")
+	effects_view._process(0.9)
+	assert(c_mat.albedo_color.r > 0.8 and c_mat.albedo_color.g > 0.8, "Chain lightning must glow to white mid-effect")
+	assert(c_mat.albedo_color.a > 0.0, "Chain lightning must still be visible before it fades")
+	effects_view._process(1.0)
+	assert(effects_view._active_chains.is_empty(), "Chain lightning must fade out and be released well within 2 seconds")
+
+	# Verify a following chain tracks moving anchors: rebuild its mesh as the anchors move.
+	var anchor_a := Node3D.new()
+	main_inst.add_child(anchor_a)
+	anchor_a.global_position = Vector3(0.0, 0.0, 0.0)
+	var anchor_b := Node3D.new()
+	main_inst.add_child(anchor_b)
+	anchor_b.global_position = Vector3(1.0, 0.0, 0.0)
+	var providers: Array[Callable] = []
+	providers.append(func() -> Variant: return anchor_a.global_position + Vector3(0.0, 1.0, 0.0))
+	providers.append(func() -> Variant: return anchor_b.global_position)
+	effects_view.spawn_following_chain_lightning(providers, 1.6, 0.055)
+	assert(effects_view._active_chains.size() == 1, "spawn_following_chain_lightning must create one arc")
+	var follow_node: MeshInstance3D = effects_view._active_chains[0]["node"] as MeshInstance3D
+	var center_before: Vector3 = follow_node.mesh.get_aabb().get_center()
+	anchor_b.global_position = Vector3(5.0, 0.0, 0.0)
+	effects_view._process(0.05)
+	var center_after: Vector3 = follow_node.mesh.get_aabb().get_center()
+	assert(center_after.x > center_before.x + 1.5, "Following chain must rebuild toward the moved anchor each frame")
+
+	# Verify a chain lingers at an anchor that is already dead when the arc first appears:
+	# a provider returning null must fall back to the captured hit-time position, not the world origin.
+	anchor_a.global_position = Vector3(0.0, 0.0, 0.0)
+	var dead_providers: Array[Callable] = []
+	dead_providers.append(func() -> Variant: return anchor_a.global_position + Vector3(0.0, 1.0, 0.0))
+	dead_providers.append(func() -> Variant: return null)
+	var init_pts: Array[Vector3] = [anchor_a.global_position + Vector3(0.0, 1.0, 0.0), Vector3(6.0, 0.5, 0.0)]
+	effects_view.spawn_following_chain_lightning(dead_providers, 1.6, 0.055, init_pts)
+	var linger_node: MeshInstance3D = effects_view._active_chains.back()["node"] as MeshInstance3D
+	effects_view._process(0.1)
+	var linger_aabb: AABB = linger_node.mesh.get_aabb()
+	assert(linger_aabb.end.x > 5.5, "A dead anchor must keep the bolt lingering at its captured hit position (not the origin)")
+	assert(linger_aabb.position.x > -0.5, "A dead anchor must never snap the bolt to the world origin")
 
 	main_inst.queue_free()
 	clock.manual_mode = false

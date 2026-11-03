@@ -1,49 +1,12 @@
 ## TowerData
 ##
-## Designer-editable definition of a tower archetype. Create one .tres per tower
-## under res://resources/towers/ and assign it to a [Tower].
-##
-## A tower has a limited [member attack_range] and delivers its payload according
-## to its [member attack_type]:
-##   • PROJECTILE — launches a travelling projectile at the target;
-##   • INSTANT    — applies its payload to the target immediately (hitscan);
-##   • AURA       — repeatedly affects every cell around the tower: a debuff on
-##     enemies, or a buff on neighbouring towers.
-##
-## A payload is [member damage] plus an optional status [member effect] (SLOW or
-## BURN). Auras aimed at TOWERS instead improve a friendly [member buff_stat].
+## Designer-editable definition of a hex-grid cult tower archetype.
+## Stored as .tres files under res://data/towers/ and loaded via [TowerLibrary].
 class_name TowerData
 extends Resource
 
 const _C = preload("res://scripts/path/path_constants.gd")
 const _UpgradeNode = preload("res://scripts/towers/upgrade_node.gd")
-
-## How a tower delivers its attack.
-enum AttackType {
-	PROJECTILE, ## Fires a projectile that travels to the target.
-	INSTANT,    ## Applies its effect immediately when it fires (hitscan).
-	AURA,       ## Continuously affects the cells surrounding the tower.
-}
-
-## Optional status an attack also applies (on hit, or once per aura tick).
-enum Effect {
-	NONE,  ## Pure damage, no extra status.
-	SLOW,  ## Slows the enemy to [code](1 - effect_power)[/code] speed for [member effect_duration].
-	BURN,  ## Deals [member effect_power] damage per second for [member effect_duration].
-}
-
-## What an AURA tower acts on.
-enum AuraTarget {
-	ENEMIES, ## A debuff: affects enemies caught inside the aura.
-	TOWERS,  ## A buff: affects friendly towers inside the aura (not itself).
-}
-
-## Friendly-tower stat that an aura buff improves.
-enum TowerStat {
-	DAMAGE,    ## Multiplies the tower's damage.
-	FIRE_RATE, ## Multiplies the tower's shots per second.
-	RANGE,     ## Multiplies the tower's attack range.
-}
 
 ## Hex-defense targeting/archetype mode.
 enum TargetingMode {
@@ -56,13 +19,14 @@ enum TargetingMode {
 	BUFF_SHRINE = 6,
 	SUMMON_CONGREGATION = 7,
 	ECONOMY_TITHE = 8,
+	CHAIN_ARC = 9,
 }
 
 ## Unique snake_case identifier (e.g. "hexed_nail_gun").
 @export var id: String = ""
 @export var display_name: String = "Tower"
 @export_multiline var description: String = ""
-## Optional mesh. When left empty the Tower keeps the mesh from its scene.
+## Optional mesh override.
 @export var mesh: Mesh
 ## Albedo color applied to the tower's mesh.
 @export var color: Color = Color(0.55, 0.8, 1.0, 1.0)
@@ -70,8 +34,6 @@ enum TargetingMode {
 @export var cost: int = 50
 ## Currency used to build this tower at T1 (0 = OFFERINGS, 1 = SCRAP).
 @export var build_currency: int = _UpgradeNode.Currency.OFFERINGS
-## Attack range in world units (legacy 3D node compatibility).
-@export var attack_range: float = 3.0
 ## Attack range in axial hex distance.
 @export var range_hexes: int = 3
 ## Damage per shot/tick/pulse (or per member per second for chanting_choir).
@@ -140,29 +102,6 @@ enum TargetingMode {
 @export var rigged_t3_upgrade: UpgradeNode
 @export var rigged_t4_upgrade: UpgradeNode
 
-@export_group("Attack")
-## How the tower delivers its attack.
-@export var attack_type: AttackType = AttackType.PROJECTILE
-## Projectile scene for PROJECTILE towers. Falls back to Projectile.tscn when empty.
-@export var projectile_scene: PackedScene
-## Optional status the attack also applies (PROJECTILE: on hit; INSTANT/AURA: each shot/tick).
-@export var effect: Effect = Effect.NONE
-## Strength of [member effect]: slow fraction (0..1) for SLOW, damage-per-second for BURN.
-@export var effect_power: float = 0.0
-## How long the applied status lasts, in seconds.
-@export var effect_duration: float = 0.0
-
-@export_group("Aura")
-## Whether the aura debuffs enemies or buffs friendly towers.
-@export var aura_target: AuraTarget = AuraTarget.ENEMIES
-## Aura pulses per second (how often the aura is re-applied). Falls back to
-## [member fire_rate] when left at 0.
-@export var aura_tick_rate: float = 0.0
-## Which tower stat an aura buff improves (only used when [member aura_target] is TOWERS).
-@export var buff_stat: TowerStat = TowerStat.DAMAGE
-## Buff strength as a fraction added to the stat (0.25 = +25%).
-@export var buff_amount: float = 0.25
-
 
 ## Returns all 5 upgrade nodes belonging to this tower in canonical order:
 ## [t2, revealed_t3, revealed_t4, rigged_t3, rigged_t4].
@@ -204,35 +143,22 @@ func get_build_currency_name(short_form: bool = false) -> String:
 func get_display_description() -> String:
 	if not description.strip_edges().is_empty():
 		return description.strip_edges()
-	match attack_type:
-		AttackType.PROJECTILE:
-			return "Fires projectiles dealing %.1f damage at %.1f shots/s within range %.1f." % [
-				damage, fire_rate, attack_range
+	var range_val: int = range_hexes if range_hexes > 0 else aura_radius_hexes
+	match targeting_mode:
+		TargetingMode.ECONOMY_TITHE:
+			return "Generates +%d Offerings every %.1f s." % [income_offerings, income_interval]
+		TargetingMode.BUFF_SHRINE:
+			return "Support aura that boosts nearby friendly towers' fire rate by +%d%% within %d hexes." % [
+				roundi(aura_fire_rate_bonus * 100.0), range_val
 			]
-		AttackType.INSTANT:
-			if effect == Effect.BURN:
-				return "Instant beam dealing %.1f damage (%.1f/s) and burning targets for %.1f DPS over %.1fs." % [
-					damage, fire_rate, effect_power, effect_duration
-				]
-			return "Instant hitscan beam dealing %.1f damage at %.1f shots/s within range %.1f." % [
-				damage, fire_rate, attack_range
+		TargetingMode.SUMMON_CONGREGATION:
+			return "Summons up to %d blockers (%d HP, %.1f DPS) onto adjacent path hexes." % [
+				summon_count, roundi(summon_hp), summon_dps
 			]
-		AttackType.AURA:
-			if aura_target == AuraTarget.TOWERS:
-				var stat_name: String = "damage"
-				if buff_stat == TowerStat.FIRE_RATE:
-					stat_name = "fire rate"
-				elif buff_stat == TowerStat.RANGE:
-					stat_name = "range"
-				return "Support aura that boosts nearby friendly towers' %s by +%d%% within range %.1f." % [
-					stat_name, roundi(buff_amount * 100.0), attack_range
-				]
-			if effect == Effect.SLOW:
-				return "Chilling aura that slows enemies by %d%% for %.1fs within range %.1f." % [
-					roundi(effect_power * 100.0), effect_duration, attack_range
-				]
-			return "Aura pulsing %.1f damage to enemies within range %.1f." % [damage, attack_range]
-	return "Defensive tower."
+		_:
+			return "Deals %.1f %s damage at %.2f/s within %d hexes." % [
+				damage, get_damage_tag_name(), fire_rate, range_val
+			]
 
 
 ## Human-readable name for [member damage_tag].
@@ -246,6 +172,8 @@ func get_damage_tag_name() -> String:
 			return "Psychic"
 		_C.DamageTag.VOID:
 			return "Void"
+		_C.DamageTag.ELECTRIC:
+			return "Electric"
 	return "Kinetic"
 
 
@@ -253,7 +181,7 @@ func get_damage_tag_name() -> String:
 func get_target_domain_text() -> String:
 	if targeting_mode == TargetingMode.ECONOMY_TITHE:
 		return "None (Economy)"
-	if targeting_mode == TargetingMode.BUFF_SHRINE or (attack_type == AttackType.AURA and aura_target == AuraTarget.TOWERS):
+	if targeting_mode == TargetingMode.BUFF_SHRINE:
 		return "Friendly Towers"
 	var has_ground: bool = target_tags.has(_C.UnitTag.GROUND)
 	var has_air: bool = target_tags.has(_C.UnitTag.AIR)
@@ -272,58 +200,38 @@ func get_stats_summary(effective_cost: int = -1, currency_label: String = "Offer
 	var lines: PackedStringArray = PackedStringArray()
 	lines.append("Cost: %d %s" % [shown_cost, currency_label])
 
-	if not id.is_empty():
-		var range_val: int = range_hexes if range_hexes > 0 else aura_radius_hexes
-		if targeting_mode == TargetingMode.ECONOMY_TITHE:
-			lines.append("Role: Economy (+%d Offerings / %.1fs)" % [income_offerings, income_interval])
-		elif targeting_mode == TargetingMode.BUFF_SHRINE:
-			lines.append("Aura Range: %d hex | Buff: +%d%% Fire Rate" % [
-				range_val, roundi(aura_fire_rate_bonus * 100.0)
-			])
-		elif targeting_mode == TargetingMode.SUMMON_CONGREGATION:
-			lines.append("Range: %d hex | Blockers: %d (%d HP, %.1f DPS)" % [
-				range_val, summon_count, roundi(summon_hp), summon_dps
-			])
-		else:
-			lines.append("Range: %d hex | Damage: %.1f %s | Rate: %.2f/s" % [
-				range_val, damage, get_damage_tag_name(), fire_rate
-			])
-		lines.append("Targets: %s" % get_target_domain_text())
-
-		var traits: PackedStringArray = PackedStringArray()
-		if detects_cloaked:
-			traits.append("Detects Cloaked")
-		if pulse_reveal_duration > 0.0:
-			traits.append("Reveals Cloaked (%.0fs)" % pulse_reveal_duration)
-		if applies_entangled:
-			traits.append("Applies Entangled")
-		if shred_per_hit > 0:
-			traits.append("Armor Shred (+%d/hit)" % shred_per_hit)
-		if starting_members > 1:
-			traits.append("%d Choir Members" % starting_members)
-		if not traits.is_empty():
-			lines.append("Traits: %s" % ", ".join(traits))
+	var range_val: int = range_hexes if range_hexes > 0 else aura_radius_hexes
+	if targeting_mode == TargetingMode.ECONOMY_TITHE:
+		lines.append("Role: Economy (+%d Offerings / %.1fs)" % [income_offerings, income_interval])
+	elif targeting_mode == TargetingMode.BUFF_SHRINE:
+		lines.append("Aura Range: %d hex | Buff: +%d%% Fire Rate" % [
+			range_val, roundi(aura_fire_rate_bonus * 100.0)
+		])
+	elif targeting_mode == TargetingMode.SUMMON_CONGREGATION:
+		lines.append("Range: %d hex | Blockers: %d (%d HP, %.1f DPS)" % [
+			range_val, summon_count, roundi(summon_hp), summon_dps
+		])
 	else:
-		var type_str: String = "Projectile"
-		if attack_type == AttackType.INSTANT:
-			type_str = "Instant Beam"
-		elif attack_type == AttackType.AURA:
-			type_str = "Aura (Towers)" if aura_target == AuraTarget.TOWERS else "Aura (Enemies)"
-		lines.append("Type: %s | Range: %.1f" % [type_str, attack_range])
-		if attack_type == AttackType.AURA and aura_target == AuraTarget.TOWERS:
-			var stat_name: String = "Damage"
-			if buff_stat == TowerStat.FIRE_RATE:
-				stat_name = "Fire Rate"
-			elif buff_stat == TowerStat.RANGE:
-				stat_name = "Range"
-			lines.append("Buff: +%d%% %s" % [roundi(buff_amount * 100.0), stat_name])
-		else:
-			var rate_val: float = aura_tick_rate if (attack_type == AttackType.AURA and aura_tick_rate > 0.0) else fire_rate
-			lines.append("Damage: %.1f | Rate: %.1f/s" % [damage, rate_val])
-			if effect == Effect.SLOW:
-				lines.append("Effect: %d%% Slow for %.1fs" % [roundi(effect_power * 100.0), effect_duration])
-			elif effect == Effect.BURN:
-				lines.append("Effect: %.1f Burn DPS for %.1fs" % [effect_power, effect_duration])
+		lines.append("Range: %d hex | Damage: %.1f %s | Rate: %.2f/s" % [
+			range_val, damage, get_damage_tag_name(), fire_rate
+		])
+	lines.append("Targets: %s" % get_target_domain_text())
+
+	var traits: PackedStringArray = PackedStringArray()
+	if detects_cloaked:
+		traits.append("Detects Cloaked")
+	if pulse_reveal_duration > 0.0:
+		traits.append("Reveals Cloaked (%.0fs)" % pulse_reveal_duration)
+	if applies_entangled:
+		traits.append("Applies Entangled")
+	if shred_per_hit > 0:
+		traits.append("Armor Shred (+%d/hit)" % shred_per_hit)
+	if starting_members > 1:
+		traits.append("%d Choir Members" % starting_members)
+	if targeting_mode == TargetingMode.CHAIN_ARC and max_targets > 1:
+		traits.append("Chains up to %d Targets" % max_targets)
+	if not traits.is_empty():
+		lines.append("Traits: %s" % ", ".join(traits))
 
 	return "\n".join(lines)
 

@@ -16,6 +16,14 @@ build/
 data_*/
 mono_crash.*.json
 
+# QA Test Reports
+.ziva/qa-runs/**
+
+# Not Needed to track
+.bible/base_context.md
+.bible/milestones.md
+.bible/original_prompt_set.md
+
 # Ziva tooling (regenerated per machine, not project code)
 addons/ziva_agent/
 

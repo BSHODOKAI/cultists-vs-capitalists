@@ -146,6 +146,37 @@ func _build_ui() -> void:
 		refresh()
 	)
 
+	# Command buttons row 5: Start funds override for testing (applied on every run start)
+	var row5 := HBoxContainer.new()
+	vbox.add_child(row5)
+	var off_spin := SpinBox.new()
+	off_spin.min_value = 0
+	off_spin.max_value = 100000000
+	off_spin.step = 100
+	off_spin.value = 10000
+	off_spin.tooltip_text = "Starting Offerings override"
+	row5.add_child(off_spin)
+	var scrap_spin := SpinBox.new()
+	scrap_spin.min_value = 0
+	scrap_spin.max_value = 100000000
+	scrap_spin.step = 100
+	scrap_spin.value = 10000
+	scrap_spin.tooltip_text = "Starting Scrap override"
+	row5.add_child(scrap_spin)
+	_add_cmd_btn(row5, "Restart w/ Funds", func() -> void:
+		var gs: Node = _gs()
+		gs.set("debug_start_offerings", int(off_spin.value))
+		gs.set("debug_start_scrap", int(scrap_spin.value))
+		gs.call("start_new_run", -1)
+		refresh()
+	)
+	_add_cmd_btn(row5, "Clear", func() -> void:
+		var gs: Node = _gs()
+		gs.set("debug_start_offerings", -1)
+		gs.set("debug_start_scrap", -1)
+		refresh()
+	)
+
 
 func _add_cmd_btn(parent: Node, text: String, cb: Callable) -> void:
 	var b := Button.new()
@@ -173,6 +204,13 @@ func refresh() -> void:
 		int(gs.get("run_seed")),
 		str(bool(gs.get("god_mode")))
 	])
+	var dbg_off: int = int(gs.get("debug_start_offerings"))
+	var dbg_scrap: int = int(gs.get("debug_start_scrap"))
+	if dbg_off >= 0 or dbg_scrap >= 0:
+		lines.append("Start-Funds Override: Offerings=%s Scrap=%s" % [
+			str(dbg_off) if dbg_off >= 0 else "default",
+			str(dbg_scrap) if dbg_scrap >= 0 else "default"
+		])
 	lines.append("Wave: %d | Interval: %d | Faction: %s" % [
 		int(gs.get("current_wave")),
 		int(gs.get("current_interval")),

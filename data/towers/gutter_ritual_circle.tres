@@ -13,7 +13,6 @@ id = "gutter_ritual_circle"
 display_name = "Gutter Ritual Circle"
 description = "Pulses 25 Corrosive every 2.5 s on target + ring 1 (Ground only); reveals Cloaked enemies hit for 3 s."
 cost = 50
-attack_range = 3.0
 range_hexes = 3
 damage = 25.0
 damage_tag = 1

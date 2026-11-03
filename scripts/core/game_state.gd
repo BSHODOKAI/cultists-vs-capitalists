@@ -90,6 +90,12 @@ var spatial_index: RefCounted
 var current_state: int = RunState.RUN_SETUP
 var run_seed: int = 1337
 var pending_seed_override: int = -1
+## Dev/testing overrides for starting funds (-1 = use the normal starting amounts).
+## Set via the F3 DebugPanel "Restart w/ Funds", or launch args:
+##   --start-offerings=N   --start-scrap=N   --start-funds=N (sets both)
+## Applied on every start_new_run() and kept until cleared.
+var debug_start_offerings: int = -1
+var debug_start_scrap: int = -1
 var current_wave: int = 0
 var current_interval: int = 1
 var active_faction: String = "swarm_syndicate"
@@ -133,9 +139,23 @@ func _get_sim_clock_node() -> Node:
 
 
 func _ready() -> void:
+	_parse_dev_args()
 	var clock: Node = _get_sim_clock_node()
 	if clock != null and not clock.is_connected("tick", Callable(self, "_on_sim_tick")):
 		clock.connect("tick", Callable(self, "_on_sim_tick"))
+
+
+## Parses dev-only launch args (after the bare `--`) that override starting funds.
+func _parse_dev_args() -> void:
+	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with("--start-offerings="):
+			debug_start_offerings = maxi(0, arg.get_slice("=", 1).to_int())
+		elif arg.begins_with("--start-scrap="):
+			debug_start_scrap = maxi(0, arg.get_slice("=", 1).to_int())
+		elif arg.begins_with("--start-funds="):
+			var v: int = maxi(0, arg.get_slice("=", 1).to_int())
+			debug_start_offerings = v
+			debug_start_scrap = v
 
 
 # --- Property proxies --------------------------------------------------------
@@ -260,6 +280,10 @@ func start_new_run(seed_val: int = -1) -> void:
 	tower_system.offerings = _C.STARTING_OFFERINGS
 	tower_system.scrap = _C.STARTING_SCRAP
 	tower_system.lives = _C.STARTING_LIVES
+	if debug_start_offerings >= 0:
+		tower_system.offerings = debug_start_offerings
+	if debug_start_scrap >= 0:
+		tower_system.scrap = debug_start_scrap
 	tower_system.corruption = 0
 	max_lives = _C.STARTING_LIVES
 

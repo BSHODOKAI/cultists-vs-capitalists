@@ -103,6 +103,15 @@ const EXPECTED_TOWERS: Dictionary = {
 		"rig_t3": "scrap_collector",
 		"rig_t4": "chop_shop",
 	},
+	"substation_effigy": {
+		"cost": 50,
+		"range": 3,
+		"t2": "copper_thieves",
+		"rev_t3": "astral_conduction",
+		"rev_t4": "voice_in_the_static",
+		"rig_t3": "substation_tap",
+		"rig_t4": "breaker_cascade",
+	},
 }
 
 
@@ -125,8 +134,8 @@ func test_01_data_validation_9_towers_45_nodes_references_and_costs() -> void:
 
 	var towers: Array[TowerData] = _Library.load_towers()
 	var upgrades: Array[UpgradeNode] = _Library.load_upgrades()
-	assert(towers.size() == 9, "Must have exactly 9 TowerData resources, got %d" % towers.size())
-	assert(upgrades.size() == 45, "Must have exactly 45 UpgradeNode resources, got %d" % upgrades.size())
+	assert(towers.size() == 10, "Must have exactly 10 TowerData resources, got %d" % towers.size())
+	assert(upgrades.size() == 50, "Must have exactly 50 UpgradeNode resources, got %d" % upgrades.size())
 
 	var seen_node_ids: Dictionary = {}
 	for td: TowerData in towers:
@@ -147,7 +156,7 @@ func test_01_data_validation_9_towers_45_nodes_references_and_costs() -> void:
 		assert(t2 != null and t2.id == String(spec["t2"]), "%s T2 id mismatch" % td.id)
 		assert(t2.tower_id == td.id, "%s T2 tower_id must match" % td.id)
 		assert(t2.tier == 2 and t2.branch == _UpgradeNode.Branch.SHARED, "%s T2 tier/branch mismatch" % td.id)
-		var expected_base_curr: int = _UpgradeNode.Currency.SCRAP if (td.id == "rust_censer" or td.id == "watcher_in_the_billboard") else _UpgradeNode.Currency.OFFERINGS
+		var expected_base_curr: int = _UpgradeNode.Currency.SCRAP if (td.id == "rust_censer" or td.id == "watcher_in_the_billboard" or td.id == "substation_effigy") else _UpgradeNode.Currency.OFFERINGS
 		assert(td.build_currency == expected_base_curr, "%s build_currency mismatch" % td.id)
 		assert(t2.currency == expected_base_curr, "%s T2 must match base tower currency" % td.id)
 		assert(t2.cost == roundi(float(base_cost) * 0.6), "%s T2 cost must be 0.6x base (%d), got %d" % [td.id, roundi(float(base_cost) * 0.6), t2.cost])
@@ -197,7 +206,7 @@ func test_01_data_validation_9_towers_45_nodes_references_and_costs() -> void:
 			for b_id: String in node.behaviors:
 				assert(_Registry.has_behavior(b_id), "Upgrade behavior '%s' on %s must exist in TowerBehaviorRegistry" % [b_id, node.id])
 
-	assert(seen_node_ids.size() == 45, "All 45 unique upgrade node IDs must be validated")
+	assert(seen_node_ids.size() == 50, "All 50 unique upgrade node IDs must be validated")
 
 
 # --- Test 2: Branch lock: choosing a T3 locks the other branch ----------------
@@ -535,6 +544,7 @@ func test_06_deterministic_headless_combat_sim_for_each_tower() -> void:
 		"fever_shrine",
 		"the_congregation",
 		"tithe_box",
+		"substation_effigy",
 	]
 
 	for tid: String in all_tower_ids:
@@ -786,4 +796,47 @@ func test_08_cc_diminishing_returns_3x_then_permanent_immunity_and_slows_forever
 	assert(is_equal_approx(u.timed_slow_strength, 0.40), "Timed slows must never suffer diminishing returns")
 	assert(u.fear_stacks == 5, "Fear slow stacks must remain active forever")
 	assert(u.get_effective_speed_multiplier() < 0.50, "Slows must continue slowing the unit indefinitely even when immune to all 4 hard-CC categories")
+
+
+func test_09_substation_effigy_chain_arc_air_priority_and_upgrades() -> void:
+	var sys := _make_test_system()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 2026
+
+	var effigy: TowerInstance = sys.place_tower(Vector2i(5, 1), "substation_effigy")
+	assert(effigy != null, "substation_effigy must place on buildable hex")
+	assert(effigy.total_scrap_spent == 50 and effigy.total_offerings_spent == 0, "substation_effigy must cost 50 Scrap")
+
+	# Spawn 1 Ground unit closer to base (pos 4.0) and 2 Air units further back (pos 5.0 and 6.0)
+	var g_unit: CombatUnit = sys.spawn_unit(500.0, [_C.UnitTag.GROUND], 0.0, 4.0)
+	var a_unit1: CombatUnit = sys.spawn_unit(500.0, [_C.UnitTag.AIR], 0.0, 5.0)
+	var a_unit2: CombatUnit = sys.spawn_unit(500.0, [_C.UnitTag.AIR], 0.0, 6.0)
+	var far_unit: CombatUnit = sys.spawn_unit(500.0, [_C.UnitTag.GROUND], 0.0, 10.0) # Out of 2-hex hop range
+
+	# Primary target selection must prioritize Air unit first even though Ground unit is closer to base
+	var picked: CombatUnit = sys.select_target_for_tower(effigy)
+	assert(picked == a_unit1, "substation_effigy must prioritize Air units in range first")
+
+	# Step once so effigy fires 1 discharge -> chains across a_unit1 (14.0), a_unit2 (10.5), and g_unit (7.875)
+	sys.step(0.05, rng)
+	assert(is_equal_approx(a_unit1.hp, 500.0 - 14.0), "Primary Air target must take 100%% base Electric damage (14.0), got %.2f" % (500.0 - a_unit1.hp))
+	assert(is_equal_approx(a_unit2.hp, 500.0 - 10.5), "1st bounce must take 75%% damage (10.5), got %.2f" % (500.0 - a_unit2.hp))
+	assert(is_equal_approx(g_unit.hp, 500.0 - 7.875), "2nd bounce must take 56.25%% damage (7.875), got %.3f" % (500.0 - g_unit.hp))
+	assert(is_equal_approx(far_unit.hp, 500.0), "4th unit beyond max_targets=3 and hop range must not be hit")
+
+	# Upgrade to Revealed T3 (astral_conduction) + T4 (voice_in_the_static)
+	assert(sys.upgrade_tower(effigy, "copper_thieves"), "Must unlock T2 copper_thieves")
+	assert(sys.upgrade_tower(effigy, "astral_conduction"), "Must unlock Revealed T3 astral_conduction")
+	assert(sys.upgrade_tower(effigy, "voice_in_the_static"), "Must unlock Revealed T4 voice_in_the_static")
+	assert(effigy.get_max_targets() == 4, "copper_thieves must raise max_targets to 4")
+
+	# Trigger next step -> voice_in_the_static Ball Lightning storm fires and slows units in cluster
+	var cooldown_cues: Array[String] = []
+	sys.tower_cooldown_used.connect(func(_tid: int, _ttype: String, ab_id: String, _h: Vector2i) -> void:
+		cooldown_cues.append(ab_id)
+	)
+	sys.step(1.25, rng)
+	assert(cooldown_cues.has("voice_in_the_static"), "voice_in_the_static must emit tower_cooldown_used")
+	assert(a_unit1.timed_slow_strength > 0.30, "voice_in_the_static must apply slow to cluster targets")
+
 

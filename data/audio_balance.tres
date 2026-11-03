@@ -154,6 +154,16 @@ cues = {
 "pitch_min": 0.96,
 "volume_db": -7.5
 },
+"projectile_fire_tesla": {
+"active_duration": 0.5,
+"loop": false,
+"max_voices": 2,
+"min_interval": 0.16,
+"path": "res://Sound FX Starter Pack Vol. 1/Sci-Fi/Phase Missile.wav",
+"pitch_max": 1.06,
+"pitch_min": 0.95,
+"volume_db": -9.5
+},
 "projectile_hit": {
 "active_duration": 0.28,
 "loop": false,
@@ -243,6 +253,16 @@ cues = {
 "pitch_max": 1.03,
 "pitch_min": 0.97,
 "volume_db": -5.5
+},
+"tower_cd_static_storm": {
+"active_duration": 1.45,
+"loop": false,
+"max_voices": 1,
+"min_interval": 0.45,
+"path": "res://Sound FX Starter Pack Vol. 1/Motions and Impacts/Swoosh Thunder.wav",
+"pitch_max": 1.04,
+"pitch_min": 0.94,
+"volume_db": -6.5
 },
 "tower_cd_tentacle_root": {
 "active_duration": 1.1,

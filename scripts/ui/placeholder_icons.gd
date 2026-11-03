@@ -1,9 +1,9 @@
 ## PlaceholderIcons
 ##
 ## Procedural 2D icon generator that builds and caches crisp [ImageTexture] icons
-## for all 9 cultist towers (and legacy sample towers), all 16 regular corporate
-## units, the 5 corporate bosses, and the 5 factions.
-## Used in BuildPalette, TowerPanel, IntelPanel, BossBar, and TowerMenu.
+## for all 9 cultist towers, all 16 regular corporate units, the 5 corporate
+## bosses, and the 5 factions.
+## Used in BuildPalette, TowerPanel, IntelPanel, and BossBar.
 class_name PlaceholderIcons
 extends RefCounted
 
@@ -227,6 +227,23 @@ static func get_tower_icon(tower_id: String, size: int = 40) -> ImageTexture:
 			_draw_rect(img, roundi(17 * f), roundi(22 * f), roundi(6 * f), roundi(7 * f), gold)
 			_draw_circle(img, 20 * f, 11 * f, 5.5 * f, gold)
 			_draw_circle(img, 20 * f, 11 * f, 3.0 * f, Color(1.0, 0.96, 0.65))
+
+		"substation_effigy":
+			var arc := Color(0.28, 0.88, 1.0)
+			_draw_frame(img, arc, bg)
+			# Transformer base + cross-arm insulators + stepped Tesla coil + jagged lightning forks
+			_draw_rect(img, roundi(13 * f), roundi(24 * f), roundi(14 * f), roundi(11 * f), Color(0.38, 0.42, 0.48))
+			_draw_rect(img, roundi(8 * f), roundi(20 * f), roundi(24 * f), roundi(3 * f), Color(0.46, 0.32, 0.20))
+			_draw_rect(img, roundi(17 * f), roundi(11 * f), roundi(6 * f), roundi(14 * f), Color(0.76, 0.48, 0.24))
+			for cy_r in [14, 18]:
+				_draw_rect(img, roundi(14 * f), roundi(cy_r * f), roundi(12 * f), roundi(2 * f), arc)
+			_draw_circle(img, 20 * f, 9 * f, 4.2 * f, arc)
+			_draw_circle(img, 20 * f, 9 * f, 2.2 * f, Color.WHITE)
+			# Left & right lightning forks
+			_draw_line(img, 17 * f, 9 * f, 9 * f, 13 * f, 2.2 * f, Color.WHITE)
+			_draw_line(img, 9 * f, 13 * f, 6 * f, 8 * f, 2.0 * f, arc)
+			_draw_line(img, 23 * f, 9 * f, 31 * f, 13 * f, 2.2 * f, Color.WHITE)
+			_draw_line(img, 31 * f, 13 * f, 34 * f, 8 * f, 2.0 * f, arc)
 
 		_:
 			var fallback_col := Color(0.65, 0.82, 1.0)

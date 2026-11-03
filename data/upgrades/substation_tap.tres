@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "substation_tap"
+display_name = "Substation Tap"
+description = "+2 chain targets and +25% fire rate."
+tower_id = "substation_effigy"
+tier = 3
+branch = 2
+currency = 1
+cost = 50
+prerequisite_id = "copper_thieves"
+corruption_delta = 0
+jank_set = 10
+fire_rate_mult = 0.25
+targets_add = 2
+behaviors = Array[String](["substation_tap"])

@@ -2,17 +2,19 @@
 ##
 ## Pure-logic (RefCounted) kill-tracking and stat-scaling system for enemy units.
 ##
-## Spec formulas:
-##   level = floor(sqrt(kills_of_this_unit_type / 10))
-##   health_mult = 1 + 0.12 * level
-##   speed_mult = min(1 + 0.02 * level, 1.25)
+## Leveling formulas (from UnitBalanceData):
+##   level = floor(pow(kills_of_this_unit_type / 3.0, 0.72))
+##   interval_floor = (interval_index - 1) * 2
+##   health_mult = (1 + 0.22 * level) * pow(1.06, max(0, level - 3))
+##   speed_mult = min(1 + 0.025 * level, 1.40)
 ##   Kills are counted per unit id, across all factions.
+##   Rogue Entities level up +1 per Rogue Entity slain.
 ##   Bosses are not subject to kill leveling.
 ##   Stats are scaled at spawn time by per-unit-type kill level and then fixed
 ##   for the unit's lifetime (spawn-time snapshotting).
 ##
 ## Boss scaling formulas:
-##   HP = base_hp * (1 + 0.3 * (n - 1))  where n is 1-based boss_index.
+##   HP = base_hp * (1 + 0.55 * (n - 1) + 0.15 * (n - 1)^2)  where n is 1-based boss_index.
 ##   Every full cycle shortens telegraphs and cooldowns by 15%.
 class_name UnitLeveling
 extends RefCounted

@@ -147,6 +147,8 @@ static func resolve_projectile_fire_cue(tower_type: String) -> String:
 			return _AudioBalance.CUE_PROJECTILE_FIRE_SNIPER
 		"rust_censer":
 			return _AudioBalance.CUE_PROJECTILE_FIRE_CENSER
+		"substation_effigy":
+			return _AudioBalance.CUE_PROJECTILE_FIRE_TESLA
 		_:
 			return _AudioBalance.CUE_PROJECTILE_FIRE
 
@@ -170,6 +172,8 @@ static func resolve_tower_cooldown_cue(tower_type: String, ability_id: String) -
 			return _AudioBalance.CUE_TOWER_CD_CHOIR_SPECIAL
 		"ecstatic_vigil":
 			return _AudioBalance.CUE_TOWER_CD_SHRINE_BURST
+		"voice_in_the_static", "breaker_cascade":
+			return _AudioBalance.CUE_TOWER_CD_STATIC_STORM
 
 	match tower_type:
 		"the_congregation":
@@ -182,6 +186,8 @@ static func resolve_tower_cooldown_cue(tower_type: String, ability_id: String) -
 			return _AudioBalance.CUE_TOWER_CD_CHOIR_SPECIAL
 		"fever_shrine":
 			return _AudioBalance.CUE_TOWER_CD_SHRINE_BURST
+		"substation_effigy":
+			return _AudioBalance.CUE_TOWER_CD_STATIC_STORM
 		_:
 			return _AudioBalance.CUE_TOWER_CD_DEFAULT
 

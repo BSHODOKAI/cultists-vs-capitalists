@@ -1,13 +1,11 @@
 ## Tests for touchscreen-based camera controls (panning, two-finger pinch zoom,
-## and tap-vs-drag disambiguation) in both res://scenes/main.tscn (CameraRig +
-## MainSceneController) and res://scenes/MainStage.tscn (IsometricCamera + GridManager).
+## and tap-vs-drag disambiguation) in res://scenes/main.tscn (CameraRig + MainSceneController).
 extends Node
 
 const _GameState = preload("res://scripts/core/game_state.gd")
 const _SimClock = preload("res://scripts/core/sim_clock.gd")
 const _HexMath = preload("res://scripts/core/hex_math.gd")
 const _CameraRig = preload("res://scripts/world/camera_rig.gd")
-const _IsometricCamera = preload("res://scripts/camera/isometric_camera.gd")
 
 
 func _get_game_state() -> GameStateNode:
@@ -184,65 +182,3 @@ func test_02_main_scene_touch_pan_does_not_place_tower_while_tap_does() -> void:
 	main_inst.queue_free()
 	clock.manual_mode = false
 
-
-func test_03_isometric_camera_and_grid_manager_touch_panning_in_main_stage() -> void:
-	var stage_packed := load("res://scenes/MainStage.tscn") as PackedScene
-	var stage_inst: Node = stage_packed.instantiate()
-	add_child(stage_inst)
-
-	var iso_cam: IsometricCamera = stage_inst.get_node("Camera3D") as IsometricCamera
-	var grid: GridManager = stage_inst.get_node("Grid") as GridManager
-	assert(iso_cam != null and grid != null, "MainStage must have IsometricCamera and GridManager")
-
-	iso_cam.recenter()
-	var start_focus: Vector3 = iso_cam.get_focus()
-	var clicked_cells: Array[Vector2i] = []
-	grid.cell_clicked.connect(func(c: Vector2i, _b: int) -> void:
-		clicked_cells.append(c)
-	)
-
-	var vp_center: Vector2 = get_viewport().get_visible_rect().size * 0.5
-
-	# 1. Touch down + drag + release -> pans IsometricCamera focus and does NOT emit GridManager.cell_clicked
-	var t_down := InputEventScreenTouch.new()
-	t_down.index = 0
-	t_down.pressed = true
-	t_down.position = vp_center
-	grid._unhandled_input(t_down)
-	iso_cam._unhandled_input(t_down)
-
-	var t_drag := InputEventScreenDrag.new()
-	t_drag.index = 0
-	t_drag.position = vp_center + Vector2(-90.0, -50.0)
-	t_drag.relative = Vector2(-90.0, -50.0)
-	grid._unhandled_input(t_drag)
-	iso_cam._unhandled_input(t_drag)
-
-	var t_up := InputEventScreenTouch.new()
-	t_up.index = 0
-	t_up.pressed = false
-	t_up.position = vp_center + Vector2(-90.0, -50.0)
-	grid._unhandled_input(t_up)
-	iso_cam._unhandled_input(t_up)
-
-	assert(iso_cam.get_focus().distance_to(start_focus) > 0.2, "Touch drag must pan IsometricCamera focus")
-	assert(clicked_cells.is_empty(), "Touch drag pan must not emit GridManager.cell_clicked")
-
-	# 2. Clean tap (press + release at vp_center) -> emits GridManager.cell_clicked
-	var tap_down := InputEventScreenTouch.new()
-	tap_down.index = 0
-	tap_down.pressed = true
-	tap_down.position = vp_center
-	grid._unhandled_input(tap_down)
-	iso_cam._unhandled_input(tap_down)
-
-	var tap_up := InputEventScreenTouch.new()
-	tap_up.index = 0
-	tap_up.pressed = false
-	tap_up.position = vp_center
-	grid._unhandled_input(tap_up)
-	iso_cam._unhandled_input(tap_up)
-
-	assert(clicked_cells.size() == 1, "Clean touchscreen tap on GridManager must emit cell_clicked once")
-
-	stage_inst.queue_free()

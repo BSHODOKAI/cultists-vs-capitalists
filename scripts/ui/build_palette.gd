@@ -16,7 +16,7 @@ const _TowerLibrary = preload("res://scripts/towers/tower_library.gd")
 const _PlaceholderIcons = preload("res://scripts/ui/placeholder_icons.gd")
 
 const CLOSED_TOP_OFFSET: float = -66.0
-const OPEN_TOP_OFFSET: float = -340.0
+const OPEN_TOP_OFFSET: float = -368.0
 const BOTTOM_OFFSET: float = -8.0
 
 var is_menu_open: bool = false
@@ -92,7 +92,7 @@ func _build_ui() -> void:
 	drawer_hbox.add_child(list_vbox)
 
 	var list_header := Label.new()
-	list_header.text = "BUILD TOWER MENU — Select a Tower to Inspect [1-9]"
+	list_header.text = "BUILD TOWER MENU — Select a Tower to Inspect [1-0]"
 	list_header.add_theme_font_size_override("font_size", 14)
 	list_header.add_theme_color_override("font_color", Color(0.85, 0.75, 1.0))
 	list_vbox.add_child(list_header)
@@ -101,12 +101,12 @@ func _build_ui() -> void:
 	_tower_grid.columns = 3
 	_tower_grid.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_tower_grid.add_theme_constant_override("h_separation", 6)
-	_tower_grid.add_theme_constant_override("v_separation", 6)
+	_tower_grid.add_theme_constant_override("v_separation", 5)
 	list_vbox.add_child(_tower_grid)
 
 	for i in range(_towers.size()):
 		var btn := Button.new()
-		btn.custom_minimum_size = Vector2(144.0, 52.0)
+		btn.custom_minimum_size = Vector2(144.0, 46.0)
 		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		btn.focus_mode = Control.FOCUS_NONE
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -385,7 +385,8 @@ func refresh() -> void:
 			short_name = short_name.substr(0, 15) + "."
 		var prefix: String = "\u25b8 " if is_inspected else ""
 		var active_tag: String = " [ACTIVE]" if is_building else ""
-		btn.text = "%s[%d] %s\n%d %s%s" % [prefix, i + 1, short_name, cost, curr_short, active_tag]
+		var key_label: String = "0" if i == 9 else str(i + 1)
+		btn.text = "%s[%s] %s\n%d %s%s" % [prefix, key_label, short_name, cost, curr_short, active_tag]
 		if is_inspected:
 			btn.modulate = Color(0.72, 1.0, 0.82)
 		elif is_building:

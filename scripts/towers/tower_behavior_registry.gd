@@ -26,6 +26,7 @@ static func _ensure_initialized() -> void:
 	_register("fever_shrine", {"type": "base_tower", "tower_id": "fever_shrine"})
 	_register("the_congregation", {"type": "base_tower", "tower_id": "the_congregation"})
 	_register("tithe_box", {"type": "base_tower", "tower_id": "tithe_box"})
+	_register("substation_effigy", {"type": "base_tower", "tower_id": "substation_effigy"})
 
 	# --- 1. hexed_nail_gun upgrades ------------------------------------------
 	_register("rapid_cycling", {"type": "upgrade", "tower_id": "hexed_nail_gun", "tier": 2})
@@ -89,6 +90,13 @@ static func _ensure_initialized() -> void:
 	_register("dark_patron", {"type": "upgrade", "tower_id": "tithe_box", "tier": 4, "kill_offerings_bonus": 0.10, "max_boxes": 3})
 	_register("scrap_collector", {"type": "upgrade", "tower_id": "tithe_box", "tier": 3, "kill_scrap_bonus": 0.25, "max_boxes": 3})
 	_register("chop_shop", {"type": "upgrade", "tower_id": "tithe_box", "tier": 4, "jank_reduction": 10, "radius_hexes": 3})
+
+	# --- 10. substation_effigy upgrades --------------------------------------
+	_register("copper_thieves", {"type": "upgrade", "tower_id": "substation_effigy", "tier": 2})
+	_register("astral_conduction", {"type": "upgrade", "tower_id": "substation_effigy", "tier": 3, "bounce_decay": 1.0, "chain_hop_range": 3, "air_damage_bonus": 0.25})
+	_register("voice_in_the_static", {"type": "upgrade", "tower_id": "substation_effigy", "tier": 4, "storm_interval": 10.0, "storm_damage": 45.0, "storm_radius": 1, "storm_slow": 0.35, "storm_slow_duration": 3.0})
+	_register("substation_tap", {"type": "upgrade", "tower_id": "substation_effigy", "tier": 3})
+	_register("breaker_cascade", {"type": "upgrade", "tower_id": "substation_effigy", "tier": 4, "nth_shot": 5, "overload_damage_bonus": 0.50, "stun_duration": 0.8, "tag_damage_bonus": 0.35})
 
 
 static func _register(behavior_id: String, descriptor: Dictionary) -> void:

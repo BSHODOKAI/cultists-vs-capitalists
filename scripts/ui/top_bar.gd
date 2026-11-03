@@ -37,7 +37,7 @@ func _build_ui() -> void:
 	_wave_label = _make_stat_label(hbox, "Wave: 0 (Int 1)", Color(0.85, 0.90, 1.0))
 	_faction_label = _make_stat_label(hbox, "Faction: SWARM SYNDICATE", Color(0.98, 0.82, 0.25))
 	_offerings_label = _make_stat_label(hbox, "Offerings: 150", Color(0.75, 0.50, 1.0))
-	_scrap_label = _make_stat_label(hbox, "Scrap: 0", Color(1.0, 0.65, 0.25))
+	_scrap_label = _make_stat_label(hbox, "Scrap: 40", Color(1.0, 0.65, 0.25))
 
 	var corr_box := HBoxContainer.new()
 	corr_box.add_theme_constant_override("separation", 6)

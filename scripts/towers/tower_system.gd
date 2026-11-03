@@ -659,7 +659,7 @@ func get_effective_tower_range_hexes(tower: TowerInstance) -> int:
 ##   4. Applies Frenzy Rites upkeep (4 Offerings per buffed tower).
 ##   5. Applies Solvent Tank upkeep (4 Scrap per wave; disables tower if Scrap == 0).
 ##   6. Rolls Corruption misfire (50+: 10%, 75+: 20% to disable one random Revealed tower).
-##   7. At 100 Corruption, spawns a hostile Rogue Entity (leak_cost=2, kill=10 Offerings).
+##   7. At 100 Corruption, spawns hostile Rogue Entities (scales in count & stats with Rogue level and wave).
 ##   8. Rolls Jank jam for each Rigged tower (min(jank, 60)% chance to jam for 10 s).
 func start_wave(
 	wave_number: int,
@@ -1059,6 +1059,19 @@ func select_target_for_tower(tower: TowerInstance) -> CombatUnit:
 		)
 		return candidates[0]
 
+	if tower.def != null and tower.def.targeting_mode == TowerData.TargetingMode.CHAIN_ARC:
+		# Prioritize Air targets first (anti-air defense role), then closest to base
+		candidates.sort_custom(func(a: CombatUnit, b: CombatUnit) -> bool:
+			var a_air: bool = a.is_air()
+			var b_air: bool = b.is_air()
+			if a_air != b_air:
+				return a_air
+			if not is_equal_approx(a.path_position, b.path_position):
+				return a.path_position < b.path_position
+			return a.unit_id < b.unit_id
+		)
+		return candidates[0]
+
 	# Default: closest to player's base (lowest path_position)
 	candidates.sort_custom(func(a: CombatUnit, b: CombatUnit) -> bool:
 		if not is_equal_approx(a.path_position, b.path_position):
@@ -1410,6 +1423,8 @@ func _step_tower(tower: TowerInstance, delta: float, rng: RandomNumberGenerator)
 			_step_congregation_tower(tower, delta)
 		TowerData.TargetingMode.ECONOMY_TITHE:
 			_step_tithe_box_tower(tower, delta)
+		TowerData.TargetingMode.CHAIN_ARC:
+			_step_chain_arc_tower(tower, delta)
 
 
 ## 1. hexed_nail_gun
@@ -1934,6 +1949,142 @@ func _step_tithe_box_tower(tower: TowerInstance, delta: float) -> void:
 	while tower.income_timer >= tower.def.income_interval:
 		tower.income_timer -= tower.def.income_interval
 		offerings += tower.get_income_offerings()
+
+
+## 10. substation_effigy (CHAIN_ARC)
+func _step_chain_arc_tower(tower: TowerInstance, delta: float) -> void:
+	# Revealed T4 voice_in_the_static: periodic Ball Lightning storm on densest cluster in range
+	if tower.has_behavior("voice_in_the_static"):
+		tower.special_cooldown -= delta
+		if tower.special_cooldown <= 0.0:
+			var r_hex: int = get_effective_tower_range_hexes(tower)
+			var in_range_units: Array[CombatUnit] = []
+			for u: CombatUnit in units:
+				if u.is_alive() and tower.can_target_domain(u) and u.is_cloak_revealed():
+					if _HexGrid.hex_distance(tower.hex, get_unit_hex(u)) <= r_hex:
+						in_range_units.append(u)
+			if not in_range_units.is_empty():
+				var storm_int: float = maxf(1.0, float(tower.get_behavior_param("voice_in_the_static", "storm_interval", 10.0)))
+				var storm_dmg: float = float(tower.get_behavior_param("voice_in_the_static", "storm_damage", 45.0))
+				var storm_rad: int = maxi(0, int(tower.get_behavior_param("voice_in_the_static", "storm_radius", 1)))
+				var storm_slow: float = float(tower.get_behavior_param("voice_in_the_static", "storm_slow", 0.35))
+				var storm_dur: float = float(tower.get_behavior_param("voice_in_the_static", "storm_slow_duration", 3.0))
+				tower.special_cooldown = storm_int
+
+				var best_center: Vector2i = get_unit_hex(in_range_units[0])
+				var best_count: int = -1
+				var best_pos: float = INF
+				for cand: CombatUnit in in_range_units:
+					var c_hex: Vector2i = get_unit_hex(cand)
+					var cnt: int = 0
+					for other: CombatUnit in in_range_units:
+						if _HexGrid.hex_distance(c_hex, get_unit_hex(other)) <= storm_rad:
+							cnt += 1
+					if cnt > best_count or (cnt == best_count and cand.path_position < best_pos):
+						best_count = cnt
+						best_pos = cand.path_position
+						best_center = c_hex
+
+				tower_cooldown_used.emit(tower.tower_id, tower.get_type_id(), "voice_in_the_static", best_center)
+				for u: CombatUnit in units.duplicate():
+					if not u.is_alive() or not tower.can_target_domain(u) or not u.is_cloak_revealed():
+						continue
+					if _HexGrid.hex_distance(best_center, get_unit_hex(u)) <= storm_rad:
+						var boss_scale: float = balance.boss_slow_and_dot_strength if u.is_boss() else 1.0
+						u.apply_timed_slow(storm_slow * boss_scale, storm_dur)
+						var s_hit: float = calculate_hit_damage(tower, u, storm_dmg, _C.DamageTag.ELECTRIC)
+						deal_damage_from_tower(tower, u, s_hit, _C.DamageTag.ELECTRIC)
+			else:
+				tower.special_cooldown = 0.0
+
+	var rate: float = get_effective_tower_fire_rate(tower)
+	if rate <= 0.0:
+		return
+	tower.attack_cooldown -= delta
+	while tower.attack_cooldown <= 0.0:
+		var primary: CombatUnit = select_target_for_tower(tower)
+		if primary == null:
+			tower.attack_cooldown = 0.0
+			break
+		tower.attack_cooldown += 1.0 / rate
+		tower.shot_counter += 1
+
+		var is_overload: bool = false
+		if tower.has_behavior("breaker_cascade"):
+			var nth: int = maxi(1, int(tower.get_behavior_param("breaker_cascade", "nth_shot", 5)))
+			is_overload = (tower.shot_counter % nth == 0)
+			if is_overload:
+				tower_cooldown_used.emit(tower.tower_id, tower.get_type_id(), "breaker_cascade", tower.hex)
+
+		var max_chain: int = tower.get_max_targets()
+		var hop_range: int = 2
+		var bounce_decay: float = 0.75
+		if tower.has_behavior("astral_conduction"):
+			hop_range = int(tower.get_behavior_param("astral_conduction", "chain_hop_range", 3))
+			bounce_decay = float(tower.get_behavior_param("astral_conduction", "bounce_decay", 1.0))
+
+		var visited_ids: Dictionary = {primary.unit_id: true}
+		var current_target: CombatUnit = primary
+		var bounce_mult: float = 1.0
+
+		for _hop in range(max_chain):
+			if current_target == null or not current_target.is_alive():
+				break
+			var last_hex: Vector2i = get_unit_hex(current_target)
+			var hop_base_dmg: float = tower.def.damage * bounce_mult
+
+			if is_overload:
+				var ov_bonus: float = float(tower.get_behavior_param("breaker_cascade", "overload_damage_bonus", 0.50))
+				hop_base_dmg *= (1.0 + ov_bonus)
+			if tower.has_behavior("astral_conduction") and current_target.is_air():
+				var air_bonus: float = float(tower.get_behavior_param("astral_conduction", "air_damage_bonus", 0.25))
+				hop_base_dmg *= (1.0 + air_bonus)
+			if tower.has_behavior("breaker_cascade"):
+				if current_target.is_air() or current_target.has_tag(_C.UnitTag.SHIELDED) or current_target.has_tag(_C.UnitTag.CYBERNETIC):
+					var tag_bonus: float = float(tower.get_behavior_param("breaker_cascade", "tag_damage_bonus", 0.35))
+					hop_base_dmg *= (1.0 + tag_bonus)
+
+			var arc_dmg: float = calculate_hit_damage(tower, current_target, hop_base_dmg, tower.def.damage_tag)
+			deal_damage_from_tower(tower, current_target, arc_dmg, tower.def.damage_tag)
+
+			if is_overload and current_target.is_alive():
+				var stun_dur: float = float(tower.get_behavior_param("breaker_cascade", "stun_duration", 0.8))
+				current_target.apply_stun(stun_dur)
+
+			# Find next unvisited chain target within hop_range hexes of last_hex
+			var next_target: CombatUnit = null
+			var best_dist: int = 999
+			var best_air: bool = false
+			var best_path: float = INF
+			for cand: CombatUnit in units:
+				if not cand.is_alive() or visited_ids.has(cand.unit_id):
+					continue
+				if not tower.can_target_domain(cand) or not cand.is_cloak_revealed():
+					continue
+				var d: int = _HexGrid.hex_distance(last_hex, get_unit_hex(cand))
+				if d > hop_range:
+					continue
+				var c_air: bool = cand.is_air()
+				var better: bool = false
+				if next_target == null:
+					better = true
+				elif c_air != best_air:
+					better = c_air
+				elif d != best_dist:
+					better = d < best_dist
+				elif not is_equal_approx(cand.path_position, best_path):
+					better = cand.path_position < best_path
+				if better:
+					next_target = cand
+					best_dist = d
+					best_air = c_air
+					best_path = cand.path_position
+
+			if next_target == null:
+				break
+			visited_ids[next_target.unit_id] = true
+			current_target = next_target
+			bounce_mult *= bounce_decay
 
 
 # --- Enemy Ability Components & Boss Mechanics -------------------------------
@@ -2667,13 +2818,13 @@ func _does_tower_cover_unit_tag(tower: TowerInstance, tag_int: int) -> bool:
 		_C.UnitTag.CLOAKED:
 			return tower.def.detects_cloaked or tower.def.pulse_reveal_duration > 0.0
 		_C.UnitTag.SWARM, _C.UnitTag.FRAGILE:
-			return tid == "gutter_ritual_circle" or tid == "rust_censer" or tid == "tentacle_storm_drain"
+			return tid == "gutter_ritual_circle" or tid == "rust_censer" or tid == "tentacle_storm_drain" or tid == "substation_effigy"
 		_C.UnitTag.ARMORED, _C.UnitTag.TANK, _C.UnitTag.BOSS:
 			return tid == "watcher_in_the_billboard" or tid == "rust_censer" or tower.has_behavior("pneumatic_belt_rig") or tower.has_behavior("whispering_nails")
 		_C.UnitTag.SHIELDED:
-			return tower.def.damage_tag == _C.DamageTag.VOID or tower.def.damage_tag == _C.DamageTag.CORROSIVE or tower.has_behavior("gaze_of_unmaking")
+			return tower.def.damage_tag == _C.DamageTag.VOID or tower.def.damage_tag == _C.DamageTag.CORROSIVE or tower.has_behavior("gaze_of_unmaking") or tower.has_behavior("breaker_cascade")
 		_C.UnitTag.HACKER, _C.UnitTag.CYBERNETIC:
-			return tower.has_behavior("jammer_choir") or tower.has_behavior("ad_hijack") or tower.has_behavior("rust_communion") or can_ground
+			return tid == "substation_effigy" or tower.has_behavior("jammer_choir") or tower.has_behavior("ad_hijack") or tower.has_behavior("rust_communion") or tower.has_behavior("breaker_cascade") or can_ground
 		_:
 			return can_ground or can_air
 

@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "astral_conduction"
+display_name = "Astral Conduction"
+description = "Chain arcs retain 100% damage across 3-hex hops and deal +25% bonus damage to Air units."
+tower_id = "substation_effigy"
+tier = 3
+branch = 1
+currency = 0
+cost = 50
+prerequisite_id = "copper_thieves"
+corruption_delta = 4
+jank_set = 0
+behaviors = Array[String](["astral_conduction"])
+behavior_params = {
+"air_damage_bonus": 0.25,
+"bounce_decay": 1.0,
+"chain_hop_range": 3
+}

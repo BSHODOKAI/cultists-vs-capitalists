@@ -14,7 +14,6 @@ display_name = "Watcher in the Billboard"
 description = "Fires 90 Void every 4 s at the highest-HP Ground or Air enemy; detects Cloaked enemies in range."
 cost = 70
 build_currency = 1
-attack_range = 6.0
 range_hexes = 6
 damage = 90.0
 damage_tag = 3

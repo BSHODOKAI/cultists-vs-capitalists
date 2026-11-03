@@ -40,6 +40,9 @@ var enemy_pool: EnemyVisualPool
 var theme_data: VisualThemeData
 var _kill_labels_this_frame: int = 0
 var _projectiles_this_frame: int = 0
+## tower_id -> Array[Dictionary] of {"id": int, "pos": Vector3} hit by that tower's chain arcs this frame.
+## The hit-time position is remembered so a target that dies mid-arc leaves the bolt lingering where it died.
+var _chain_hits_by_tower: Dictionary = {}
 
 
 func _ready() -> void:
@@ -84,6 +87,7 @@ func _connect_signals() -> void:
 	gs.connect("enemy_spawned", _on_enemy_spawned)
 	gs.connect("enemy_died", _on_enemy_died)
 	gs.connect("tower_damaged_enemy", _on_tower_damaged_enemy)
+	gs.connect("tower_cooldown_used", _on_tower_cooldown_used)
 	gs.connect("currency_earned", _on_currency_earned)
 	gs.connect("ability_telegraphed", _on_ability_telegraphed)
 	gs.connect("camera_focus_requested", func(wp: Vector3, _lbl: String) -> void:
@@ -101,6 +105,7 @@ func _connect_signals() -> void:
 func _process(_delta: float) -> void:
 	_kill_labels_this_frame = 0
 	_projectiles_this_frame = 0
+	_flush_chain_lightning()
 	var gs: Node = get_node_or_null("/root/GameState")
 	var clock: Node = get_node_or_null("/root/SimClock")
 	if gs == null:
@@ -210,6 +215,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif ke.keycode >= KEY_1 and ke.keycode <= KEY_9:
 			if build_palette != null:
 				build_palette.select_hotkey(ke.keycode - KEY_1)
+			get_viewport().set_input_as_handled()
+		elif ke.keycode == KEY_0:
+			if build_palette != null:
+				build_palette.select_hotkey(9)
 			get_viewport().set_input_as_handled()
 		elif (ke.keycode == KEY_ENTER or ke.keycode == KEY_KP_ENTER) and build_palette != null and build_palette.is_menu_open:
 			build_palette.confirm_build()
@@ -424,12 +433,84 @@ func _on_tower_damaged_enemy(
 	if is_instance_valid(tv) and is_instance_valid(ev):
 		_projectiles_this_frame += 1
 		var to_p: Vector3 = ev.get_aim_world_position()
-		if _tower_type == "the_congregation":
-			# Congregation blockers fight in melee on the path tile rather than shooting from the tower roof
+		if _tower_type == "the_congregation" or _tower_type == "gutter_ritual_circle" or _tower_type == "tentacle_storm_drain":
+			# Melee, ground pulse AoE, and drain effects appear directly on the affected mob/hex (no projectile from tower)
 			effects_view.spawn_impact_burst(to_p, damage_tag)
+		elif _tower_type == "substation_effigy":
+			# Chain lightning links the tower and every enemy it hits this frame into one arc that tracks the units.
+			# Remember each hit's world position now (the view may be gone by the time the arc is flushed).
+			if not _chain_hits_by_tower.has(tower_id):
+				_chain_hits_by_tower[tower_id] = [] as Array[Dictionary]
+			(_chain_hits_by_tower[tower_id] as Array[Dictionary]).append({"id": unit_id, "pos": to_p})
 		else:
 			var from_p: Vector3 = tv.global_position + Vector3(0.0, 0.72, 0.0)
 			effects_view.spawn_projectile(from_p, to_p, _tower_type, damage_tag)
+
+
+## Builds and spawns one following chain-lightning arc per substation_effigy that
+## dealt chain damage this frame: tower apex -> each chained enemy, tracked live.
+func _flush_chain_lightning() -> void:
+	if _chain_hits_by_tower.is_empty():
+		return
+	if effects_view != null:
+		for tower_id: int in _chain_hits_by_tower.keys():
+			var hits: Array = _chain_hits_by_tower[tower_id] as Array
+			if hits.is_empty():
+				continue
+			var providers: Array[Callable] = []
+			var initial_points: Array[Vector3] = []
+			var apex: Vector3 = Vector3.ZERO
+			if tower_factory != null and tower_factory.views.has(tower_id):
+				var tv0: TowerView = tower_factory.views[tower_id] as TowerView
+				if is_instance_valid(tv0):
+					apex = tv0.global_position + Vector3(0.0, 1.15, 0.0)
+			providers.append(_make_tower_anchor_provider(tower_id))
+			initial_points.append(apex)
+			for hit: Dictionary in hits:
+				var hit_pos: Vector3 = hit["pos"] as Vector3
+				providers.append(_make_unit_anchor_provider(int(hit["id"])))
+				initial_points.append(hit_pos)
+			effects_view.spawn_following_chain_lightning(providers, 1.6, 0.055, initial_points)
+	_chain_hits_by_tower.clear()
+
+
+## Callable that returns the current world apex position of a placed tower (or null if gone).
+func _make_tower_anchor_provider(tower_id: int) -> Callable:
+	return func() -> Variant:
+		if tower_factory != null and tower_factory.views.has(tower_id):
+			var tv: TowerView = tower_factory.views[tower_id] as TowerView
+			if is_instance_valid(tv):
+				return tv.global_position + Vector3(0.0, 1.15, 0.0)
+		return null
+
+
+## Callable that returns the current aim position of an enemy (or null if it left/died,
+## so the arc keeps the enemy's last live position for that anchor).
+func _make_unit_anchor_provider(unit_id: int) -> Callable:
+	return func() -> Variant:
+		if enemy_pool != null and enemy_pool.active_views.has(unit_id):
+			var ev: EnemyMoverView = enemy_pool.active_views[unit_id] as EnemyMoverView
+			if is_instance_valid(ev):
+				return ev.get_aim_world_position()
+		return null
+
+
+func _on_tower_cooldown_used(_tower_id: int, tower_type: String, _ability_id: String, hex: Vector2i) -> void:
+	if effects_view == null:
+		return
+	var col := Color(0.42, 0.95, 0.28, 0.80)
+	match tower_type:
+		"tentacle_storm_drain":
+			col = Color(0.22, 0.85, 0.76, 0.80)
+		"chanting_choir":
+			col = Color(0.88, 0.38, 0.96, 0.80)
+		"fever_shrine":
+			col = Color(0.98, 0.36, 0.42, 0.80)
+		"the_congregation":
+			col = Color(0.76, 0.62, 0.96, 0.80)
+		"substation_effigy":
+			col = Color(0.28, 0.88, 1.0, 0.85)
+	effects_view.spawn_telegraph_reticle(hex, 0.55, col)
 
 
 func _on_currency_earned(currency: int, amount: int, _reason: String) -> void:
@@ -451,14 +532,8 @@ func _on_ability_telegraphed(ev: Dictionary) -> void:
 	if ab_id == "LeveragedBuyout" or ab_id == "TowerConvert":
 		if meta.has("target_hex"):
 			var t_hex: Vector2i = meta["target_hex"] as Vector2i
+			# Conversion/hack effect is shown on the affected tower hex (reticle + tower HACKING status), never as a line from the mob
 			effects_view.spawn_telegraph_reticle(t_hex, lead, Color(1.0, 0.2, 0.6, 0.9))
-			effects_view.spawn_beam(
-				_HexMath.hex_to_world(hex, 0.8),
-				_HexMath.hex_to_world(t_hex, 0.8),
-				4,
-				lead,
-				0.12
-			)
 	elif ab_id == "SameDayDelivery":
 		effects_view.spawn_telegraph_reticle(hex, lead, Color(0.25, 0.90, 1.0, 0.9))
 	else:

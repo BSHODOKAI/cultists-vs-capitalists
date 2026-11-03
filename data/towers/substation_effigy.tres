@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="TowerData" load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/tower_data.gd" id="1_td"]
+[ext_resource type="Resource" path="res://data/upgrades/copper_thieves.tres" id="2_t2"]
+[ext_resource type="Resource" path="res://data/upgrades/astral_conduction.tres" id="3_rev3"]
+[ext_resource type="Resource" path="res://data/upgrades/voice_in_the_static.tres" id="4_rev4"]
+[ext_resource type="Resource" path="res://data/upgrades/substation_tap.tres" id="5_rig3"]
+[ext_resource type="Resource" path="res://data/upgrades/breaker_cascade.tres" id="6_rig4"]
+
+[resource]
+script = ExtResource("1_td")
+id = "substation_effigy"
+display_name = "Substation Effigy"
+description = "High-voltage Scrap coil that arcs Electric chain lightning across up to 3 Ground or Air enemies."
+cost = 50
+build_currency = 1
+range_hexes = 3
+damage = 14.0
+damage_tag = 4
+fire_rate = 0.85
+target_tags = Array[int]([0, 1])
+targeting_mode = 9
+detects_cloaked = false
+pulse_reveal_duration = 0.0
+starting_members = 1
+max_targets = 3
+base_behaviors = Array[String](["substation_effigy"])
+t2_upgrade = ExtResource("2_t2")
+revealed_t3_upgrade = ExtResource("3_rev3")
+revealed_t4_upgrade = ExtResource("4_rev4")
+rigged_t3_upgrade = ExtResource("5_rig3")
+rigged_t4_upgrade = ExtResource("6_rig4")

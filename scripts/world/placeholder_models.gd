@@ -201,6 +201,8 @@ static func get_tower_signature_color(tower_id: String) -> Color:
 			return Color(0.76, 0.62, 0.96, 1.0) # Cult banner lavender
 		"tithe_box":
 			return Color(0.98, 0.84, 0.24, 1.0) # Offering gold
+		"substation_effigy":
+			return Color(0.28, 0.88, 1.0, 1.0) # High-voltage Tesla arc cyan
 		_:
 			return Color(0.65, 0.82, 1.0, 1.0)
 
@@ -521,6 +523,40 @@ static func _build_tower_meshes(tower_id: String, tier: int) -> Dictionary:
 			accent.add_cyl(0.09, 0.09, 0.03, Vector3(0.0, 0.94, 0.0), Color.WHITE, Vector3(90.0, 0.0, 0.0), 10)
 			accent.add_cyl(0.07, 0.07, 0.08, Vector3(-0.22, 0.30, -0.22), Color.WHITE, Vector3.ZERO, 8)
 			accent.add_cyl(0.07, 0.07, 0.12, Vector3(0.22, 0.32, -0.22), Color.WHITE, Vector3.ZERO, 8)
+
+		"substation_effigy":
+			# Stolen pole-pig transformer drum + cooling fins + utility cross-arms + copper coil + 3 corona horns + plasma sphere (< 1.40 height)
+			base.add_cyl(0.28, 0.32, 0.44, Vector3(0.0, 0.32, 0.0), scrap_iron, Vector3.ZERO, 10)
+			for i in range(4):
+				var fang: float = float(i) * TAU / 4.0 + PI * 0.25
+				base.add_box(
+					Vector3(0.06, 0.36, 0.14),
+					Vector3(cos(fang) * 0.30, 0.32, sin(fang) * 0.30),
+					mid_stone,
+					Vector3(0.0, rad_to_deg(-fang), 0.0)
+				)
+			# Wooden utility cross-arms + ceramic insulator spools
+			base.add_box(Vector3(0.68, 0.07, 0.09), Vector3(0.0, 0.62, 0.0), wood_dark)
+			base.add_box(Vector3(0.09, 0.07, 0.62), Vector3(0.0, 0.74, 0.0), wood_dark)
+			for ix in [-0.28, 0.28]:
+				base.add_cyl(0.045, 0.055, 0.12, Vector3(ix, 0.71, 0.0), bone_white, Vector3.ZERO, 8)
+			# Central copper-wound core column
+			base.add_cyl(0.09, 0.13, 0.62, Vector3(0.0, 0.82, 0.0), rust_metal, Vector3.ZERO, 10)
+			# Accent: 3 stepped Tesla torus rings + 3 angled corona horn electrodes + apex arc sphere
+			accent.add_torus(0.11, 0.17, Vector3(0.0, 0.68, 0.0), Color.WHITE, Vector3.ZERO, 10, 6)
+			accent.add_torus(0.10, 0.15, Vector3(0.0, 0.86, 0.0), Color.WHITE, Vector3.ZERO, 10, 6)
+			accent.add_torus(0.08, 0.13, Vector3(0.0, 1.02, 0.0), Color.WHITE, Vector3.ZERO, 10, 6)
+			accent.add_sphere(0.13, 0.26, Vector3(0.0, 1.18, 0.0), Color.WHITE, Vector3.ZERO, 10, 6)
+			for h_idx in range(3):
+				var hang: float = float(h_idx) * TAU / 3.0
+				accent.add_cone(
+					0.045,
+					0.24,
+					Vector3(cos(hang) * 0.16, 1.24, sin(hang) * 0.16),
+					Color.WHITE,
+					Vector3(cos(hang) * 28.0, 0.0, -sin(hang) * 28.0),
+					6
+				)
 
 		_:
 			# Fallback / legacy sample towers (basic_tower, flame_tower, frost_tower, laser_tower, beacon_tower, banner_tower)
@@ -943,6 +979,14 @@ static func get_projectile_mesh(tower_type: String = "", damage_tag: int = 0) ->
 			m.add_cone(0.09, 0.34, Vector3(0.0, 0.0, -0.16), Color(0.75, 0.32, 1.0), Vector3(-90.0, 0.0, 0.0), 4)
 			m.add_cone(0.09, 0.24, Vector3(0.0, 0.0, 0.13), Color(0.45, 0.14, 0.82), Vector3(90.0, 0.0, 0.0), 4)
 			m.add_torus(0.10, 0.14, Vector3(0.0, 0.0, -0.02), Color(0.95, 0.78, 1.0), Vector3(90.0, 0.0, 0.0), 8, 6)
+
+		"substation_effigy":
+			# Jagged electric arc bolt with crackling cyan-white plasma core and twin corona rings
+			var arc_cyan := Color(0.28, 0.92, 1.0)
+			m.add_cone(0.065, 0.32, Vector3(0.0, 0.0, -0.16), Color.WHITE, Vector3(-90.0, 0.0, 0.0), 6)
+			m.add_box(Vector3(0.05, 0.05, 0.24), Vector3(0.03, 0.02, -0.02), arc_cyan, Vector3(0.0, 18.0, 22.0))
+			m.add_box(Vector3(0.05, 0.05, 0.22), Vector3(-0.03, -0.02, 0.12), arc_cyan, Vector3(0.0, -18.0, -22.0))
+			m.add_torus(0.08, 0.12, Vector3(0.0, 0.0, -0.04), arc_cyan, Vector3(75.0, 20.0, 0.0), 8, 6)
 
 		_:
 			# Fallback by DamageTag (0=Kinetic, 1=Corrosive, 2=Psychic, 3=Void, 4=Electric)

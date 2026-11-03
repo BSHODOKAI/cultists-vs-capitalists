@@ -23,6 +23,7 @@ const TOWER_LETTERS: Dictionary = {
 	"fever_shrine": "F",
 	"the_congregation": "M",
 	"tithe_box": "$",
+	"substation_effigy": "E",
 }
 
 var tower_instance: TowerInstance

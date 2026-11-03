@@ -13,7 +13,6 @@ id = "tentacle_storm_drain"
 display_name = "Tentacle Storm Drain"
 description = "Deals 4 Kinetic/s to Ground enemies; 35% slow aura; roots target 1.5 s every 8 s; applies Entangled."
 cost = 35
-attack_range = 2.0
 range_hexes = 2
 damage = 4.0
 damage_tag = 0

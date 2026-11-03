@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "breaker_cascade"
+display_name = "Breaker Cascade"
+description = "Every 5th discharge overloads for +50% damage and a 0.8s stun; +35% damage vs Air, Shielded, and Cybernetic."
+tower_id = "substation_effigy"
+tier = 4
+branch = 2
+currency = 1
+cost = 90
+prerequisite_id = "substation_tap"
+corruption_delta = 0
+jank_set = 25
+behaviors = Array[String](["breaker_cascade"])
+behavior_params = {
+"nth_shot": 5,
+"overload_damage_bonus": 0.5,
+"stun_duration": 0.8,
+"tag_damage_bonus": 0.35
+}

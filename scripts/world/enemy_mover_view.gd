@@ -204,6 +204,10 @@ static func compute_visual_packet(
 		badges.append("FLEE")
 	if u.drain_slow_strength > 0.0 or u.flood_slow_strength > 0.0 or u.timed_slow_timer > 0.0:
 		badges.append("SLOW")
+	if u.entangled_by_drain:
+		badges.append("ENTANGLED")
+	if u.conduct_electric_wet:
+		badges.append("WET")
 	if u.mark_timer > 0.0:
 		badges.append("MARK")
 	if not u.dot_stacks.is_empty():

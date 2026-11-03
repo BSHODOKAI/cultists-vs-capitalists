@@ -13,7 +13,6 @@ id = "the_congregation"
 display_name = "The Congregation"
 description = "Must be placed adjacent to the path. Summons up to 2 cultist blockers (60 HP, 2 Kinetic/s) onto the adjacent path hex; resummons 10 s after death."
 cost = 45
-attack_range = 1.0
 range_hexes = 1
 damage = 2.0
 damage_tag = 0
