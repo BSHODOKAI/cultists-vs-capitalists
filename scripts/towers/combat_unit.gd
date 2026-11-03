@@ -11,6 +11,11 @@ const _Balance = preload("res://scripts/towers/tower_balance_data.gd")
 const _UnitData = preload("res://scripts/units/unit_data.gd")
 const _AbilityData = preload("res://scripts/units/ability_data.gd")
 
+const CC_CATEGORY_FEAR: String = "fear"
+const CC_CATEGORY_ROOT: String = "root"
+const CC_CATEGORY_STUN: String = "stun"
+const CC_CATEGORY_DISPLACEMENT: String = "displacement"
+
 var unit_id: int = 1
 var unit_type_id: String = ""
 var unit_name: String = "Enemy"
@@ -35,6 +40,9 @@ var boss_timing_mult: float = 1.0
 
 ## Continuous position in path index coordinates (spawns at path.size() - 1, walks toward 0.0).
 var path_position: float = 0.0
+var cached_hex: Vector2i = Vector2i.ZERO
+var cached_hex_path_pos: float = -999999.0
+var cached_hex_path_len: int = -1
 
 ## Budget cost used to compute default scrap_value = roundi(cost * 0.5).
 var cost: int = 10
@@ -136,6 +144,16 @@ var fear_stacks: int = 0
 var flee_timer: float = 0.0
 var flee_cooldown_timer: float = 0.0
 var confuse_timer: float = 0.0
+
+## Per-category hard-CC diminishing returns lock counts (0..CC_MAX_LOCKS_PER_CATEGORY = 3).
+## Once a category reaches 3 locks, the unit is permanently immune to that CC category
+## for the rest of its existence. Slows are exempt and have no diminishing returns.
+var cc_lock_counts: Dictionary = {
+	"fear": 0,
+	"root": 0,
+	"stun": 0,
+	"displacement": 0,
+}
 
 var mark_timer: float = 0.0
 var mark_damage_bonus: float = 0.0
@@ -258,17 +276,56 @@ func apply_armor_shred(stacks: int, cap_override: int = -1, cybernetic_double: b
 	armor_shred_stacks = clampi(armor_shred_stacks + stacks, 0, armor_shred_cap)
 
 
-## Applies root for [param duration] seconds (Bosses are immune to root).
+## Returns how many times [param category] CC has locked this unit (0..3).
+func get_cc_lock_count(category: String) -> int:
+	return int(cc_lock_counts.get(category, 0))
+
+
+## True when this unit has reached the 3x diminishing returns cap for [param category]
+## (or is a Boss for boss-immune CC categories) and is permanently immune to that CC
+## for the rest of its existence.
+func is_cc_immune(category: String) -> bool:
+	if is_boss() and category != CC_CATEGORY_STUN:
+		return true
+	return get_cc_lock_count(category) >= _Balance.CC_MAX_LOCKS_PER_CATEGORY
+
+
+## Consumes 1 lock in [param category] and returns its diminishing-returns multiplier
+## (1st = 1.00, 2nd = 0.50, 3rd = 0.25, 4th+ = 0.0 immune).
+func _consume_cc_dr_multiplier(category: String) -> float:
+	var current_locks: int = get_cc_lock_count(category)
+	if current_locks >= _Balance.CC_MAX_LOCKS_PER_CATEGORY:
+		return 0.0
+	var next_locks: int = current_locks + 1
+	cc_lock_counts[category] = next_locks
+	match next_locks:
+		1:
+			return _Balance.CC_DR_STEP_1_MULT
+		2:
+			return _Balance.CC_DR_STEP_2_MULT
+		3:
+			return _Balance.CC_DR_STEP_3_MULT
+	return 0.0
+
+
+## Applies root for [param duration] seconds with per-category 3x diminishing returns.
+## Bosses are immune to root; after 3 roots, the unit becomes permanently root-immune.
 func apply_root(duration: float, from_storm_drain: bool = false) -> bool:
 	if is_boss():
 		return false
-	root_timer = maxf(root_timer, duration)
 	if from_storm_drain:
 		entangled_by_drain = true
+	if is_cc_immune(CC_CATEGORY_ROOT) or root_timer > 0.0:
+		return false
+	var mult: float = _consume_cc_dr_multiplier(CC_CATEGORY_ROOT)
+	if mult <= 0.0:
+		return false
+	root_timer = maxf(root_timer, duration * mult)
 	return true
 
 
 ## Applies a timed slow of [param strength] (0..1) for [param duration] seconds.
+## Slows have NO diminishing returns and can remain forever.
 ## Bosses take slows at 50% strength; SlowResist further reduces slow strength.
 func apply_timed_slow(strength: float, duration: float) -> void:
 	var boss_scale: float = _Balance.BOSS_SLOW_AND_DOT_STRENGTH if is_boss() else 1.0
@@ -279,42 +336,64 @@ func apply_timed_slow(strength: float, duration: float) -> void:
 	timed_slow_timer = maxf(timed_slow_timer, duration)
 
 
-## Displaces the unit along the path by [param delta_hexes] (positive = backward toward spawn).
-## Bosses are immune to displacement.
+## Displaces the unit along the path by [param delta_hexes] (positive = backward toward spawn),
+## subject to per-category 3x diminishing returns ("displacement").
+## Bosses are immune to displacement; after 3 displacements, the unit becomes permanently immune.
 func displace_along_path(delta_hexes: float, max_path_index: float) -> bool:
-	if is_boss():
+	if is_boss() or is_cc_immune(CC_CATEGORY_DISPLACEMENT):
 		return false
-	path_position = clampf(path_position + delta_hexes, 0.0, maxf(0.0, max_path_index))
+	var mult: float = _consume_cc_dr_multiplier(CC_CATEGORY_DISPLACEMENT)
+	if mult <= 0.0:
+		return false
+	path_position = clampf(path_position + delta_hexes * mult, 0.0, maxf(0.0, max_path_index))
 	return true
 
 
 ## Applies Fear stacks (from dissonant_hymn) up to [param max_stacks].
+## Note: the movement slow from fear_stacks has no DR and remains forever.
 func add_fear_stack(max_stacks: int = 5) -> void:
 	fear_stacks = clampi(fear_stacks + 1, 0, max_stacks)
 
 
-## Attempts to trigger flee (from the_unspoken_verse). Bosses are immune to flee.
+## Attempts to trigger flee (from the_unspoken_verse), subject to per-category 3x DR ("fear").
+## Bosses are immune to flee; after 3 fear/confuse reverse-walks, the unit is permanently immune.
 func try_trigger_flee(duration: float, cooldown: float = 10.0) -> bool:
-	if is_boss():
+	if is_boss() or flee_cooldown_timer > 0.0:
 		return false
-	if flee_cooldown_timer > 0.0:
+	if is_cc_immune(CC_CATEGORY_FEAR) or flee_timer > 0.0 or confuse_timer > 0.0:
 		return false
-	flee_timer = maxf(flee_timer, duration)
+	var mult: float = _consume_cc_dr_multiplier(CC_CATEGORY_FEAR)
+	if mult <= 0.0:
+		return false
+	flee_timer = maxf(flee_timer, duration * mult)
 	flee_cooldown_timer = cooldown
 	return true
 
 
-## Applies confusion (walk in reverse from ad_hijack). Bosses are immune.
+## Applies confusion (walk in reverse from ad_hijack), subject to per-category 3x DR ("fear").
+## Bosses are immune; after 3 fear/confuse reverse-walks, the unit is permanently immune.
 func apply_confuse(duration: float) -> bool:
-	if is_boss():
+	if is_boss() or is_cc_immune(CC_CATEGORY_FEAR):
 		return false
-	confuse_timer = maxf(confuse_timer, duration)
+	if confuse_timer > 0.0 or flee_timer > 0.0:
+		return false
+	var mult: float = _consume_cc_dr_multiplier(CC_CATEGORY_FEAR)
+	if mult <= 0.0:
+		return false
+	confuse_timer = maxf(confuse_timer, duration * mult)
 	return true
 
 
-## Applies stun (e.g. jammer_choir).
-func apply_stun(duration: float) -> void:
-	stun_timer = maxf(stun_timer, duration)
+## Applies stun (e.g. jammer_choir), subject to per-category 3x DR ("stun").
+## After 3 stuns, the unit is permanently stun-immune for the rest of its existence.
+func apply_stun(duration: float) -> bool:
+	if is_cc_immune(CC_CATEGORY_STUN) or stun_timer > 0.0:
+		return false
+	var mult: float = _consume_cc_dr_multiplier(CC_CATEGORY_STUN)
+	if mult <= 0.0:
+		return false
+	stun_timer = maxf(stun_timer, duration * mult)
+	return true
 
 
 ## Interrupts an active Hacker channel (or Raider Leveraged Buyout beam).

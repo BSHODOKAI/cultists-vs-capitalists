@@ -15,17 +15,23 @@ const DEFAULT_UNIT_TIER: int = 1
 const DEFAULT_STARTING_LIVES: int = 20
 
 # --- Per-Unit-Type Kill Leveling Constants -----------------------------------
-## level = floor(sqrt(kills_of_this_unit_type / KILLS_DIVISOR))
-const LEVEL_KILLS_DIVISOR: float = 10.0
-## health_mult = 1 + LEVEL_HP_PER_LEVEL * level
-const LEVEL_HP_PER_LEVEL: float = 0.12
+## level = floor(pow(kills_of_this_unit_type / LEVEL_KILLS_DIVISOR, LEVEL_KILLS_EXPONENT))
+const LEVEL_KILLS_DIVISOR: float = 3.0
+const LEVEL_KILLS_EXPONENT: float = 0.72
+## health_mult = (1 + LEVEL_HP_PER_LEVEL * level) * pow(LEVEL_HP_COMPOUND_RATE, max(0, level - LEVEL_HP_COMPOUND_START_LEVEL))
+const LEVEL_HP_PER_LEVEL: float = 0.22
+const LEVEL_HP_COMPOUND_START_LEVEL: int = 3
+const LEVEL_HP_COMPOUND_RATE: float = 1.06
 ## speed_mult = min(1 + LEVEL_SPEED_PER_LEVEL * level, LEVEL_SPEED_MAX_MULT)
-const LEVEL_SPEED_PER_LEVEL: float = 0.02
-const LEVEL_SPEED_MAX_MULT: float = 1.25
+const LEVEL_SPEED_PER_LEVEL: float = 0.025
+const LEVEL_SPEED_MAX_MULT: float = 1.40
+## Minimum unit level floor added per completed 10-wave interval: (interval_index - 1) * INTERVAL_LEVEL_FLOOR_STEP
+const INTERVAL_LEVEL_FLOOR_STEP: int = 2
 
 # --- Boss Scaling & Immunity Constants ---------------------------------------
-## Boss HP = base_hp * (1 + BOSS_HP_PER_INDEX * (n - 1))
-const BOSS_HP_PER_INDEX: float = 0.30
+## Boss HP = base_hp * (1 + BOSS_HP_PER_INDEX * (n - 1) + BOSS_HP_QUADRATIC_PER_INDEX * (n - 1)^2)
+const BOSS_HP_PER_INDEX: float = 0.55
+const BOSS_HP_QUADRATIC_PER_INDEX: float = 0.15
 ## Number of bosses in a full boss cycle (5 bosses total, or 4 faction + 1 coalition).
 const BOSS_CYCLE_LENGTH: int = 5
 ## Every full cycle shortens telegraphs and cooldowns by 15%.
@@ -128,11 +134,16 @@ const LOSS_REPORT_DAMAGE_WINDOW_SECONDS: float = 10.0
 @export var starting_lives: int = DEFAULT_STARTING_LIVES
 
 @export var level_kills_divisor: float = LEVEL_KILLS_DIVISOR
+@export var level_kills_exponent: float = LEVEL_KILLS_EXPONENT
 @export var level_hp_per_level: float = LEVEL_HP_PER_LEVEL
+@export var level_hp_compound_start_level: int = LEVEL_HP_COMPOUND_START_LEVEL
+@export var level_hp_compound_rate: float = LEVEL_HP_COMPOUND_RATE
 @export var level_speed_per_level: float = LEVEL_SPEED_PER_LEVEL
 @export var level_speed_max_mult: float = LEVEL_SPEED_MAX_MULT
+@export var interval_level_floor_step: int = INTERVAL_LEVEL_FLOOR_STEP
 
 @export var boss_hp_per_index: float = BOSS_HP_PER_INDEX
+@export var boss_hp_quadratic_per_index: float = BOSS_HP_QUADRATIC_PER_INDEX
 @export var boss_cycle_length: int = BOSS_CYCLE_LENGTH
 @export var boss_cycle_timing_reduction: float = BOSS_CYCLE_TIMING_REDUCTION
 @export var boss_min_timing_multiplier: float = BOSS_MIN_TIMING_MULTIPLIER

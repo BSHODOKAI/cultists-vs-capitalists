@@ -60,16 +60,41 @@ func release_unit_view(unit_id: int) -> void:
 		_free_pool.append(view)
 
 
+const MULTITHREAD_THRESHOLD: int = 32
+
+
 func update_all_views(units: Array[CombatUnit], path_hexes: Array[Vector2i], prev_positions: Dictionary, alpha: float) -> void:
 	var alive_ids: Dictionary = {}
+	var alive_units: Array[CombatUnit] = []
+	var alive_views: Array[EnemyMoverView] = []
+	var prev_pos_list: Array[float] = []
+
 	for u: CombatUnit in units:
 		if u == null or not u.is_alive():
 			continue
 		alive_ids[u.unit_id] = true
 		var view: EnemyMoverView = ensure_view_for_unit(u)
 		if view != null:
-			var prev_pos: float = float(prev_positions.get(u.unit_id, u.path_position))
-			view.update_visual(path_hexes, prev_pos, alpha)
+			alive_units.append(u)
+			alive_views.append(view)
+			prev_pos_list.append(float(prev_positions.get(u.unit_id, u.path_position)))
+
+	var count: int = alive_units.size()
+	if count >= MULTITHREAD_THRESHOLD and not path_hexes.is_empty():
+		var packets: Array[Dictionary] = []
+		packets.resize(count)
+		var now_msec: int = Time.get_ticks_msec()
+		var worker_fn := func(idx: int) -> void:
+			packets[idx] = _EnemyMoverView.compute_visual_packet(
+				alive_units[idx], path_hexes, prev_pos_list[idx], alpha, now_msec
+			)
+		var group_id: int = WorkerThreadPool.add_group_task(worker_fn, count)
+		WorkerThreadPool.wait_for_group_task_completion(group_id)
+		for i in range(count):
+			alive_views[i].apply_visual_packet(packets[i])
+	else:
+		for i in range(count):
+			alive_views[i].update_visual(path_hexes, prev_pos_list[i], alpha)
 
 	# Return any despawned/dead unit views to the pool
 	var to_release: Array[int] = []

@@ -10,3 +10,7 @@ blocked_prism_height = 0.55
 path_prism_height = 0.12
 air_altitude = 1.8
 tower_max_height = 1.5
+buff_range_ring_color = Color(1, 0.78, 0.22, 0.78)
+build_zone_valid_color = Color(0.2, 0.95, 0.55, 0.52)
+build_zone_invalid_color = Color(0.95, 0.22, 0.28, 0.48)
+ambient_build_zone_border_color = Color(0.28, 0.82, 0.58, 0.22)

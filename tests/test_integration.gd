@@ -156,7 +156,7 @@ func test_02_smoke_main_loads_and_reaches_intermission() -> void:
 		"Main must reach INTERMISSION on start, got %d" % gs.current_state
 	)
 	assert(gs.offerings == 150, "Starting Offerings must be 150, got %d" % gs.offerings)
-	assert(gs.scrap == 0, "Starting Scrap must be 0, got %d" % gs.scrap)
+	assert(gs.scrap == 40, "Starting Scrap must be 40, got %d" % gs.scrap)
 	assert(gs.lives == 20, "Starting Lives must be 20, got %d" % gs.lives)
 	assert(
 		gs.path_generator.path_hexes.size() == _GameState.INITIAL_PATH_LENGTH,

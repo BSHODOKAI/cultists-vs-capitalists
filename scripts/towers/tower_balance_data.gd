@@ -9,7 +9,7 @@ extends Resource
 
 # --- Placement & Economy constants -------------------------------------------
 const DEFAULT_STARTING_OFFERINGS: int = 150
-const DEFAULT_STARTING_SCRAP: int = 0
+const DEFAULT_STARTING_SCRAP: int = 40
 const DEFAULT_STARTING_LIVES: int = 20
 const DEFAULT_BUILD_DISTANCE: int = 2
 const DEFAULT_SELL_REFUND_RATIO: float = 0.70
@@ -36,8 +36,11 @@ const CORRUPTION_MISFIRE_LOW_CHANCE: float = 0.10
 const CORRUPTION_MISFIRE_HIGH_THRESHOLD: int = 75
 const CORRUPTION_MISFIRE_HIGH_CHANCE: float = 0.20
 const CORRUPTION_ROGUE_ENTITY_THRESHOLD: int = 100
-const ROGUE_ENTITY_LEAK_LIVES: int = 2
+const ROGUE_ENTITY_LEAK_LIVES: int = 3
 const ROGUE_ENTITY_KILL_OFFERINGS: int = 10
+const ROGUE_ENTITY_BASE_HP: float = 550.0
+const ROGUE_ENTITY_BASE_SPEED: float = 1.25
+const ROGUE_ENTITY_HP_SCALE_PER_KILL: float = 1.45
 const PENANCE_OFFERINGS_COST: int = 40
 const PENANCE_CORRUPTION_REDUCTION: int = 5
 
@@ -63,6 +66,12 @@ const ARMOR_SHRED_DEFAULT_MAX_STACKS: int = 5
 
 const GUTTER_PULSE_REVEAL_SECONDS: float = 3.0
 const BOSS_SLOW_AND_DOT_STRENGTH: float = 0.50
+
+# --- Crowd Control Diminishing Returns constants -----------------------------
+const CC_MAX_LOCKS_PER_CATEGORY: int = 3
+const CC_DR_STEP_1_MULT: float = 1.00
+const CC_DR_STEP_2_MULT: float = 0.50
+const CC_DR_STEP_3_MULT: float = 0.25
 
 # --- Exported tunable properties (defaulting to named constants) -------------
 @export var starting_offerings: int = DEFAULT_STARTING_OFFERINGS

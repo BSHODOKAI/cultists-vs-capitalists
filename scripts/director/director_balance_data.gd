@@ -26,6 +26,11 @@ const BOSS_WITHHELD_BUDGET_RATIO: float = 0.40
 const MAX_UNITS_PER_WAVE: int = 60
 const MAX_BOSS_ESCORT_UNITS: int = 24
 
+## Late-wave difficulty ramp starting after wave 15 so mid-to-late waves (20..50+) scale sharply.
+const LATE_RAMP_START_WAVE: int = 15
+const LATE_RAMP_LINEAR_PER_WAVE: float = 0.035
+const LATE_RAMP_QUADRATIC_PER_WAVE: float = 0.0018
+
 # --- Rubber-Banding Constants ------------------------------------------------
 const RUBBER_FACTOR_DEFAULT: float = 1.0
 const RUBBER_FACTOR_MIN: float = 0.80
@@ -52,8 +57,9 @@ const FIRST_SECOND_THRESHOLD: float = 1.0
 # --- Unit Cost & Boss Scaling Constants --------------------------------------
 ## effective_cost = cost * (1 + 0.03 * level)
 const UNIT_LEVEL_COST_MULTIPLIER: float = 0.03
-## Boss HP = base_hp * (1 + 0.30 * (n - 1))
-const BOSS_HP_SCALING_PER_INDEX: float = 0.30
+## Boss HP = base_hp * (1 + 0.55 * (n - 1) + 0.15 * (n - 1)^2)
+const BOSS_HP_SCALING_PER_INDEX: float = 0.55
+const BOSS_HP_QUADRATIC_PER_INDEX: float = 0.15
 
 # --- Scoring, Coverage, Diversity & Noise Constants --------------------------
 const HISTORY_WAVE_WINDOW: int = 5
@@ -114,6 +120,9 @@ const DENSE_OVERLAP_ZONES_THRESHOLD: int = 3
 @export var boss_withheld_budget_ratio: float = BOSS_WITHHELD_BUDGET_RATIO
 @export var max_units_per_wave: int = MAX_UNITS_PER_WAVE
 @export var max_boss_escort_units: int = MAX_BOSS_ESCORT_UNITS
+@export var late_ramp_start_wave: int = LATE_RAMP_START_WAVE
+@export var late_ramp_linear_per_wave: float = LATE_RAMP_LINEAR_PER_WAVE
+@export var late_ramp_quadratic_per_wave: float = LATE_RAMP_QUADRATIC_PER_WAVE
 
 @export var rubber_factor_default: float = RUBBER_FACTOR_DEFAULT
 @export var rubber_factor_min: float = RUBBER_FACTOR_MIN
@@ -138,6 +147,7 @@ const DENSE_OVERLAP_ZONES_THRESHOLD: int = 3
 
 @export var unit_level_cost_multiplier: float = UNIT_LEVEL_COST_MULTIPLIER
 @export var boss_hp_scaling_per_index: float = BOSS_HP_SCALING_PER_INDEX
+@export var boss_hp_quadratic_per_index: float = BOSS_HP_QUADRATIC_PER_INDEX
 
 @export var history_wave_window: int = HISTORY_WAVE_WINDOW
 @export var coverage_measurement_wave_window: int = COVERAGE_MEASUREMENT_WAVE_WINDOW

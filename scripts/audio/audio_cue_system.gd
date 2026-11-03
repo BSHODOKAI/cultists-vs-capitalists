@@ -20,9 +20,26 @@ const BOSS_ABILITY_IDS: Array[String] = [
 	"NetworkEffect",
 ]
 
+const HIGH_PRIORITY_CUES: Array[String] = [
+	_AudioBalance.CUE_BOSS_DEATH,
+	_AudioBalance.CUE_BOSS_SPECIAL_ABILITY,
+	_AudioBalance.CUE_GAME_OVER,
+	_AudioBalance.CUE_WAVE_STARTED,
+	_AudioBalance.CUE_WAVE_ENDED,
+	_AudioBalance.CUE_STARS_ARE_RIGHT,
+	_AudioBalance.CUE_PATH_EXTENDED,
+	_AudioBalance.CUE_TOWER_CONSTRUCT,
+	_AudioBalance.CUE_TOWER_UPGRADE,
+	_AudioBalance.CUE_UI_CLICK,
+	_AudioBalance.CUE_UI_ERROR,
+]
+
+const MAX_LOG_ENTRIES: int = 512
+
 var balance: AudioBalanceData
 var rng: RandomNumberGenerator
 var elapsed_time: float = 0.0
+var sim_speed_multiplier: float = 1.0
 var background_volume_scale: int = _AudioSettings.DEFAULT_BACKGROUND_VOLUME
 var fx_volume_scale: int = _AudioSettings.DEFAULT_FX_VOLUME
 
@@ -100,6 +117,27 @@ func get_active_voice_count(cue_id: String) -> int:
 	if not _active_voices.has(cue_id):
 		return 0
 	return (_active_voices[cue_id] as Array).size()
+
+
+## Returns the total number of active non-looping SFX voices across all cues.
+func get_total_active_voice_count() -> int:
+	_prune_expired_voices()
+	var total: int = 0
+	for k: String in _active_voices.keys():
+		if k == _AudioBalance.CUE_ENVIRONMENT_URBAN:
+			continue
+		total += (_active_voices[k] as Array).size()
+	return total
+
+
+func set_sim_speed_multiplier(mult: float) -> void:
+	sim_speed_multiplier = clampf(mult, 0.25, 20.0)
+
+
+func _append_log(target_log: Array[Dictionary], entry: Dictionary) -> void:
+	target_log.append(entry)
+	while target_log.size() > MAX_LOG_ENTRIES:
+		target_log.pop_front()
 
 
 ## Resolves which projectile fire cue to use for [param tower_type].
@@ -193,7 +231,7 @@ func request_cue(cue_id: String, metadata: Dictionary = {}) -> Dictionary:
 			"reason": "unknown_cue",
 			"time": elapsed_time,
 		}
-		suppressed_log.append(unknown_res)
+		_append_log(suppressed_log, unknown_res)
 		return unknown_res
 
 	var is_env: bool = bool(cfg.get("loop", false))
@@ -204,7 +242,7 @@ func request_cue(cue_id: String, metadata: Dictionary = {}) -> Dictionary:
 			"reason": "muted",
 			"time": elapsed_time,
 		}
-		suppressed_log.append(env_muted_res)
+		_append_log(suppressed_log, env_muted_res)
 		return env_muted_res
 	if not is_env and is_fx_muted():
 		var fx_muted_res: Dictionary = {
@@ -213,10 +251,28 @@ func request_cue(cue_id: String, metadata: Dictionary = {}) -> Dictionary:
 			"reason": "muted",
 			"time": elapsed_time,
 		}
-		suppressed_log.append(fx_muted_res)
+		_append_log(suppressed_log, fx_muted_res)
 		return fx_muted_res
 
+	var total_active: int = get_total_active_voice_count() if not is_env else 0
+	var is_high_prio: bool = is_env or HIGH_PRIORITY_CUES.has(cue_id)
+	var global_cap: int = maxi(4, balance.max_global_sfx_voices if balance != null else 8)
+	if not is_high_prio and total_active >= global_cap:
+		var gcap_res: Dictionary = {
+			"played": false,
+			"cue_id": cue_id,
+			"reason": "global_max_voices",
+			"time": elapsed_time,
+		}
+		_append_log(suppressed_log, gcap_res)
+		return gcap_res
+
 	var min_interval: float = maxf(0.0, float(cfg.get("min_interval", 0.0)))
+	if not is_high_prio and (sim_speed_multiplier > 1.05 or total_active >= 4):
+		var speed_scale: float = 1.0 + maxf(0.0, sim_speed_multiplier - 1.0) * 0.45
+		var density_scale: float = 1.0 + float(maxi(0, total_active - 3)) * 0.20
+		min_interval *= speed_scale * density_scale
+
 	if _last_trigger_time.has(cue_id):
 		var since_last: float = elapsed_time - float(_last_trigger_time[cue_id])
 		if since_last < min_interval - 1e-5:
@@ -226,7 +282,7 @@ func request_cue(cue_id: String, metadata: Dictionary = {}) -> Dictionary:
 				"reason": "cooldown",
 				"time": elapsed_time,
 			}
-			suppressed_log.append(cd_res)
+			_append_log(suppressed_log, cd_res)
 			return cd_res
 
 	var max_voices: int = maxi(1, int(cfg.get("max_voices", 1)))
@@ -238,12 +294,14 @@ func request_cue(cue_id: String, metadata: Dictionary = {}) -> Dictionary:
 			"reason": "max_voices",
 			"time": elapsed_time,
 		}
-		suppressed_log.append(cap_res)
+		_append_log(suppressed_log, cap_res)
 		return cap_res
 
 	var scale_db_offset: float = _AudioSettings.scale_to_db_offset(background_volume_scale if is_env else fx_volume_scale)
 	var base_vol_db: float = float(cfg.get("volume_db", -6.0)) + balance.master_sfx_volume_db + scale_db_offset
 	var duck_db: float = float(active_count) * balance.polyphony_attenuation_per_voice_db
+	if not is_high_prio and total_active >= 3:
+		duck_db += float(total_active - 2) * balance.global_density_attenuation_per_voice_db
 	var effective_vol_db: float = base_vol_db - duck_db
 
 	var p_min: float = float(cfg.get("pitch_min", 1.0))
@@ -274,7 +332,7 @@ func request_cue(cue_id: String, metadata: Dictionary = {}) -> Dictionary:
 		"metadata": metadata.duplicate(true),
 		"reason": "",
 	}
-	cue_log.append(result)
+	_append_log(cue_log, result)
 	return result
 
 
@@ -334,7 +392,7 @@ func on_enemy_died(unit_id: int, is_boss_override: bool = false) -> Dictionary:
 			"unit_id": unit_id,
 			"time": elapsed_time,
 		}
-		suppressed_log.append(skipped)
+		_append_log(suppressed_log, skipped)
 		return skipped
 	return on_mob_died(unit_id)
 
@@ -344,6 +402,16 @@ func on_boss_died(wave_number: int) -> Dictionary:
 
 
 func on_ability_telegraphed(event: Dictionary) -> Dictionary:
+	var ab_id: String = String(event.get("ability_id", ""))
+	if ab_id == "Heal":
+		var skipped_heal: Dictionary = {
+			"played": false,
+			"cue_id": _AudioBalance.CUE_ENEMY_ABILITY,
+			"reason": "periodic_heal_silent",
+			"time": elapsed_time,
+		}
+		_append_log(suppressed_log, skipped_heal)
+		return skipped_heal
 	var cue_id: String = resolve_ability_telegraphed_cue(event)
 	return request_cue(cue_id, event)
 

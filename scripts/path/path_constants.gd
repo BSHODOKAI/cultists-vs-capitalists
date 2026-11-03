@@ -47,7 +47,7 @@ enum UnitTag {
 const STARTING_LIVES: int = 20
 const DEFAULT_LEAK_COST: int = 1
 const STARTING_OFFERINGS: int = 150
-const STARTING_SCRAP: int = 0
+const STARTING_SCRAP: int = 40
 const DEFAULT_SCRAP_RATIO: float = 0.5
 
 const BOSS_WAVE_INTERVAL: int = 10

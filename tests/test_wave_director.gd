@@ -497,8 +497,9 @@ func test_06_boss_waves_escorts_60_percent_and_boss_hp_scales_by_n() -> void:
 			]
 		)
 
-		# Boss HP scales by n: base_hp * (1 + 0.30 * (n - 1))
-		var expected_boss_hp: float = roster.boss_base_hp * (1.0 + 0.30 * float(n - 1))
+		# Boss HP scales by n: base_hp * (1 + 0.55 * (n - 1) + 0.15 * (n - 1)^2)
+		var nf: float = float(n - 1)
+		var expected_boss_hp: float = roster.boss_base_hp * (1.0 + 0.55 * nf + 0.15 * nf * nf)
 		assert(
 			is_equal_approx(roster.boss_hp, expected_boss_hp),
 			"Boss wave %d (n=%d) boss_hp must be %.2f, got %.2f" % [

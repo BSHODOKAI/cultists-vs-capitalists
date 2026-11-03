@@ -66,8 +66,10 @@ enum TargetingMode {
 @export var mesh: Mesh
 ## Albedo color applied to the tower's mesh.
 @export var color: Color = Color(0.55, 0.8, 1.0, 1.0)
-## Build cost in Offerings (base T1 cost).
+## Build cost (base T1 cost in [member build_currency]).
 @export var cost: int = 50
+## Currency used to build this tower at T1 (0 = OFFERINGS, 1 = SCRAP).
+@export var build_currency: int = _UpgradeNode.Currency.OFFERINGS
 ## Attack range in world units (legacy 3D node compatibility).
 @export var attack_range: float = 3.0
 ## Attack range in axial hex distance.
@@ -185,6 +187,16 @@ func get_upgrade_node(node_id: String) -> UpgradeNode:
 		if node != null and node.id == node_id:
 			return node
 	return null
+
+
+func is_scrap_build_cost() -> bool:
+	return build_currency == _UpgradeNode.Currency.SCRAP
+
+
+func get_build_currency_name(short_form: bool = false) -> String:
+	if is_scrap_build_cost():
+		return "Scrap"
+	return "Off" if short_form else "Offerings"
 
 
 ## Returns a human-readable description of this tower, falling back to an

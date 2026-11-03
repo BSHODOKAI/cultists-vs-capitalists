@@ -38,6 +38,8 @@ const _SoundManager = preload("res://scripts/audio/sound_manager.gd")
 var tower_factory: TowerFactory
 var enemy_pool: EnemyVisualPool
 var theme_data: VisualThemeData
+var _kill_labels_this_frame: int = 0
+var _projectiles_this_frame: int = 0
 
 
 func _ready() -> void:
@@ -97,6 +99,8 @@ func _connect_signals() -> void:
 
 
 func _process(_delta: float) -> void:
+	_kill_labels_this_frame = 0
+	_projectiles_this_frame = 0
 	var gs: Node = get_node_or_null("/root/GameState")
 	var clock: Node = get_node_or_null("/root/SimClock")
 	if gs == null:
@@ -369,8 +373,11 @@ func _on_tower_sold(tower_id: int, _hex: Vector2i, refund: Dictionary) -> void:
 		tower_factory.remove_tower_view(tower_id)
 	if effects_view != null:
 		var off_r: int = int(refund.get("offerings_refund", 0))
+		var scr_r: int = int(refund.get("scrap_refund", 0))
 		if off_r > 0:
 			effects_view.spawn_floating_text(_HexMath.hex_to_world(_hex, 0.5), "+%d Off" % off_r, Color(0.85, 0.65, 1.0))
+		if scr_r > 0:
+			effects_view.spawn_floating_text(_HexMath.hex_to_world(_hex, 0.8), "+%d Scrap" % scr_r, Color(1.0, 0.65, 0.25))
 	_rebuild_world_views()
 
 
@@ -387,8 +394,9 @@ func _on_enemy_spawned(unit: CombatUnit) -> void:
 func _on_enemy_died(unit_id: int) -> void:
 	if enemy_pool != null and enemy_pool.active_views.has(unit_id):
 		var v: EnemyMoverView = enemy_pool.active_views[unit_id] as EnemyMoverView
-		if is_instance_valid(v) and effects_view != null:
-			effects_view.spawn_floating_text(v.global_position, "+Kill", Color(1.0, 0.88, 0.35))
+		if is_instance_valid(v) and effects_view != null and _kill_labels_this_frame < 4:
+			_kill_labels_this_frame += 1
+			effects_view.spawn_floating_text(v.get_aim_world_position(), "+Kill", Color(1.0, 0.88, 0.35))
 		enemy_pool.release_unit_view(unit_id)
 
 
@@ -400,8 +408,13 @@ func _on_tower_damaged_enemy(
 	_amount: float,
 	damage_tag: int
 ) -> void:
-	if _amount < 0.75:
+	if _amount < 0.75 or _projectiles_this_frame >= 24:
 		return
+	var gs: Node = get_node_or_null("/root/GameState")
+	if gs != null:
+		var tsys: TowerSystem = gs.get("tower_system") as TowerSystem
+		if tsys != null and tsys._in_continuous_dot_tick:
+			return
 	if effects_view == null or tower_factory == null or enemy_pool == null:
 		return
 	if not tower_factory.views.has(tower_id) or not enemy_pool.active_views.has(unit_id):
@@ -409,7 +422,8 @@ func _on_tower_damaged_enemy(
 	var tv: TowerView = tower_factory.views[tower_id] as TowerView
 	var ev: EnemyMoverView = enemy_pool.active_views[unit_id] as EnemyMoverView
 	if is_instance_valid(tv) and is_instance_valid(ev):
-		var to_p: Vector3 = ev.global_position + Vector3(0.0, 0.50, 0.0)
+		_projectiles_this_frame += 1
+		var to_p: Vector3 = ev.get_aim_world_position()
 		if _tower_type == "the_congregation":
 			# Congregation blockers fight in melee on the path tile rather than shooting from the tower roof
 			effects_view.spawn_impact_burst(to_p, damage_tag)

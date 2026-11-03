@@ -29,6 +29,18 @@ var _status_label: Label3D
 
 var _capsule_mesh: CapsuleMesh
 var _boss_box_mesh: BoxMesh
+var _last_info_text: String = ""
+var _last_status_text: String = ""
+var _last_cloaked_translucent: int = -1
+var _last_resisted_tag: int = -999
+
+
+func get_aim_world_position() -> Vector3:
+	if _body_mesh != null and is_inside_tree():
+		return _body_mesh.global_position + Vector3(0.0, 0.42, 0.0)
+	var is_air_u: bool = (unit != null and unit.is_air())
+	var alt: float = _HexMath.AIR_ALTITUDE if is_air_u else 0.0
+	return global_position + Vector3(0.0, alt + 0.50, 0.0)
 
 
 func _ready() -> void:
@@ -117,6 +129,10 @@ func bind_unit(p_unit: CombatUnit, p_theme: VisualThemeData) -> void:
 	_body_mat.albedo_color = Color.WHITE
 	_occlusion_mat.albedo_color = Color(fac_col.r, fac_col.g, fac_col.b, 0.26)
 	_body_mesh.mesh = _PlaceholderModels.get_unit_mesh_for_combat_unit(unit, fac_col)
+	_last_info_text = ""
+	_last_status_text = ""
+	_last_cloaked_translucent = -1
+	_last_resisted_tag = -999
 
 	if unit.is_boss():
 		_info_label.position = Vector3(0.0, 1.35, 0.0)
@@ -128,97 +144,140 @@ func bind_unit(p_unit: CombatUnit, p_theme: VisualThemeData) -> void:
 
 func unbind_unit() -> void:
 	unit = null
+	_last_info_text = ""
+	_last_status_text = ""
+	_last_cloaked_translucent = -1
+	_last_resisted_tag = -999
 	visible = false
+
+
+## Thread-safe pure computation of interpolated transform, rotation, and label strings for [param u].
+static func compute_visual_packet(
+	u: CombatUnit,
+	path_hexes: Array[Vector2i],
+	prev_path_pos: float,
+	alpha: float,
+	ticks_msec: int
+) -> Dictionary:
+	var interp_pos: float = lerpf(prev_path_pos, u.path_position, alpha)
+	var is_air: bool = u.is_air()
+	var altitude: float = _HexMath.AIR_ALTITUDE if is_air else 0.0
+	var ground_world: Vector3 = _HexMath.path_position_to_world(path_hexes, interp_pos, 0.0)
+
+	var look_pos: float = clampf(interp_pos - 0.25, 0.0, float(path_hexes.size() - 1))
+	var target_world: Vector3 = _HexMath.path_position_to_world(path_hexes, look_pos, 0.0)
+	var dir: Vector3 = target_world - ground_world
+	dir.y = 0.0
+	var has_yaw: bool = dir.length_squared() > 0.0001
+	var yaw: float = atan2(-dir.x, -dir.z) if has_yaw else 0.0
+
+	var body_pos := Vector3(0.0, altitude, 0.0)
+	if u.engaged_blocker_id >= 0 and not u.has_breakthrough:
+		var lunge: float = sin(float(ticks_msec) * 0.016 + float(u.unit_id)) * 0.11
+		var lunge_dir: Vector3 = dir.normalized() if has_yaw else Vector3(0.0, 0.0, -1.0)
+		body_pos = Vector3(lunge_dir.x * lunge, altitude + absf(lunge) * 0.25, lunge_dir.z * lunge)
+
+	var lvl_pips: String = (" L%d" % u.spawn_level) if u.spawn_level > 0 else ""
+	var hp_str: String = "%d/%d" % [ceili(u.hp), ceili(u.max_hp)]
+	if u.shield_hp > 0.0:
+		hp_str += " [S:%d]" % ceili(u.shield_hp)
+	var next_info: String = "%s%s\n%s" % [u.unit_name, lvl_pips, hp_str]
+
+	var badges: Array[String] = []
+	if u.network_effect_stacks > 0:
+		badges.append("NETx%d (-%d%%)" % [u.network_effect_stacks, roundi(u.network_damage_reduction * 100.0)])
+	if u.active_resisted_damage_tag >= 0:
+		badges.append("RES:%d" % u.active_resisted_damage_tag)
+	if not u.active_holding_mechanic.is_empty():
+		badges.append("MECH:%s" % u.active_holding_mechanic.to_upper())
+	if u.armor_shred_stacks > 0:
+		badges.append("SHREDx%d" % u.armor_shred_stacks)
+	if u.fear_stacks > 0:
+		badges.append("FEARx%d" % u.fear_stacks)
+	if u.root_timer > 0.0:
+		badges.append("ROOT")
+	if u.stun_timer > 0.0:
+		badges.append("STUN")
+	if u.engaged_blocker_id >= 0 and not u.has_breakthrough:
+		badges.append("BLOCKED")
+	if u.flee_timer > 0.0 or u.confuse_timer > 0.0:
+		badges.append("FLEE")
+	if u.drain_slow_strength > 0.0 or u.flood_slow_strength > 0.0 or u.timed_slow_timer > 0.0:
+		badges.append("SLOW")
+	if u.mark_timer > 0.0:
+		badges.append("MARK")
+	if not u.dot_stacks.is_empty():
+		badges.append("DOTx%d" % u.dot_stacks.size())
+
+	var next_status: String = " ".join(badges) if not badges.is_empty() else ""
+	return {
+		"ground_world": ground_world,
+		"body_pos": body_pos,
+		"is_air": is_air,
+		"altitude": altitude,
+		"has_yaw": has_yaw,
+		"yaw": yaw,
+		"info_text": next_info,
+		"status_text": next_status,
+	}
+
+
+func apply_visual_packet(pkt: Dictionary) -> void:
+	if unit == null or not unit.is_alive():
+		visible = false
+		return
+
+	var is_air: bool = bool(pkt["is_air"])
+	var altitude: float = float(pkt["altitude"])
+	global_position = pkt["ground_world"] as Vector3
+	_body_mesh.position = pkt["body_pos"] as Vector3
+	_shadow_blob.visible = is_air
+	if is_air:
+		_shadow_blob.position = Vector3(0.0, 0.02, 0.0)
+	if bool(pkt["has_yaw"]):
+		_body_mesh.rotation.y = float(pkt["yaw"])
+
+	var cloaked_trans: int = 1 if (unit.is_cloaked() and not unit.is_cloak_revealed()) else 0
+	if cloaked_trans != _last_cloaked_translucent:
+		_last_cloaked_translucent = cloaked_trans
+		if cloaked_trans == 1:
+			_body_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			_body_mat.albedo_color.a = 0.35
+		else:
+			_body_mat.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
+			_body_mat.albedo_color.a = 1.0
+
+	var res_tag: int = unit.active_resisted_damage_tag
+	if res_tag != _last_resisted_tag:
+		_last_resisted_tag = res_tag
+		if res_tag >= 0 and theme_data != null:
+			var plate_col: Color = theme_data.get_damage_tag_color(res_tag)
+			_body_mat.emission_enabled = true
+			_body_mat.emission = plate_col * 0.45
+		else:
+			_body_mat.emission_enabled = false
+
+	var next_info: String = String(pkt["info_text"])
+	if next_info != _last_info_text:
+		_last_info_text = next_info
+		_info_label.text = next_info
+	_info_label.position.y = altitude + (1.30 if unit.is_boss() else 0.95)
+
+	var next_status: String = String(pkt["status_text"])
+	if next_status.is_empty():
+		_status_label.visible = false
+	else:
+		_status_label.visible = true
+		if next_status != _last_status_text:
+			_last_status_text = next_status
+			_status_label.text = next_status
+		_status_label.position.y = _info_label.position.y + 0.25
+		_status_label.modulate = Color(1.0, 0.85, 0.35, 1.0)
 
 
 func update_visual(path_hexes: Array[Vector2i], prev_path_pos: float, alpha: float) -> void:
 	if unit == null or not unit.is_alive() or path_hexes.is_empty():
 		visible = false
 		return
-
-	var interp_pos: float = lerpf(prev_path_pos, unit.path_position, alpha)
-	var is_air: bool = unit.is_air()
-	var altitude: float = _HexMath.AIR_ALTITUDE if is_air else 0.0
-
-	var ground_world: Vector3 = _HexMath.path_position_to_world(path_hexes, interp_pos, 0.0)
-	global_position = ground_world
-
-	_body_mesh.position = Vector3(0.0, altitude, 0.0)
-	_shadow_blob.visible = is_air
-	if is_air:
-		_shadow_blob.position = Vector3(0.0, 0.02, 0.0)
-
-	# Face direction of travel along the path
-	var look_pos: float = clampf(interp_pos - 0.25, 0.0, float(path_hexes.size() - 1))
-	var target_world: Vector3 = _HexMath.path_position_to_world(path_hexes, look_pos, 0.0)
-	var dir: Vector3 = target_world - ground_world
-	dir.y = 0.0
-	if dir.length_squared() > 0.0001:
-		_body_mesh.rotation.y = atan2(-dir.x, -dir.z)
-
-	# Visual melee lunge when engaged with a Congregation blocker so the mob visibly attacks the blocker
-	if unit.engaged_blocker_id >= 0 and not unit.has_breakthrough:
-		var lunge: float = sin(float(Time.get_ticks_msec()) * 0.016 + float(unit.unit_id)) * 0.11
-		var lunge_dir: Vector3 = dir.normalized() if dir.length_squared() > 0.0001 else Vector3(0.0, 0.0, -1.0)
-		_body_mesh.position = Vector3(lunge_dir.x * lunge, altitude + absf(lunge) * 0.25, lunge_dir.z * lunge)
-
-	# Cloaked translucency
-	if unit.is_cloaked() and not unit.is_cloak_revealed():
-		_body_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		_body_mat.albedo_color.a = 0.35
-	else:
-		_body_mat.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
-		_body_mat.albedo_color.a = 1.0
-
-	# Chairman / Holding Company Restructuring resistance plating tint
-	if unit.active_resisted_damage_tag >= 0 and theme_data != null:
-		var plate_col: Color = theme_data.get_damage_tag_color(unit.active_resisted_damage_tag)
-		_body_mat.emission_enabled = true
-		_body_mat.emission = plate_col * 0.45
-	else:
-		_body_mat.emission_enabled = false
-
-	# Info label: Name + Level pips + HP (+ Shield)
-	var lvl_pips: String = ""
-	if unit.spawn_level > 0:
-		lvl_pips = " L%d" % unit.spawn_level
-	var hp_str: String = "%d/%d" % [ceili(unit.hp), ceili(unit.max_hp)]
-	if unit.shield_hp > 0.0:
-		hp_str += " [S:%d]" % ceili(unit.shield_hp)
-	_info_label.text = "%s%s\n%s" % [unit.unit_name, lvl_pips, hp_str]
-	_info_label.position.y = altitude + (1.30 if unit.is_boss() else 0.95)
-
-	# Status & Boss badges
-	var badges: Array[String] = []
-	if unit.network_effect_stacks > 0:
-		badges.append("NETx%d (-%d%%)" % [unit.network_effect_stacks, roundi(unit.network_damage_reduction * 100.0)])
-	if unit.active_resisted_damage_tag >= 0:
-		badges.append("RES:%d" % unit.active_resisted_damage_tag)
-	if not unit.active_holding_mechanic.is_empty():
-		badges.append("MECH:%s" % unit.active_holding_mechanic.to_upper())
-	if unit.armor_shred_stacks > 0:
-		badges.append("SHREDx%d" % unit.armor_shred_stacks)
-	if unit.fear_stacks > 0:
-		badges.append("FEARx%d" % unit.fear_stacks)
-	if unit.root_timer > 0.0:
-		badges.append("ROOT")
-	if unit.stun_timer > 0.0:
-		badges.append("STUN")
-	if unit.engaged_blocker_id >= 0 and not unit.has_breakthrough:
-		badges.append("BLOCKED")
-	if unit.flee_timer > 0.0 or unit.confuse_timer > 0.0:
-		badges.append("FLEE")
-	if unit.drain_slow_strength > 0.0 or unit.flood_slow_strength > 0.0 or unit.timed_slow_timer > 0.0:
-		badges.append("SLOW")
-	if unit.mark_timer > 0.0:
-		badges.append("MARK")
-	if not unit.dot_stacks.is_empty():
-		badges.append("DOTx%d" % unit.dot_stacks.size())
-
-	if badges.is_empty():
-		_status_label.visible = false
-	else:
-		_status_label.visible = true
-		_status_label.text = " ".join(badges)
-		_status_label.position.y = _info_label.position.y + 0.25
-		_status_label.modulate = Color(1.0, 0.85, 0.35, 1.0)
+	var pkt: Dictionary = compute_visual_packet(unit, path_hexes, prev_path_pos, alpha, Time.get_ticks_msec())
+	apply_visual_packet(pkt)

@@ -55,15 +55,16 @@ static func _add_street_foundation(
 	biome: BiomeData,
 	is_build_zone: bool = false
 ) -> void:
-	var asphalt: Color = biome.street_asphalt_color
-	var curb: Color = biome.build_zone_curb_color if is_build_zone else biome.sidewalk_curb_color
+	var asphalt: Color = biome.street_asphalt_color.lightened(0.06) if is_build_zone else biome.street_asphalt_color.darkened(0.12)
+	var curb: Color = biome.build_zone_curb_color.lightened(0.14) if is_build_zone else biome.sidewalk_curb_color.darkened(0.15)
 
 	# Main hex street slab (top surface at Y = 0.0)
 	_add_hex_prism(acc, _HexMath.HEX_SIZE * 0.96, 0.16, -0.16, asphalt)
 	# Sidewalk/curb border ring slightly proud at Y = 0.008
 	_add_hex_ring(acc, _HexMath.HEX_SIZE * 0.94, _HexMath.HEX_SIZE * 0.80, 0.008, curb)
 	# Inner sidewalk paving pad
-	_add_hex_prism(acc, _HexMath.HEX_SIZE * 0.79, 0.012, -0.004, asphalt.lightened(0.07))
+	var inner_pad_col: Color = asphalt.lightened(0.12) if is_build_zone else asphalt.lightened(0.03)
+	_add_hex_prism(acc, _HexMath.HEX_SIZE * 0.79, 0.012, -0.004, inner_pad_col)
 
 
 ## Returns a cached [ArrayMesh] for the given [param biome], [param archetype_id],

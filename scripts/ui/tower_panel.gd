@@ -128,14 +128,16 @@ func refresh() -> void:
 		if build_td != null:
 			visible = true
 			var build_cost: int = tsys.get_tower_build_cost(build_td) if tsys != null else build_td.cost
+			var curr_short: String = build_td.get_build_currency_name(true)
+			var curr_full: String = build_td.get_build_currency_name(false)
 			if _icon_rect != null:
 				_icon_rect.texture = _PlaceholderIcons.get_tower_icon(build_td.id, 38)
 				_icon_rect.visible = true
-			_title_label.text = "Building: %s (%d Off)" % [build_td.display_name, build_cost]
+			_title_label.text = "Building: %s (%d %s)" % [build_td.display_name, build_cost, curr_short]
 			var upg_text: String = build_td.get_upgrade_preview_summary()
 			var details: String = "%s\n%s" % [
 				build_td.get_display_description(),
-				build_td.get_stats_summary(build_cost, "Offerings")
+				build_td.get_stats_summary(build_cost, curr_full)
 			]
 			if not upg_text.is_empty():
 				details += "\n" + upg_text
@@ -200,8 +202,10 @@ func refresh() -> void:
 	_sell_button.visible = true
 	var off_ref: int = roundi(float(inst.total_offerings_spent) * tsys.balance.sell_refund_ratio)
 	var scr_ref: int = roundi(float(inst.total_scrap_spent) * tsys.balance.sell_refund_ratio)
-	if scr_ref > 0:
+	if off_ref > 0 and scr_ref > 0:
 		_sell_button.text = "Sell Tower (+%d Off, +%d Scrap)" % [off_ref, scr_ref]
+	elif scr_ref > 0:
+		_sell_button.text = "Sell Tower (+%d Scrap)" % scr_ref
 	else:
 		_sell_button.text = "Sell Tower (+%d Offerings)" % off_ref
 	_sync_right_aligned_rect()

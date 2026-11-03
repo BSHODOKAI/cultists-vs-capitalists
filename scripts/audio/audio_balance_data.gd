@@ -45,11 +45,13 @@ const CUE_UI_ERROR: String = "ui_error"
 const DEFAULT_RESOURCE_PATH: String = "res://data/audio_balance.tres"
 
 @export var sfx_pool_size: int = 16
+@export var max_global_sfx_voices: int = 8
 @export var master_sfx_volume_db: float = 0.0
 @export var environment_volume_db: float = -14.0
 ## Volume attenuation (in dB) applied per already-active concurrent voice of the same cue
 ## so simultaneous rapid-fire shots and hits never stack into an overwhelming spike.
 @export var polyphony_attenuation_per_voice_db: float = 2.5
+@export var global_density_attenuation_per_voice_db: float = 0.8
 
 ## Biome ID -> environment cue ID mapping.
 @export var biome_environment_cues: Dictionary = {
@@ -135,72 +137,72 @@ static func build_default_cues() -> Dictionary:
 		# 4. Tower Cooldown Usage Events (dramatic sounds for longer cooldowns)
 		CUE_TOWER_CD_DEFAULT: {
 			"path": "res://Sound FX Starter Pack Vol. 1/Magic/Water Attack.wav",
-			"volume_db": -6.0,
-			"min_interval": 0.30,
-			"max_voices": 2,
+			"volume_db": -10.5,
+			"min_interval": 0.65,
+			"max_voices": 1,
 			"pitch_min": 0.95,
 			"pitch_max": 1.05,
-			"active_duration": 2.36,
+			"active_duration": 1.20,
 			"loop": false,
 		},
 		CUE_TOWER_CD_CONGREGATION_RESPAWN: {
 			"path": "res://Sound FX Starter Pack Vol. 1/Magic/Resurrection.wav",
-			"volume_db": -5.5,
-			"min_interval": 0.30,
-			"max_voices": 2,
+			"volume_db": -7.5,
+			"min_interval": 0.45,
+			"max_voices": 1,
 			"pitch_min": 0.97,
 			"pitch_max": 1.03,
-			"active_duration": 1.85,
+			"active_duration": 1.40,
 			"loop": false,
 		},
 		CUE_TOWER_CD_TENTACLE_ROOT: {
 			"path": "res://Sound FX Starter Pack Vol. 1/Magic/Water Attack.wav",
-			"volume_db": -6.0,
-			"min_interval": 0.30,
-			"max_voices": 2,
+			"volume_db": -11.5,
+			"min_interval": 0.75,
+			"max_voices": 1,
 			"pitch_min": 0.94,
 			"pitch_max": 1.04,
-			"active_duration": 2.36,
+			"active_duration": 1.10,
 			"loop": false,
 		},
 		CUE_TOWER_CD_LEVIATHAN_SWEEP: {
 			"path": "res://Sound FX Starter Pack Vol. 1/Magic/Earth Attack.wav",
-			"volume_db": -4.5,
-			"min_interval": 0.40,
+			"volume_db": -5.5,
+			"min_interval": 0.50,
 			"max_voices": 1,
 			"pitch_min": 0.92,
 			"pitch_max": 1.00,
-			"active_duration": 1.85,
+			"active_duration": 1.60,
 			"loop": false,
 		},
 		CUE_TOWER_CD_GUTTER_PULSE: {
 			"path": "res://Sound FX Starter Pack Vol. 1/Magic/Acid Attack.wav",
-			"volume_db": -8.5,
-			"min_interval": 0.30,
-			"max_voices": 2,
+			"volume_db": -10.0,
+			"min_interval": 0.45,
+			"max_voices": 1,
 			"pitch_min": 0.95,
 			"pitch_max": 1.05,
-			"active_duration": 1.65,
+			"active_duration": 1.15,
 			"loop": false,
 		},
 		CUE_TOWER_CD_MAW_BENEATH: {
 			"path": "res://Sound FX Starter Pack Vol. 1/Horror/Reality Rift.wav",
-			"volume_db": -5.0,
-			"min_interval": 0.40,
+			"volume_db": -6.0,
+			"min_interval": 0.50,
 			"max_voices": 1,
 			"pitch_min": 0.95,
 			"pitch_max": 1.03,
-			"active_duration": 2.80,
+			"active_duration": 2.00,
 			"loop": false,
 		},
 		CUE_TOWER_CD_CHOIR_SPECIAL: {
 			"path": "res://Sound FX Starter Pack Vol. 1/Magic/Necromantic Attack.wav",
-			"volume_db": -5.5,
-			"min_interval": 0.30,
-			"max_voices": 2,
+			"volume_db": -11.0,
+			"min_interval": 0.75,
+			"max_voices": 1,
 			"pitch_min": 0.96,
 			"pitch_max": 1.04,
-			"active_duration": 2.22,
+			"active_duration": 1.10,
 			"loop": false,
 		},
 		CUE_TOWER_CD_SHRINE_BURST: {
@@ -391,12 +393,12 @@ static func build_default_cues() -> Dictionary:
 		},
 		CUE_ENEMY_ABILITY: {
 			"path": "res://Sound FX Starter Pack Vol. 1/Horror/Pain Glitch.wav",
-			"volume_db": -7.0,
-			"min_interval": 0.30,
-			"max_voices": 2,
+			"volume_db": -13.5,
+			"min_interval": 0.85,
+			"max_voices": 1,
 			"pitch_min": 0.95,
 			"pitch_max": 1.05,
-			"active_duration": 1.50,
+			"active_duration": 0.75,
 			"loop": false,
 		},
 		CUE_UI_CLICK: {

@@ -108,6 +108,7 @@ var _lives_at_wave_start: int = _C.STARTING_LIVES
 var _boss_died_this_wave: bool = false
 var _post_boss_timer_ticks: int = 0
 var _combat_rng: RandomNumberGenerator = RandomNumberGenerator.new()
+var _in_sim_tick: bool = false
 
 ## Previous tick positions of units for smooth 30Hz -> render interpolation:
 ## unit_id (int) -> float path_position
@@ -365,17 +366,24 @@ func start_wave() -> bool:
 		locked_roster.wave_time_window
 	)
 
-	# Sync Rogue Entity with rogue_entity.tres placeholder stats (300 HP, speed 1.0, leak_cost 2)
-	if wave_start_info.get("rogue_entity") != null:
-		var rogue: CombatUnit = wave_start_info["rogue_entity"] as CombatUnit
-		var rogue_def := load(ROGUE_ENTITY_PATH) as UnitData
+	# Emit enemy_spawned for all Rogue Entities spawned at 100 Corruption
+	var rogue_list: Array = wave_start_info.get("rogue_entities", []) as Array
+	if rogue_list.is_empty() and wave_start_info.get("rogue_entity") != null:
+		rogue_list = [wave_start_info["rogue_entity"]]
+	var rogue_def := load(ROGUE_ENTITY_PATH) as UnitData
+	for r_var: Variant in rogue_list:
+		var rogue: CombatUnit = r_var as CombatUnit
+		if rogue == null:
+			continue
 		if rogue_def != null:
-			rogue.max_hp = rogue_def.base_hp
-			rogue.hp = rogue_def.base_hp
-			rogue.speed = rogue_def.speed
-			rogue.leak_cost = rogue_def.leak_cost
 			rogue.unit_data = rogue_def
-		_log_event("rogue_entity_spawned", {"wave": current_wave, "unit_id": rogue.unit_id, "hp": rogue.max_hp})
+		prev_unit_positions[rogue.unit_id] = rogue.path_position
+		_log_event("rogue_entity_spawned", {
+			"wave": current_wave,
+			"unit_id": rogue.unit_id,
+			"level": rogue.spawn_level,
+			"hp": snappedf(rogue.max_hp, 0.1),
+		})
 		enemy_spawned.emit(rogue)
 
 	if tower_system.offerings != pre_off or tower_system.scrap != pre_scrap:
@@ -429,7 +437,9 @@ func _on_sim_tick(dt: float, _tick_index: int) -> void:
 	_process_wave_spawns()
 
 	# Step combat simulation by fixed dt
+	_in_sim_tick = true
 	tower_system.step(dt, _combat_rng)
+	_in_sim_tick = false
 
 	# Detect any mid-wave ability-spawned units (SpawnOnTimer, Restructuring escorts, Bid Drone, Supply Pod)
 	if tower_system.units.size() > pre_unit_count:
@@ -695,8 +705,12 @@ func validate_placement(hex: Vector2i, tower_id_or_def: Variant = null) -> Dicti
 		return {"ok": false, "reason": "not_adjacent_to_path", "cost": 0}
 
 	var cost: int = tower_system.get_tower_build_cost(def)
-	if tower_system.offerings < cost:
-		return {"ok": false, "reason": "insufficient_offerings", "cost": cost}
+	if def.is_scrap_build_cost():
+		if tower_system.scrap < cost:
+			return {"ok": false, "reason": "insufficient_scrap", "cost": cost}
+	else:
+		if tower_system.offerings < cost:
+			return {"ok": false, "reason": "insufficient_offerings", "cost": cost}
 
 	return {"ok": true, "reason": "", "cost": cost}
 
@@ -713,13 +727,19 @@ func request_place_tower(hex: Vector2i, tower_id_or_def: Variant = null) -> Towe
 		return null
 
 	var cost: int = int(check["cost"])
-	if not spend(Currency.OFFERINGS, cost, "build_tower:" + def.id):
+	var build_curr: int = Currency.SCRAP if def.is_scrap_build_cost() else Currency.OFFERINGS
+	if not spend(build_curr, cost, "build_tower:" + def.id):
 		return null
 
 	_log_command("place_tower", {"hex": hex, "tower_id": def.id, "cost": cost})
 	var inst: TowerInstance = tower_system.place_tower(hex, def, true)
 	if inst != null:
-		inst.total_offerings_spent = cost
+		if def.is_scrap_build_cost():
+			inst.total_scrap_spent = cost
+			inst.total_offerings_spent = 0
+		else:
+			inst.total_offerings_spent = cost
+			inst.total_scrap_spent = 0
 		path_generator.place_tower(hex, inst)
 		_log_event("tower_placed", {"tower_id": inst.tower_id, "type": def.id, "hex": hex, "cost": cost})
 		tower_placed_on_hex.emit(inst)
@@ -888,7 +908,8 @@ func _on_tower_system_cooldown_used(
 func _on_tower_system_enemy_died(unit_id: int) -> void:
 	path_generator.on_enemy_died(unit_id)
 	_log_event("enemy_died", {"unit_id": unit_id, "wave": current_wave})
-	currencies_changed.emit(offerings, scrap)
+	if not _in_sim_tick:
+		currencies_changed.emit(offerings, scrap)
 	enemy_died.emit(unit_id)
 
 

@@ -68,9 +68,9 @@ func test_01_main_build_palette_menu_inspect_before_build_and_description_displa
 	assert(palette._detail_desc_label.text.contains("Psychic"), "Detail description must show tower description")
 	assert(palette._detail_stats_label.text.contains("Detects Cloaked"), "Detail stats must show tower traits")
 
-	# 4. Confirm build -> enters build mode, closes menu, and displays description while building
-	palette.confirm_build()
-	assert(not palette.is_menu_open, "Confirming build must close the menu drawer")
+	# 4. Confirm build by clicking the already-inspected tower button a second time -> enters build mode, closes menu, and displays description while building
+	palette._on_tower_button_pressed(1)
+	assert(not palette.is_menu_open, "Clicking an already-inspected tower button again must confirm build and close the menu drawer")
 	assert(gs.selected_build_tower != null and gs.selected_build_tower.id == "chanting_choir", "GameState.selected_build_tower must now be chanting_choir")
 	assert(tower_panel.visible, "TowerPanel must be visible when a tower is selected for building")
 	assert(palette._active_build_label.visible, "Bottom bar tower description must be visible when building")
@@ -87,6 +87,14 @@ func test_01_main_build_palette_menu_inspect_before_build_and_description_displa
 	gs.cancel_build_mode()
 	assert(not tower_panel.visible, "TowerPanel must hide again when build mode is cancelled and no tower is selected")
 	assert(not palette._active_build_label.visible, "Bottom bar description must hide again when no tower is selected")
+
+	# 6. Verify IntelPanel clears 'BOSS SLAIN! Next Faction...' banner once the next round starts
+	var intel_panel: IntelPanel = main_inst.get_node("HUD/IntelPanel") as IntelPanel
+	assert(intel_panel != null, "HUD/IntelPanel must exist")
+	gs.emit_signal("next_faction_announced", "iron_board", "logo_iron_board")
+	assert(intel_panel._next_faction_banner.visible, "Next faction banner must appear when next_faction_announced fires")
+	gs.emit_signal("wave_started", 11)
+	assert(not intel_panel._next_faction_banner.visible, "Next faction / Boss Slain banner must be removed once the next round starts")
 
 	main_inst.queue_free()
 	clock.manual_mode = false
@@ -231,9 +239,10 @@ func test_04_urban_center_biome_skyscrapers_districts_and_cleared_street_under_t
 		"PathConnectorsMultiMesh must span every consecutive path segment"
 	)
 
-	# Verify build-mode lowers tileset opacity and boosts construction ghost visibility
+	# Verify build-mode lowers tileset opacity, highlights buildable/unbuildable zone hexes, and differentiates buff tower aura color
 	var overlay_view: OverlayView = main_inst.get_node("GameWorld/OverlayView") as OverlayView
 	assert(not terrain_view.is_build_mode_dimmed, "Tileset starts at full opacity when not in build mode")
+	assert(overlay_view._ambient_build_zone_multimesh.multimesh != null, "Ambient build-zone border must be visible when not in build mode")
 	gs.hovered_hex = buildable_hexes[1]
 	gs.has_hovered_hex = true
 	gs.set_build_tower(_TowerLibrary.get_tower("chanting_choir"))
@@ -241,8 +250,19 @@ func test_04_urban_center_biome_skyscrapers_districts_and_cleared_street_under_t
 	assert(terrain_view._chunk_material.albedo_color.a < 0.65, "Urban tileset alpha must be lowered during build mode")
 	assert(overlay_view._ghost_tower_mesh.visible and overlay_view._ghost_base_pad.visible, "Construction ghost and base pad must be visible")
 	assert(overlay_view._ghost_tower_mat.albedo_color.a >= 0.88, "Construction ghost must have high opacity (>= 0.88)")
+	assert(overlay_view._build_zone_valid_multimesh.multimesh != null, "Buildable zone overlay must highlight valid hexes in build mode")
+	var atk_ring_col: Color = overlay_view.get_active_range_ring_color(null, _TowerLibrary.get_tower("chanting_choir"), true)
+	var buff_ring_col: Color = overlay_view.get_active_range_ring_color(null, _TowerLibrary.get_tower("fever_shrine"), true)
+	assert(atk_ring_col != buff_ring_col, "Buff tower (Fever Shrine) must use a distinct aura highlight color from attack towers")
 	gs.cancel_build_mode()
 	assert(not terrain_view.is_build_mode_dimmed and is_equal_approx(terrain_view._chunk_material.albedo_color.a, 1.0), "Exiting build mode must restore full tileset opacity")
+
+	# Verify Air unit aim position is elevated at model height (> 1.8) instead of ground
+	var air_unit: CombatUnit = gs.tower_system.spawn_unit_from_data("courier_drone", 5.0)
+	var main_ctrl: MainSceneController = main_inst as MainSceneController
+	var air_view: EnemyMoverView = main_ctrl.enemy_pool.ensure_view_for_unit(air_unit)
+	air_view.update_visual(gs.path_generator.path_hexes, 5.0, 1.0)
+	assert(air_view.get_aim_world_position().y > 1.8, "Air unit aim world position must target the elevated air model (Y > 1.8)")
 
 	# Verify 3D projectile & impact burst meshes and CombatEffectsView spawning
 	var effects_view: CombatEffectsView = main_inst.get_node("GameWorld/Effects") as CombatEffectsView

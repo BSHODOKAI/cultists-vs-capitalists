@@ -29,10 +29,17 @@ var _ghost_path_multimesh: MultiMeshInstance3D
 var _preview_overlap_multimesh: MultiMeshInstance3D
 var _persistent_overlap_multimesh: MultiMeshInstance3D
 var _reserved_multimesh: MultiMeshInstance3D
+var _build_zone_valid_multimesh: MultiMeshInstance3D
+var _build_zone_invalid_multimesh: MultiMeshInstance3D
+var _ambient_build_zone_multimesh: MultiMeshInstance3D
 
 var _ring_mesh: ArrayMesh
+var _thin_ring_mesh: ArrayMesh
 var _dash_mesh: BoxMesh
 var _unshaded_alpha_mat: StandardMaterial3D
+var _last_pgen: PathGenerator = null
+var _last_build_tower: TowerData = null
+var _last_tower_system: TowerSystem = null
 
 
 func _ready() -> void:
@@ -42,6 +49,7 @@ func _ready() -> void:
 		theme_data = _Theme.new()
 
 	_ring_mesh = _HexMath.build_hex_ring_mesh(_HexMath.HEX_SIZE * 0.90, _HexMath.HEX_SIZE * 0.72)
+	_thin_ring_mesh = _HexMath.build_hex_ring_mesh(_HexMath.HEX_SIZE * 0.91, _HexMath.HEX_SIZE * 0.83)
 	_dash_mesh = BoxMesh.new()
 	_dash_mesh.size = Vector3(0.42, 0.04, 0.65)
 
@@ -120,6 +128,9 @@ func _build_multimesh_layers() -> void:
 	_preview_overlap_multimesh = _create_layer("PreviewOverlapLayer")
 	_persistent_overlap_multimesh = _create_layer("PersistentOverlapLayer")
 	_reserved_multimesh = _create_layer("ReservedHexLayer")
+	_build_zone_valid_multimesh = _create_layer("BuildZoneValidLayer")
+	_build_zone_invalid_multimesh = _create_layer("BuildZoneInvalidLayer")
+	_ambient_build_zone_multimesh = _create_layer("AmbientBuildZoneLayer")
 
 
 func _create_layer(layer_name: String) -> MultiMeshInstance3D:
@@ -139,6 +150,12 @@ func update_hover(
 	selected_tower: TowerInstance,
 	tower_system: TowerSystem
 ) -> void:
+	if _last_build_tower != build_tower or _last_tower_system != tower_system:
+		_last_build_tower = build_tower
+		_last_tower_system = tower_system
+		if _last_pgen != null:
+			_refresh_build_zone_highlights(_last_pgen, build_tower, tower_system)
+
 	if not has_hover:
 		_hover_root.visible = false
 		_update_range_ring(selected_tower, null, Vector2i.ZERO, false, tower_system)
@@ -189,8 +206,30 @@ func _format_rejection_reason(reason: String) -> String:
 			return "Must Build Adjacent to Path (1 Hex)"
 		"insufficient_offerings":
 			return "Insufficient Offerings"
+		"insufficient_scrap":
+			return "Insufficient Scrap"
 		_:
 			return reason.capitalize()
+
+
+static func is_buff_tower_def(td: TowerData, inst: TowerInstance = null) -> bool:
+	if inst != null and inst.has_behavior("chop_shop"):
+		return true
+	if td == null:
+		return false
+	if td.targeting_mode == TowerData.TargetingMode.BUFF_SHRINE:
+		return true
+	if td.attack_type == TowerData.AttackType.AURA and td.aura_target == TowerData.AuraTarget.TOWERS:
+		return true
+	return false
+
+
+func get_active_range_ring_color(selected_tower: TowerInstance, build_tower: TowerData, in_build_mode: bool) -> Color:
+	var td: TowerData = build_tower if in_build_mode else (selected_tower.def if selected_tower != null else null)
+	var inst: TowerInstance = null if in_build_mode else selected_tower
+	if is_buff_tower_def(td, inst):
+		return theme_data.buff_range_ring_color
+	return theme_data.range_ring_color
 
 
 func _update_range_ring(
@@ -209,19 +248,24 @@ func _update_range_ring(
 	elif selected_tower != null and tower_system != null:
 		center_hex = selected_tower.hex
 		radius_hexes = tower_system.get_effective_tower_range_hexes(selected_tower)
+		if radius_hexes <= 0 and selected_tower.has_behavior("chop_shop"):
+			radius_hexes = int(selected_tower.get_behavior_param("chop_shop", "radius_hexes", 3))
 
 	if radius_hexes <= 0:
 		_range_multimesh.multimesh = null
 		return
 
+	var ring_col: Color = get_active_range_ring_color(selected_tower, build_tower, in_build_mode)
 	var ring_hexes: Array[Vector2i] = _HexMath.disk(center_hex, radius_hexes)
-	_populate_ring_multimesh(_range_multimesh, ring_hexes, theme_data.range_ring_color, 0.05)
+	_populate_ring_multimesh(_range_multimesh, ring_hexes, ring_col, 0.05)
 
 
 ## Refreshes persistent overlap sigils, preview overlap sigils, ghost path ribbon, and reserved hexes.
 func refresh_path_overlays(pgen: PathGenerator) -> void:
 	if pgen == null:
 		return
+	_last_pgen = pgen
+	_refresh_build_zone_highlights(pgen, _last_build_tower, _last_tower_system)
 
 	# 1. Persistent overlap hexes (subtle chalk sigils)
 	_populate_ring_multimesh(
@@ -271,17 +315,47 @@ func refresh_path_overlays(pgen: PathGenerator) -> void:
 		_ghost_path_multimesh.multimesh = mm
 
 
-func _populate_ring_multimesh(target: MultiMeshInstance3D, hexes: Array[Vector2i], color: Color, y_offset: float) -> void:
+func _populate_ring_multimesh(target: MultiMeshInstance3D, hexes: Array[Vector2i], color: Color, y_offset: float, custom_mesh: ArrayMesh = null) -> void:
+	if target == null:
+		return
 	if hexes.is_empty():
 		target.multimesh = null
 		return
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_colors = true
-	mm.mesh = _ring_mesh
+	mm.mesh = custom_mesh if custom_mesh != null else _ring_mesh
 	mm.instance_count = hexes.size()
 	for i in range(hexes.size()):
 		var wp: Vector3 = _HexMath.hex_to_world(hexes[i], y_offset)
 		mm.set_instance_transform(i, Transform3D(Basis.IDENTITY, wp))
 		mm.set_instance_color(i, color)
 	target.multimesh = mm
+
+
+func _refresh_build_zone_highlights(pgen: PathGenerator, build_tower: TowerData, tower_system: TowerSystem) -> void:
+	if pgen == null or pgen.grid == null:
+		return
+	var valid_hexes: Array[Vector2i] = []
+	var invalid_hexes: Array[Vector2i] = []
+	var needs_adjacent: bool = (build_tower != null and build_tower.id == "the_congregation")
+
+	for h: Vector2i in pgen._build_zone_map.keys():
+		if pgen._path_index_map.has(h) or pgen.grid.is_path_hex(h):
+			continue
+		var can_build_here: bool = pgen.can_place_tower(h)
+		if can_build_here and needs_adjacent and tower_system != null and not tower_system.is_adjacent_to_path(h):
+			can_build_here = false
+		if can_build_here:
+			valid_hexes.append(h)
+		else:
+			invalid_hexes.append(h)
+
+	if build_tower != null:
+		_ambient_build_zone_multimesh.multimesh = null
+		_populate_ring_multimesh(_build_zone_valid_multimesh, valid_hexes, theme_data.build_zone_valid_color, 0.022)
+		_populate_ring_multimesh(_build_zone_invalid_multimesh, invalid_hexes, theme_data.build_zone_invalid_color, 0.020, _thin_ring_mesh)
+	else:
+		_build_zone_valid_multimesh.multimesh = null
+		_build_zone_invalid_multimesh.multimesh = null
+		_populate_ring_multimesh(_ambient_build_zone_multimesh, valid_hexes, theme_data.ambient_build_zone_border_color, 0.016, _thin_ring_mesh)

@@ -54,6 +54,17 @@ var special_cooldown: float = 0.0
 var income_timer: float = 0.0
 var shot_counter: int = 0
 
+# --- Per-step cached aura/variety stats (avoids O(T^3 * U) recalculation) ----
+var cached_variety_bonus: float = -1.0
+var cached_shrine_buffs: Dictionary = {}
+var cached_effective_range: int = -1
+
+
+func invalidate_stat_cache() -> void:
+	cached_variety_bonus = -1.0
+	cached_shrine_buffs.clear()
+	cached_effective_range = -1
+
 ## Active Congregation blockers: Array of Dictionaries:
 ## { "id": int, "hp": float, "max_hp": float, "dps": float, "hex": Vector2i, "path_idx": int, "damage_reduction": float }
 var active_blockers: Array[Dictionary] = []
@@ -68,7 +79,13 @@ func _init(p_tower_id: int, p_def: TowerData, p_hex: Vector2i, p_build_cost: int
 	tower_id = p_tower_id
 	def = p_def
 	hex = p_hex
-	total_offerings_spent = p_build_cost if p_build_cost >= 0 else (p_def.cost if p_def != null else 0)
+	var actual_cost: int = p_build_cost if p_build_cost >= 0 else (p_def.cost if p_def != null else 0)
+	if p_def != null and p_def.is_scrap_build_cost():
+		total_scrap_spent = actual_cost
+		total_offerings_spent = 0
+	else:
+		total_offerings_spent = actual_cost
+		total_scrap_spent = 0
 
 
 func get_type_id() -> String:

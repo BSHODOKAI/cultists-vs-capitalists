@@ -23,25 +23,38 @@ const _UnitData = preload("res://scripts/units/unit_data.gd")
 
 ## Per-unit-id kill counts across all factions: unit_id (String) -> kills (int).
 var kills_by_unit_id: Dictionary = {}
+## Total Rogue Entities slain during the run; each kill adds +1 Rogue Entity level.
+var rogue_entity_kills: int = 0
 
 
 func reset() -> void:
 	kills_by_unit_id.clear()
+	rogue_entity_kills = 0
 
 
-## Computes the kill level for [param kills]: floor(sqrt(kills / 10)).
+## Computes the kill level for [param kills]: floor(pow(kills / 3.0, 0.72)).
 static func compute_level(kills: int) -> int:
 	if kills <= 0:
 		return 0
-	return floori(sqrt(float(kills) / _Balance.LEVEL_KILLS_DIVISOR))
+	return floori(pow(float(kills) / _Balance.LEVEL_KILLS_DIVISOR, _Balance.LEVEL_KILLS_EXPONENT))
 
 
-## Computes the HP multiplier for [param level]: 1 + 0.12 * level.
+## Computes the minimum unit level floor for 1-based [param interval_index].
+static func compute_interval_level_floor(interval_index: int) -> int:
+	return maxi(0, (maxi(1, interval_index) - 1) * _Balance.INTERVAL_LEVEL_FLOOR_STEP)
+
+
+## Computes the HP multiplier for [param level]:
+## (1 + 0.22 * level) * 1.06^max(0, level - 3).
 static func compute_health_multiplier(level: int) -> float:
-	return 1.0 + _Balance.LEVEL_HP_PER_LEVEL * float(maxi(0, level))
+	var lvl: int = maxi(0, level)
+	var mult: float = 1.0 + _Balance.LEVEL_HP_PER_LEVEL * float(lvl)
+	if lvl > _Balance.LEVEL_HP_COMPOUND_START_LEVEL:
+		mult *= pow(_Balance.LEVEL_HP_COMPOUND_RATE, float(lvl - _Balance.LEVEL_HP_COMPOUND_START_LEVEL))
+	return mult
 
 
-## Computes the speed multiplier for [param level]: min(1 + 0.02 * level, 1.25).
+## Computes the speed multiplier for [param level]: min(1 + 0.025 * level, 1.40).
 static func compute_speed_multiplier(level: int) -> float:
 	return minf(
 		1.0 + _Balance.LEVEL_SPEED_PER_LEVEL * float(maxi(0, level)),
@@ -50,10 +63,10 @@ static func compute_speed_multiplier(level: int) -> float:
 
 
 ## Computes Boss max HP for 1-based [param boss_index] n:
-## HP = base_hp * (1 + 0.3 * (n - 1)).
+## HP = base_hp * (1 + 0.55 * (n - 1) + 0.15 * (n - 1)^2).
 static func compute_boss_hp(base_hp: float, boss_index: int) -> float:
-	var n: int = maxi(1, boss_index)
-	return base_hp * (1.0 + _Balance.BOSS_HP_PER_INDEX * float(n - 1))
+	var n: float = float(maxi(1, boss_index) - 1)
+	return base_hp * (1.0 + _Balance.BOSS_HP_PER_INDEX * n + _Balance.BOSS_HP_QUADRATIC_PER_INDEX * n * n)
 
 
 ## Computes completed full boss cycles for 1-based [param boss_index] n (5 bosses per cycle).
@@ -111,6 +124,17 @@ func get_level(unit_data: UnitData) -> int:
 	if unit_data == null or unit_data.is_boss():
 		return 0
 	return get_level_for_id(unit_data.id, false)
+
+
+## Records [param count] Rogue Entity kills; Rogue Entity levels up +1 per kill.
+func record_rogue_entity_kill(count: int = 1) -> int:
+	if count > 0:
+		rogue_entity_kills += count
+	return rogue_entity_kills
+
+
+func get_rogue_entity_level() -> int:
+	return maxi(0, rogue_entity_kills)
 
 
 ## Snapshots spawn-time stats for [param unit_data].

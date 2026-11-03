@@ -112,6 +112,7 @@ func _build_ui() -> void:
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		btn.icon = _PlaceholderIcons.get_tower_icon(_towers[i].id, 34)
 		btn.pressed.connect(_on_tower_button_pressed.bind(i))
+		btn.gui_input.connect(_on_tower_button_gui_input.bind(i))
 		_tower_grid.add_child(btn)
 		_buttons.append(btn)
 
@@ -336,7 +337,21 @@ func select_hotkey(index_0_to_8: int) -> void:
 func _on_tower_button_pressed(index: int) -> void:
 	if index < 0 or index >= _towers.size():
 		return
-	inspect_tower_index(index)
+	var target: TowerData = _towers[index]
+	if is_menu_open and inspected_tower == target:
+		confirm_build()
+	else:
+		inspect_tower_index(index)
+
+
+func _on_tower_button_gui_input(event: InputEvent, index: int) -> void:
+	if event is InputEventMouseButton:
+		var mb: InputEventMouseButton = event as InputEventMouseButton
+		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and mb.double_click:
+			if index >= 0 and index < _towers.size():
+				inspected_tower = _towers[index]
+				confirm_build()
+				accept_event()
 
 
 func _on_cancel_build_pressed() -> void:
@@ -350,6 +365,7 @@ func refresh() -> void:
 	var tsys: TowerSystem = gs.get("tower_system") as TowerSystem if gs != null else null
 	var selected: TowerData = gs.get("selected_build_tower") as TowerData if gs != null else null
 	var cur_offerings: int = int(gs.get("offerings")) if gs != null else 0
+	var cur_scrap: int = int(gs.get("scrap")) if gs != null else 0
 
 	if inspected_tower == null and not _towers.is_empty():
 		inspected_tower = selected if selected != null else _towers[0]
@@ -359,6 +375,9 @@ func refresh() -> void:
 		var td: TowerData = _towers[i]
 		var btn: Button = _buttons[i]
 		var cost: int = tsys.get_tower_build_cost(td) if tsys != null else td.cost
+		var uses_scrap: bool = td.is_scrap_build_cost()
+		var cur_funds: int = cur_scrap if uses_scrap else cur_offerings
+		var curr_short: String = td.get_build_currency_name(true)
 		var is_inspected: bool = (inspected_tower == td)
 		var is_building: bool = (selected == td)
 		var short_name: String = td.display_name
@@ -366,12 +385,12 @@ func refresh() -> void:
 			short_name = short_name.substr(0, 15) + "."
 		var prefix: String = "\u25b8 " if is_inspected else ""
 		var active_tag: String = " [ACTIVE]" if is_building else ""
-		btn.text = "%s[%d] %s\n%d Off%s" % [prefix, i + 1, short_name, cost, active_tag]
+		btn.text = "%s[%d] %s\n%d %s%s" % [prefix, i + 1, short_name, cost, curr_short, active_tag]
 		if is_inspected:
 			btn.modulate = Color(0.72, 1.0, 0.82)
 		elif is_building:
 			btn.modulate = Color(0.82, 0.92, 1.0)
-		elif gs != null and cur_offerings < cost:
+		elif gs != null and cur_funds < cost:
 			btn.modulate = Color(0.78, 0.48, 0.48)
 		else:
 			btn.modulate = Color(0.92, 0.92, 0.96)
@@ -379,20 +398,24 @@ func refresh() -> void:
 	# Update detail pane for inspected_tower
 	if inspected_tower != null and _detail_title_label != null:
 		var insp_cost: int = tsys.get_tower_build_cost(inspected_tower) if tsys != null else inspected_tower.cost
-		var can_afford: bool = (gs == null or cur_offerings >= insp_cost)
+		var insp_scrap: bool = inspected_tower.is_scrap_build_cost()
+		var insp_funds: int = cur_scrap if insp_scrap else cur_offerings
+		var insp_curr_name: String = inspected_tower.get_build_currency_name(false)
+		var can_afford: bool = (gs == null or insp_funds >= insp_cost)
 		if _detail_icon_rect != null:
 			_detail_icon_rect.texture = _PlaceholderIcons.get_tower_icon(inspected_tower.id, 44)
 		_detail_title_label.text = inspected_tower.display_name
-		_detail_cost_label.text = "Cost: %d Offerings%s" % [
+		_detail_cost_label.text = "Cost: %d %s%s" % [
 			insp_cost,
-			"" if can_afford else " (Need %d more)" % maxi(0, insp_cost - cur_offerings)
+			insp_curr_name,
+			"" if can_afford else " (Need %d more)" % maxi(0, insp_cost - insp_funds)
 		]
 		_detail_cost_label.add_theme_color_override(
 			"font_color",
 			Color(0.75, 0.95, 0.65) if can_afford else Color(1.0, 0.50, 0.50)
 		)
 		_detail_desc_label.text = inspected_tower.get_display_description()
-		_detail_stats_label.text = inspected_tower.get_stats_summary(insp_cost, "Offerings")
+		_detail_stats_label.text = inspected_tower.get_stats_summary(insp_cost, insp_curr_name)
 		_detail_upgrades_label.text = inspected_tower.get_upgrade_preview_summary()
 		_confirm_build_button.text = "Select to Build: %s [Enter]" % inspected_tower.display_name
 		_confirm_build_button.modulate = Color(0.68, 1.0, 0.78) if can_afford else Color(0.95, 0.65, 0.65)
@@ -405,13 +428,15 @@ func refresh() -> void:
 	if _active_build_label != null:
 		if selected != null:
 			var sel_cost: int = tsys.get_tower_build_cost(selected) if tsys != null else selected.cost
+			var sel_curr_short: String = selected.get_build_currency_name(true)
 			if _active_build_icon != null:
 				_active_build_icon.texture = _PlaceholderIcons.get_tower_icon(selected.id, 34)
 				_active_build_icon.visible = true
 			_active_build_label.visible = true
-			_active_build_label.text = "BUILDING: %s (%d Off) — %s" % [
+			_active_build_label.text = "BUILDING: %s (%d %s) — %s" % [
 				selected.display_name,
 				sel_cost,
+				sel_curr_short,
 				selected.get_display_description()
 			]
 			_active_build_label.add_theme_color_override("font_color", Color(0.78, 1.0, 0.84))

@@ -44,6 +44,11 @@ func _connect_signals() -> void:
 	gs.connect("next_faction_announced", func(fac: String, _logo: String) -> void:
 		show_banner("PATH EXTENDED! Next Corporate Faction: %s" % fac.replace("_", " ").to_upper(), 4.5, Color(0.45, 0.95, 1.0))
 	)
+	gs.connect("wave_started", func(_w: int) -> void:
+		if _banner_label != null and _banner_label.visible and _banner_label.text.begins_with("PATH EXTENDED!"):
+			_banner_label.visible = false
+			_banner_timer = 0.0
+	)
 	gs.connect("ability_telegraphed", _on_ability_telegraphed)
 
 
@@ -74,11 +79,19 @@ func _on_ability_telegraphed(ev: Dictionary) -> void:
 			var meta: Dictionary = ev.get("metadata", {}) as Dictionary
 			show_banner("HOLDING COMPANY PROTOCOL: %s" % String(meta.get("active_mechanic", "")).to_upper(), 2.5, Color(1.0, 0.88, 0.35))
 
-	_active_offscreen_events.append({
-		"world_pos": _HexMath.hex_to_world(hex, 0.5),
-		"label": ab_id,
-		"remaining": lead,
-	})
+	# Deduplicate off-screen telegraph markers by ability_id so mass regular abilities don't stack overlapping labels
+	for existing: Dictionary in _active_offscreen_events:
+		if String(existing.get("label", "")) == ab_id:
+			existing["world_pos"] = _HexMath.hex_to_world(hex, 0.5)
+			existing["remaining"] = maxf(float(existing.get("remaining", 0.0)), lead)
+			return
+
+	if _active_offscreen_events.size() < 6:
+		_active_offscreen_events.append({
+			"world_pos": _HexMath.hex_to_world(hex, 0.5),
+			"label": ab_id,
+			"remaining": lead,
+		})
 
 
 func _process(delta: float) -> void:

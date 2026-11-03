@@ -106,6 +106,29 @@ func _connect_signals() -> void:
 		_next_faction_banner.visible = true
 		_next_faction_banner.text = "BOSS SLAIN! Next Faction: %s (%s)" % [fac.replace("_", " ").to_upper(), logo]
 	)
+	gs.connect("wave_started", _on_wave_started)
+	gs.connect("state_changed", _on_state_changed)
+
+
+func _on_wave_started(_wave_num: int) -> void:
+	clear_boss_and_next_faction_banner()
+
+
+func _on_state_changed(_old_state: int, new_state: int) -> void:
+	if new_state == 0:
+		clear_boss_and_next_faction_banner()
+
+
+func clear_boss_and_next_faction_banner() -> void:
+	if _next_faction_banner != null:
+		_next_faction_banner.visible = false
+		_next_faction_banner.text = ""
+	var gs: Node = get_node_or_null("/root/GameState")
+	if gs != null:
+		var dir: WaveDirector = gs.get("director") as WaveDirector
+		if dir != null:
+			dir.revealed_next_faction_id = ""
+			dir.revealed_next_faction_logo = ""
 
 
 func refresh() -> void:

@@ -94,6 +94,9 @@ func _build_audio_players() -> void:
 
 func _process(delta: float) -> void:
 	if cue_system != null:
+		var clock: Node = get_node_or_null("/root/SimClock")
+		if clock != null:
+			cue_system.set_sim_speed_multiplier(float(clock.get("speed_multiplier")))
 		cue_system.step(delta)
 	for i in range(_sfx_remaining_time.size()):
 		if _sfx_remaining_time[i] > 0.0:
@@ -483,9 +486,14 @@ func _on_tower_damaged_enemy(
 	amount: float,
 	damage_tag: int
 ) -> void:
-	# Skip microscopic per-frame DoT sub-ticks (e.g. 6 DPS * 0.033s = 0.2 dmg)
+	# Skip microscopic per-frame DoT sub-ticks (e.g. 6 DPS * 0.033s = 0.2 dmg) and continuous DoT/puddle ticks
 	if amount < 0.75:
 		return
+	var gs: Node = get_node_or_null("/root/GameState")
+	if gs != null:
+		var tsys: TowerSystem = gs.get("tower_system") as TowerSystem
+		if tsys != null and tsys._in_continuous_dot_tick:
+			return
 	play_unit_hit(unit_id, unit_tags, amount, damage_tag)
 
 
@@ -496,15 +504,6 @@ func _on_enemy_spawned(unit: CombatUnit) -> void:
 
 func _on_enemy_died(unit_id: int) -> void:
 	var is_boss: bool = cue_system.is_registered_boss(unit_id) if cue_system != null else false
-	if not is_boss:
-		var gs: Node = get_node_or_null("/root/GameState")
-		if gs != null:
-			var tsys: TowerSystem = gs.get("tower_system") as TowerSystem
-			if tsys != null:
-				for u: CombatUnit in tsys.units:
-					if u != null and u.unit_id == unit_id and u.is_boss():
-						is_boss = true
-						break
 	play_enemy_died(unit_id, is_boss)
 
 

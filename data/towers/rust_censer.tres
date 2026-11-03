@@ -13,6 +13,7 @@ id = "rust_censer"
 display_name = "Rust Censer"
 description = "Applies a 6 Corrosive/s DoT for 4 s (stacks to 3) and 1 Armor Shred per application to Ground enemies."
 cost = 40
+build_currency = 1
 attack_range = 2.0
 range_hexes = 2
 damage = 6.0

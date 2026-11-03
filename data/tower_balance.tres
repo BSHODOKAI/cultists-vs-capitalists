@@ -5,7 +5,7 @@
 [resource]
 script = ExtResource("1_tower_balance")
 starting_offerings = 150
-starting_scrap = 0
+starting_scrap = 40
 starting_lives = 20
 build_distance = 2
 sell_refund_ratio = 0.7
@@ -26,7 +26,7 @@ corruption_misfire_low_chance = 0.1
 corruption_misfire_high_threshold = 75
 corruption_misfire_high_chance = 0.2
 corruption_rogue_entity_threshold = 100
-rogue_entity_leak_lives = 2
+rogue_entity_leak_lives = 3
 rogue_entity_kill_offerings = 10
 penance_offerings_cost = 40
 penance_corruption_reduction = 5

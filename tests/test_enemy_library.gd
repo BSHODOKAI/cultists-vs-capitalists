@@ -311,11 +311,11 @@ func test_03_boss_scaling_telegraphs_immunities_phases_and_holding_company() -> 
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 2026
 
-	# 3A. Boss HP scaling formula: HP = base * (1 + 0.3 * (n - 1)) and 15% cycle timing reduction
+	# 3A. Boss HP scaling formula: HP = base * (1 + 0.55 * (n - 1) + 0.15 * (n - 1)^2) and 15% cycle timing reduction
 	assert(is_equal_approx(_UnitLeveling.compute_boss_hp(2000.0, 1), 2000.0), "Boss n=1 HP must be 1.0x base (2000)")
-	assert(is_equal_approx(_UnitLeveling.compute_boss_hp(2000.0, 2), 2600.0), "Boss n=2 HP must be 1.3x base (2600)")
-	assert(is_equal_approx(_UnitLeveling.compute_boss_hp(2000.0, 3), 3200.0), "Boss n=3 HP must be 1.6x base (3200)")
-	assert(is_equal_approx(_UnitLeveling.compute_boss_hp(4000.0, 4), 4000.0 * 1.9), "Boss n=4 HP must be 1.9x base (7600)")
+	assert(is_equal_approx(_UnitLeveling.compute_boss_hp(2000.0, 2), 2000.0 * 1.70), "Boss n=2 HP must be 1.70x base (3400)")
+	assert(is_equal_approx(_UnitLeveling.compute_boss_hp(2000.0, 3), 2000.0 * 2.70), "Boss n=3 HP must be 2.70x base (5400)")
+	assert(is_equal_approx(_UnitLeveling.compute_boss_hp(4000.0, 4), 4000.0 * 4.00), "Boss n=4 HP must be 4.00x base (16000)")
 
 	# Full cycle (n=6 -> cycle 1) shortens telegraphs and cooldowns by 15% (0.85x)
 	assert(is_equal_approx(_UnitLeveling.compute_boss_timing_multiplier(1), 1.0), "Cycle 0 timing mult must be 1.0")
@@ -324,7 +324,7 @@ func test_03_boss_scaling_telegraphs_immunities_phases_and_holding_company() -> 
 	# 3B. Boss immunities: immune to flee, displacement, root, and conversion; slows & DoTs at 50% strength
 	var sys := _make_test_system()
 	var disruptor: CombatUnit = sys.spawn_unit_from_data("the_disruptor", 8.0, 2, rng)
-	assert(is_equal_approx(disruptor.max_hp, 1300.0), "Spawned boss at boss_index=2 must have scaled max_hp 1300")
+	assert(is_equal_approx(disruptor.max_hp, 1700.0), "Spawned boss at boss_index=2 must have scaled max_hp 1700")
 	assert(not disruptor.apply_root(2.0, true), "Boss must be immune to root")
 	assert(not disruptor.displace_along_path(2.0, 14.0), "Boss must be immune to displacement")
 	assert(not disruptor.try_trigger_flee(2.0, 10.0), "Boss must be immune to flee")
@@ -508,28 +508,33 @@ func test_04_boss_leaked_triggers_game_over_and_enemy_leaked_reduces_lives() -> 
 # --- Test 5: Leveling math and spawn-time snapshotting
 
 func test_05_leveling_math_and_spawn_time_snapshotting() -> void:
-	# Verify formula:
-	# level = floor(sqrt(kills / 10))
-	# health_mult = 1 + 0.12 * level
-	# speed_mult = min(1 + 0.02 * level, 1.25)
+	# Verify fast leveling formula:
+	# level = floor(pow(kills / 3.0, 0.72))
+	# health_mult = (1 + 0.22 * level) * 1.06^max(0, level - 3)
+	# speed_mult = min(1 + 0.025 * level, 1.40)
 	assert(_UnitLeveling.compute_level(0) == 0, "0 kills -> level 0")
-	assert(_UnitLeveling.compute_level(9) == 0, "9 kills -> level 0")
-	assert(_UnitLeveling.compute_level(10) == 1, "10 kills -> level 1")
-	assert(_UnitLeveling.compute_level(39) == 1, "39 kills -> level 1")
-	assert(_UnitLeveling.compute_level(40) == 2, "40 kills -> level 2")
-	assert(_UnitLeveling.compute_level(90) == 3, "90 kills -> level 3")
-	assert(_UnitLeveling.compute_level(1600) == 12, "1600 kills -> level 12")
-	assert(_UnitLeveling.compute_level(2500) == 15, "2500 kills -> level 15")
+	assert(_UnitLeveling.compute_level(2) == 0, "2 kills -> level 0")
+	assert(_UnitLeveling.compute_level(3) == 1, "3 kills -> level 1")
+	assert(_UnitLeveling.compute_level(7) == 1, "7 kills -> level 1")
+	assert(_UnitLeveling.compute_level(8) == 2, "8 kills -> level 2")
+	assert(_UnitLeveling.compute_level(14) == 3, "14 kills -> level 3")
+	assert(_UnitLeveling.compute_level(21) == 4, "21 kills -> level 4")
+	assert(_UnitLeveling.compute_level(75) == 10, "75 kills -> level 10")
 
 	assert(is_equal_approx(_UnitLeveling.compute_health_multiplier(0), 1.0), "Level 0 health_mult = 1.0")
-	assert(is_equal_approx(_UnitLeveling.compute_health_multiplier(1), 1.12), "Level 1 health_mult = 1.12")
-	assert(is_equal_approx(_UnitLeveling.compute_health_multiplier(3), 1.36), "Level 3 health_mult = 1.36")
+	assert(is_equal_approx(_UnitLeveling.compute_health_multiplier(1), 1.22), "Level 1 health_mult = 1.22")
+	assert(is_equal_approx(_UnitLeveling.compute_health_multiplier(3), 1.66), "Level 3 health_mult = 1.66")
+	assert(is_equal_approx(_UnitLeveling.compute_health_multiplier(4), (1.0 + 0.22 * 4.0) * 1.06), "Level 4 health_mult compounds above level 3")
 
 	assert(is_equal_approx(_UnitLeveling.compute_speed_multiplier(0), 1.0), "Level 0 speed_mult = 1.0")
-	assert(is_equal_approx(_UnitLeveling.compute_speed_multiplier(5), 1.10), "Level 5 speed_mult = 1.10")
-	assert(is_equal_approx(_UnitLeveling.compute_speed_multiplier(12), 1.24), "Level 12 speed_mult = 1.24")
-	assert(is_equal_approx(_UnitLeveling.compute_speed_multiplier(13), 1.25), "Level 13 speed_mult caps at 1.25")
-	assert(is_equal_approx(_UnitLeveling.compute_speed_multiplier(50), 1.25), "Level 50 speed_mult remains capped at 1.25")
+	assert(is_equal_approx(_UnitLeveling.compute_speed_multiplier(4), 1.10), "Level 4 speed_mult = 1.10")
+	assert(is_equal_approx(_UnitLeveling.compute_speed_multiplier(16), 1.40), "Level 16 speed_mult caps at 1.40")
+	assert(is_equal_approx(_UnitLeveling.compute_speed_multiplier(50), 1.40), "Level 50 speed_mult remains capped at 1.40")
+
+	# Interval level floor check:
+	assert(_UnitLeveling.compute_interval_level_floor(1) == 0, "Interval 1 floor = 0")
+	assert(_UnitLeveling.compute_interval_level_floor(2) == 2, "Interval 2 floor = 2")
+	assert(_UnitLeveling.compute_interval_level_floor(3) == 4, "Interval 3 floor = 4")
 
 	# Spawn-time snapshotting test:
 	var sys := _make_test_system()
@@ -538,12 +543,12 @@ func test_05_leveling_math_and_spawn_time_snapshotting() -> void:
 	assert(runner_a.spawn_level == 0, "runner_a spawned at 0 kills must be level 0")
 	assert(is_equal_approx(runner_a.max_hp, 30.0) and is_equal_approx(runner_a.speed, 1.6), "runner_a base stats must be 30 HP / 1.6 speed")
 
-	# Spawn and kill 10 other gig_runners so gig_runner reaches 10 kills (level 1)
-	for _i in range(10):
+	# Spawn and kill 3 other gig_runners so gig_runner reaches 3 kills (level 1)
+	for _i in range(3):
 		var temp_r: CombatUnit = sys.spawn_unit_from_data("gig_runner", 8.0)
 		sys.deal_damage_from_tower(null, temp_r, temp_r.hp + 10.0, _C.DamageTag.KINETIC)
 
-	assert(sys.leveling.get_kills("gig_runner") == 10, "10 gig_runner kills must be recorded")
+	assert(sys.leveling.get_kills("gig_runner") == 3, "3 gig_runner kills must be recorded")
 	assert(sys.leveling.get_level_for_id("gig_runner") == 1, "gig_runner level must now be 1")
 
 	# Already-spawned runner_a MUST keep its snapshotted level 0 stats for its lifetime!
@@ -551,11 +556,11 @@ func test_05_leveling_math_and_spawn_time_snapshotting() -> void:
 	assert(is_equal_approx(runner_a.max_hp, 30.0), "Already-spawned runner_a max_hp must remain 30.0")
 	assert(is_equal_approx(runner_a.speed, 1.6), "Already-spawned runner_a speed must remain 1.6")
 
-	# Newly spawned runner_b gets level 1 stats (HP = 30 * 1.12 = 33.6, speed = 1.6 * 1.02 = 1.632)
+	# Newly spawned runner_b gets level 1 stats (HP = 30 * 1.22 = 36.6, speed = 1.6 * 1.025 = 1.64)
 	var runner_b: CombatUnit = sys.spawn_unit_from_data("gig_runner", 10.0)
 	assert(runner_b.spawn_level == 1, "Newly spawned runner_b must be level 1")
-	assert(is_equal_approx(runner_b.max_hp, 30.0 * 1.12), "runner_b max_hp must be 33.6")
-	assert(is_equal_approx(runner_b.speed, 1.6 * 1.02), "runner_b speed must be 1.632")
+	assert(is_equal_approx(runner_b.max_hp, 30.0 * 1.22), "runner_b max_hp must be 36.6")
+	assert(is_equal_approx(runner_b.speed, 1.6 * 1.025), "runner_b speed must be 1.64")
 
 	# Other unit types (even in same faction) have independent kill counts (0 kills -> level 0)
 	var courier: CombatUnit = sys.spawn_unit_from_data("scooter_courier", 10.0)

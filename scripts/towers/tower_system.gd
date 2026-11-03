@@ -89,6 +89,14 @@ var hit_events: Array[Dictionary] = []
 var telegraph_events: Array[Dictionary] = []
 ## Most recent LossReport generated when game_over is triggered.
 var last_loss_report: LossReport = null
+## True while applying continuous 30Hz DoT/puddle sub-ticks so 3D views don't spawn projectiles on sub-ticks.
+var _in_continuous_dot_tick: bool = false
+
+
+func _invalidate_all_tower_caches() -> void:
+	for t: TowerInstance in towers.values():
+		if t != null:
+			t.invalidate_stat_cache()
 
 
 func _init(
@@ -200,7 +208,7 @@ func can_place_at_hex(hex: Vector2i) -> bool:
 	return true
 
 
-## True when [param hex] is valid AND the player has enough Offerings for [param tower_id_or_def].
+## True when [param hex] is valid AND the player has enough currency for [param tower_id_or_def].
 func can_place_tower(hex: Vector2i, tower_id_or_def: Variant) -> bool:
 	var def: TowerData = _resolve_tower_def(tower_id_or_def)
 	if def == null:
@@ -210,10 +218,12 @@ func can_place_tower(hex: Vector2i, tower_id_or_def: Variant) -> bool:
 	if def.id == "the_congregation" and not is_adjacent_to_path(hex):
 		return false
 	var cost: int = get_tower_build_cost(def)
+	if def.is_scrap_build_cost():
+		return scrap >= cost
 	return offerings >= cost
 
 
-## Places a new tower at [param hex], deducting its escalated Offerings cost.
+## Places a new tower at [param hex], deducting its escalated Offerings or Scrap cost.
 ## Returns the created [TowerInstance] or null on failure.
 func place_tower(hex: Vector2i, tower_id_or_def: Variant, ignore_cost: bool = false) -> TowerInstance:
 	var def: TowerData = _resolve_tower_def(tower_id_or_def)
@@ -222,16 +232,22 @@ func place_tower(hex: Vector2i, tower_id_or_def: Variant, ignore_cost: bool = fa
 	if def.id == "the_congregation" and not is_adjacent_to_path(hex):
 		return null
 	var cost: int = 0 if ignore_cost else get_tower_build_cost(def)
-	if not ignore_cost and offerings < cost:
-		return null
 	if not ignore_cost:
-		offerings -= cost
+		if def.is_scrap_build_cost():
+			if scrap < cost:
+				return null
+			scrap -= cost
+		else:
+			if offerings < cost:
+				return null
+			offerings -= cost
 
 	var inst := _TowerInstance.new(_next_tower_id, def, hex, cost if not ignore_cost else def.cost)
 	_next_tower_id += 1
 	towers[inst.tower_id] = inst
 	towers_by_hex[hex] = inst
 	grid.set_tower(hex, inst)
+	_invalidate_all_tower_caches()
 	_sync_congregation_blockers(inst)
 	return inst
 
@@ -264,6 +280,7 @@ func sell_tower(tower_or_hex: Variant) -> Dictionary:
 	towers.erase(inst.tower_id)
 	towers_by_hex.erase(inst.hex)
 	grid.remove_tower(inst.hex)
+	_invalidate_all_tower_caches()
 	return {
 		"sold": true,
 		"offerings_refund": off_refund,
@@ -358,6 +375,7 @@ func upgrade_tower(tower: TowerInstance, node_id: String, ignore_cost: bool = fa
 	if node.jank_set > 0:
 		tower.jank = clampi(node.jank_set, balance.jank_min, balance.jank_cap)
 
+	_invalidate_all_tower_caches()
 	_sync_congregation_blockers(tower)
 	return true
 
@@ -432,6 +450,8 @@ func perform_maintenance(tower: TowerInstance) -> bool:
 func get_variety_bonus(tower: TowerInstance) -> float:
 	if tower == null:
 		return 0.0
+	if tower.cached_variety_bonus >= 0.0:
+		return tower.cached_variety_bonus
 	var seen_types: Dictionary = {}
 	var own_type: String = tower.get_type_id()
 	for other: TowerInstance in towers.values():
@@ -443,7 +463,9 @@ func get_variety_bonus(tower: TowerInstance) -> float:
 		if _HexGrid.hex_distance(tower.hex, other.hex) <= balance.variety_bonus_radius_hexes:
 			seen_types[other_type] = true
 	var bonus: float = float(seen_types.size()) * balance.variety_bonus_per_distinct_type
-	return minf(bonus, balance.variety_bonus_max)
+	var res: float = minf(bonus, balance.variety_bonus_max)
+	tower.cached_variety_bonus = res
+	return res
 
 
 ## Updates whether each Revealed tower is suppressed by an active Compliance Officer aura.
@@ -555,13 +577,15 @@ func calculate_hit_damage(
 ## Computes the best Fever Shrine fire-rate bonus and range bonus affecting [param tower].
 ## Multiple shrines do NOT stack; the highest active shrine bonus applies.
 func get_shrine_buffs_for_tower(tower: TowerInstance) -> Dictionary:
+	if tower == null:
+		return {"fire_rate_bonus": 0.0, "range_bonus": 0.0, "ecstatic_multiplier": 1.0, "protected": false}
+	if not tower.cached_shrine_buffs.is_empty():
+		return tower.cached_shrine_buffs
+
 	var best_fire_rate_bonus: float = 0.0
 	var best_range_bonus: float = 0.0
 	var ecstatic_multiplier: float = 1.0
 	var protected: bool = false
-
-	if tower == null:
-		return {"fire_rate_bonus": 0.0, "range_bonus": 0.0, "ecstatic_multiplier": 1.0, "protected": false}
 
 	for shrine: TowerInstance in towers.values():
 		if shrine.tower_id == tower.tower_id or shrine.get_type_id() != "fever_shrine":
@@ -596,12 +620,14 @@ func get_shrine_buffs_for_tower(tower: TowerInstance) -> Dictionary:
 				ecstatic_multiplier = maxf(ecstatic_multiplier, float(shrine.get_behavior_param("ecstatic_vigil", "burst_rate_multiplier", 2.0)))
 
 	tower.protected_from_enemies = protected
-	return {
+	var res: Dictionary = {
 		"fire_rate_bonus": best_fire_rate_bonus,
 		"range_bonus": best_range_bonus,
 		"ecstatic_multiplier": ecstatic_multiplier,
 		"protected": protected,
 	}
+	tower.cached_shrine_buffs = res
+	return res
 
 
 func get_effective_tower_fire_rate(tower: TowerInstance) -> float:
@@ -616,8 +642,12 @@ func get_effective_tower_fire_rate(tower: TowerInstance) -> float:
 func get_effective_tower_range_hexes(tower: TowerInstance) -> int:
 	if tower == null:
 		return 0
+	if tower.cached_effective_range >= 0:
+		return tower.cached_effective_range
 	var buffs: Dictionary = get_shrine_buffs_for_tower(tower)
-	return tower.get_effective_range_hexes(float(buffs["range_bonus"]))
+	var r: int = tower.get_effective_range_hexes(float(buffs["range_bonus"]))
+	tower.cached_effective_range = r
+	return r
 
 
 # --- Wave Start & End Lifecycle ----------------------------------------------
@@ -698,10 +728,19 @@ func start_wave(
 			picked.misfired_this_wave = true
 			misfired_tower_id = picked.tower_id
 
-	# 6. Corruption 100: spawn hostile Rogue Entity on the path
+	# 6. Corruption 100: spawn hostile Rogue Entity (or multiples as Rogue level/wave rises) on the path
 	var rogue_entity: CombatUnit = null
+	var rogue_entities: Array[CombatUnit] = []
 	if corruption >= balance.corruption_rogue_entity_threshold:
-		rogue_entity = spawn_rogue_entity()
+		var rogue_count: int = compute_rogue_entity_spawn_count()
+		var base_spawn_idx: float = get_spawn_path_index()
+		for r_i in range(rogue_count):
+			var r_pos: float = maxf(1.0, base_spawn_idx - float(r_i) * 0.75)
+			var spawned_r: CombatUnit = spawn_rogue_entity(r_pos)
+			if spawned_r != null:
+				rogue_entities.append(spawned_r)
+				if rogue_entity == null:
+					rogue_entity = spawned_r
 
 	# 7. Jank jam roll for each Rigged tower
 	var jammed_tower_ids: Array[int] = []
@@ -723,6 +762,7 @@ func start_wave(
 		"stars_are_right": stars_are_right_active,
 		"misfired_tower_id": misfired_tower_id,
 		"rogue_entity": rogue_entity,
+		"rogue_entities": rogue_entities,
 		"jammed_tower_ids": jammed_tower_ids,
 		"chop_shop_reductions": chop_shop_reductions,
 	}
@@ -764,13 +804,40 @@ func spawn_unit(
 	return unit
 
 
-func spawn_rogue_entity() -> CombatUnit:
-	var rogue := spawn_unit(180.0, [_C.UnitTag.GROUND], 1.1, get_spawn_path_index(), 0, balance.rogue_entity_kill_offerings)
+func compute_rogue_entity_spawn_count() -> int:
+	var r_lvl: int = leveling.get_rogue_entity_level() if leveling != null else 0
+	var wave_extra: int = floori(float(maxi(0, current_wave - 10)) / 15.0)
+	return clampi(1 + floori(float(r_lvl) / 2.0) + wave_extra, 1, 5)
+
+
+func spawn_rogue_entity(start_path_pos: float = -1.0) -> CombatUnit:
+	var r_lvl: int = leveling.get_rogue_entity_level() if leveling != null else 0
+	var wave_mult: float = 1.0 + 0.08 * float(maxi(0, current_wave - 1))
+	var hp_val: float = _Balance.ROGUE_ENTITY_BASE_HP * pow(_Balance.ROGUE_ENTITY_HP_SCALE_PER_KILL, float(r_lvl)) * wave_mult
+	var spd_val: float = minf(_Balance.ROGUE_ENTITY_BASE_SPEED * (1.0 + 0.04 * float(r_lvl)), 1.85)
+	var pos: float = start_path_pos if start_path_pos >= 0.0 else get_spawn_path_index()
+	var kill_off: int = balance.rogue_entity_kill_offerings + r_lvl * 5
+	var rogue := spawn_unit(hp_val, [_C.UnitTag.GROUND], spd_val, pos, 0, kill_off)
 	rogue.unit_name = "Rogue Entity"
 	rogue.unit_type_id = "rogue_entity"
 	rogue.is_rogue_entity = true
-	rogue.leak_cost = balance.rogue_entity_leak_lives
+	rogue.spawn_level = r_lvl
+	rogue.leak_cost = balance.rogue_entity_leak_lives + floori(float(r_lvl) / 3.0)
 	rogue.scrap_override = 0
+	rogue.has_breakthrough = true
+
+	var res_mult: float = clampf(0.75 - 0.02 * float(r_lvl), 0.50, 0.75)
+	for dt in range(5):
+		rogue.resistances[dt] = res_mult
+
+	var dis_ab := _AbilityData.new()
+	dis_ab.ability_id = _AbilityData.ID_TOWER_DISABLE
+	dis_ab.interval = 5.0
+	dis_ab.duration = 2.5
+	dis_ab.range_hexes = 2
+	dis_ab.telegraph_event = "telegraph_taser_disable"
+	rogue.abilities.append(dis_ab)
+	rogue.disable_timer = 2.5
 	return rogue
 
 
@@ -936,8 +1003,15 @@ func _resolve_placed_tower(tower_or_id: Variant) -> TowerInstance:
 func get_unit_hex(unit: CombatUnit) -> Vector2i:
 	if path_hexes.is_empty() or unit == null:
 		return Vector2i.ZERO
-	var idx: int = clampi(roundi(unit.path_position), 0, path_hexes.size() - 1)
-	return path_hexes[idx]
+	var plen: int = path_hexes.size()
+	if unit.cached_hex_path_len == plen and is_equal_approx(unit.path_position, unit.cached_hex_path_pos):
+		return unit.cached_hex
+	var idx: int = clampi(roundi(unit.path_position), 0, plen - 1)
+	var h: Vector2i = path_hexes[idx]
+	unit.cached_hex = h
+	unit.cached_hex_path_pos = unit.path_position
+	unit.cached_hex_path_len = plen
+	return h
 
 
 ## Updates continuous detector auras (Chanting Choir and Watcher in the Billboard).
@@ -1076,8 +1150,11 @@ func _handle_unit_death(unit: CombatUnit, killer_tower: TowerInstance, from_gutt
 		if t.converter_unit_id == unit.unit_id or t.being_channeled_by_unit_id == unit.unit_id:
 			t.clear_conversion()
 
-	# Record kill for per-unit-type leveling (regular units only; Bosses and Rogue Entities excluded)
-	if not unit.unit_type_id.is_empty() and not unit.is_boss() and not unit.is_rogue_entity:
+	# Record kill for per-unit-type leveling (regular units) or Rogue Entity kill leveling (+1 level per Rogue kill)
+	if unit.is_rogue_entity:
+		if leveling != null:
+			leveling.record_rogue_entity_kill(1)
+	elif not unit.unit_type_id.is_empty() and not unit.is_boss():
 		leveling.record_kill(unit.unit_type_id, false, 1)
 
 	# Award Offerings (with dark_patron bonus up to 3 boxes: +10% per box)
@@ -1238,6 +1315,7 @@ func step(delta: float, rng: RandomNumberGenerator) -> void:
 	if delta <= 0.0 or game_over:
 		return
 	wave_elapsed_time += delta
+	_invalidate_all_tower_caches()
 
 	# 1. Update tower jam/disable/conversion timers & pending jams
 	for t: TowerInstance in towers.values():
@@ -1288,12 +1366,23 @@ func step(delta: float, rng: RandomNumberGenerator) -> void:
 			if _HexGrid.hex_distance(p_hex, get_unit_hex(u)) <= 1:
 				var boss_scale: float = balance.boss_slow_and_dot_strength if u.is_boss() else 1.0
 				var hit_dmg: float = calculate_hit_damage(src_tower, u, p_dps * delta * boss_scale, _C.DamageTag.VOID)
+				_in_continuous_dot_tick = true
 				deal_damage_from_tower(src_tower, u, hit_dmg, _C.DamageTag.VOID)
+				_in_continuous_dot_tick = false
 		if float(p["remaining"]) <= 0.0:
 			puddles.remove_at(i)
 
 	# 6. Step units (DoTs, timers, movement, leaks)
 	_step_units(delta)
+
+	# 7. Prune old hit_events outside the 15s LossReport window when array grows large
+	if hit_events.size() > 256:
+		var cutoff_t: float = wave_elapsed_time - 15.0
+		var drop_count: int = 0
+		while drop_count < hit_events.size() and float(hit_events[drop_count].get("time", 0.0)) < cutoff_t:
+			drop_count += 1
+		if drop_count > 64:
+			hit_events = hit_events.slice(drop_count)
 
 
 func _step_tower(tower: TowerInstance, delta: float, rng: RandomNumberGenerator) -> void:
@@ -2417,7 +2506,9 @@ func _step_units(delta: float) -> void:
 				var src_t: TowerInstance = towers.get(int(d_entry["tower_id"]), null) as TowerInstance
 				var d_tag: int = int(d_entry["damage_tag"])
 				var dot_dmg: float = calculate_hit_damage(src_t, u, float(d_entry["dps"]) * tick_time * boss_dot_scale, d_tag)
+				_in_continuous_dot_tick = true
 				deal_damage_from_tower(src_t, u, dot_dmg, d_tag)
+				_in_continuous_dot_tick = false
 				if float(d_entry["remaining"]) <= 0.0 and i < u.dot_stacks.size():
 					u.dot_stacks.remove_at(i)
 

@@ -147,7 +147,9 @@ func test_01_data_validation_9_towers_45_nodes_references_and_costs() -> void:
 		assert(t2 != null and t2.id == String(spec["t2"]), "%s T2 id mismatch" % td.id)
 		assert(t2.tower_id == td.id, "%s T2 tower_id must match" % td.id)
 		assert(t2.tier == 2 and t2.branch == _UpgradeNode.Branch.SHARED, "%s T2 tier/branch mismatch" % td.id)
-		assert(t2.currency == _UpgradeNode.Currency.OFFERINGS, "%s T2 must cost Offerings" % td.id)
+		var expected_base_curr: int = _UpgradeNode.Currency.SCRAP if (td.id == "rust_censer" or td.id == "watcher_in_the_billboard") else _UpgradeNode.Currency.OFFERINGS
+		assert(td.build_currency == expected_base_curr, "%s build_currency mismatch" % td.id)
+		assert(t2.currency == expected_base_curr, "%s T2 must match base tower currency" % td.id)
 		assert(t2.cost == roundi(float(base_cost) * 0.6), "%s T2 cost must be 0.6x base (%d), got %d" % [td.id, roundi(float(base_cost) * 0.6), t2.cost])
 		assert(t2.prerequisite_id == "", "%s T2 prerequisite_id must be empty" % td.id)
 		assert(t2.corruption_delta == 0 and t2.jank_set == 0, "%s T2 must not add Corruption or Jank" % td.id)
@@ -298,27 +300,39 @@ func test_03_corruption_and_jank_accounting_and_thresholds() -> void:
 	sys.units.clear()
 	sys.refresh_compliance_suppression()
 
-	# At 100 Corruption: Rogue Entity spawns at wave start; leaking costs 2 lives, killing yields 10 Offerings
+	# At 100 Corruption: Rogue Entity spawns at wave start; leaking costs 3 lives, killing yields 10 Offerings and levels it up!
 	sys.set_corruption(100)
 	var rogue_rng := RandomNumberGenerator.new()
 	rogue_rng.seed = 42
 	var wave_100_res: Dictionary = sys.start_wave(2, rogue_rng)
 	var rogue: CombatUnit = wave_100_res["rogue_entity"] as CombatUnit
 	assert(rogue != null and rogue.is_rogue_entity, "At 100 Corruption, a hostile Rogue Entity must spawn at wave start")
-	assert(rogue.leak_cost == 2, "Rogue Entity leak cost must be 2 lives")
-	assert(rogue.offerings_reward == 10, "Rogue Entity kill reward must be 10 Offerings")
+	assert(rogue.leak_cost == 3, "Rogue Entity base leak cost must be 3 lives")
+	assert(rogue.offerings_reward == 10, "Rogue Entity L0 kill reward must be 10 Offerings")
+	assert(rogue.has_breakthrough and rogue.has_ability("TowerDisable"), "Rogue Entity must have Breakthrough and TowerDisable aura")
 
-	# Verify killing Rogue Entity grants +10 Offerings
+	# Verify killing Rogue Entity grants +10 Offerings and increments rogue_entity_level by +1
 	var off_before_rogue_kill: int = sys.offerings
 	sys.deal_damage_from_tower(rev_tower, rogue, rogue.hp + 10.0, _C.DamageTag.VOID)
 	assert(sys.offerings == off_before_rogue_kill + 10, "Killing Rogue Entity must yield 10 Offerings")
+	assert(sys.leveling.get_rogue_entity_level() == 1, "Killing a Rogue Entity must level up future Rogue Entities by +1")
 
-	# Verify leaking Rogue Entity costs 2 lives
+	# Verify next Rogue Entity spawns at level 1 with higher HP and leaking costs 3 lives
 	var rogue_leak: CombatUnit = sys.spawn_rogue_entity()
+	assert(rogue_leak.spawn_level == 1 and rogue_leak.max_hp > rogue.max_hp, "Level 1 Rogue Entity must have higher max HP than Level 0")
 	rogue_leak.path_position = 0.05
 	var lives_before_leak: int = sys.lives
 	sys.step(0.2, rogue_rng)
-	assert(sys.lives == lives_before_leak - 2, "Leaking Rogue Entity must cost 2 lives")
+	assert(sys.lives == lives_before_leak - 3, "Leaking Rogue Entity must cost 3 lives")
+
+	# Kill 1 more Rogue Entity (total 2 kills -> Level 2) and verify start_wave spawns multiples (2 Rogue Entities)
+	sys.leveling.record_rogue_entity_kill(1)
+	assert(sys.leveling.get_rogue_entity_level() == 2, "Rogue Entity level must be 2 after 2 kills")
+	var multi_wave_res: Dictionary = sys.start_wave(3, rogue_rng)
+	var spawned_rogues: Array = multi_wave_res.get("rogue_entities", []) as Array
+	assert(spawned_rogues.size() >= 2, "At Rogue Level 2+, start_wave at 100 Corruption must spawn multiple Rogue Entities, got %d" % spawned_rogues.size())
+	sys.set_corruption(0)
+	sys.units.clear()
 
 	# Jank accounting: Rigged T3 sets Jank to 10, Rigged T4 sets Jank to 25 (paid in Scrap)
 	var rig_tower: TowerInstance = sys.place_tower(Vector2i(3, 1), "hexed_nail_gun")
@@ -712,3 +726,64 @@ func test_07_stars_are_right_and_corruption_stack_additively() -> void:
 	sys.upgrade_tower(rig_tower, "rapid_cycling")
 	sys.upgrade_tower(rig_tower, "drone_feeder")
 	assert(is_equal_approx(sys.get_revealed_damage_multiplier(rig_tower), 1.0), "Rigged towers must not get Revealed bonuses")
+
+
+# --- Test 8: Per-category 3x CC Diminishing Returns -> Permanent Lifetime Immunity (Slows Exempt)
+
+func test_08_cc_diminishing_returns_3x_then_permanent_immunity_and_slows_forever() -> void:
+	var u := _CombatUnit.new(777, 1000.0, [_C.UnitTag.GROUND], 8.0, 1.0)
+
+	# 1. Category "fear" (apply_confuse / try_trigger_flee): 100% -> 50% -> 25% -> immune
+	assert(u.apply_confuse(2.0), "1st confuse must succeed")
+	assert(is_equal_approx(u.confuse_timer, 2.0), "1st confuse duration must be 100% (2.0s)")
+	assert(not u.apply_confuse(2.0), "Re-applying confuse while already confused must not chain-refresh")
+	u.confuse_timer = 0.0
+
+	assert(u.apply_confuse(2.0), "2nd confuse must succeed")
+	assert(is_equal_approx(u.confuse_timer, 1.0), "2nd confuse duration must be 50% (1.0s)")
+	u.confuse_timer = 0.0
+
+	assert(u.try_trigger_flee(2.0, 10.0), "3rd fear/flee lock in category 'fear' must succeed at 25%")
+	assert(is_equal_approx(u.flee_timer, 0.5), "3rd fear lock duration must be 25% (0.5s)")
+	u.flee_timer = 0.0
+	u.flee_cooldown_timer = 0.0
+
+	assert(u.is_cc_immune(_CombatUnit.CC_CATEGORY_FEAR), "After 3 fear/confuse locks, unit must be permanently immune to fear/confuse")
+	assert(not u.apply_confuse(2.0), "4th confuse must be rejected (permanent immunity)")
+	assert(not u.try_trigger_flee(2.0, 10.0), "4th flee must be rejected (permanent immunity)")
+
+	# 2. Category "root" is tracked independently from "fear": 100% -> 50% -> 25% -> immune
+	assert(not u.is_cc_immune(_CombatUnit.CC_CATEGORY_ROOT), "Root DR must be independent of Fear DR")
+	assert(u.apply_root(2.0, true) and is_equal_approx(u.root_timer, 2.0), "1st root = 100% (2.0s)")
+	u.root_timer = 0.0
+	assert(u.apply_root(2.0, true) and is_equal_approx(u.root_timer, 1.0), "2nd root = 50% (1.0s)")
+	u.root_timer = 0.0
+	assert(u.apply_root(2.0, true) and is_equal_approx(u.root_timer, 0.5), "3rd root = 25% (0.5s)")
+	u.root_timer = 0.0
+	assert(u.is_cc_immune(_CombatUnit.CC_CATEGORY_ROOT) and not u.apply_root(2.0, true), "4th root must be rejected (permanent immunity)")
+
+	# 3. Category "stun" is tracked independently: 100% -> 50% -> 25% -> immune
+	assert(u.apply_stun(2.0) and is_equal_approx(u.stun_timer, 2.0), "1st stun = 100% (2.0s)")
+	u.stun_timer = 0.0
+	assert(u.apply_stun(2.0) and is_equal_approx(u.stun_timer, 1.0), "2nd stun = 50% (1.0s)")
+	u.stun_timer = 0.0
+	assert(u.apply_stun(2.0) and is_equal_approx(u.stun_timer, 0.5), "3rd stun = 25% (0.5s)")
+	u.stun_timer = 0.0
+	assert(u.is_cc_immune(_CombatUnit.CC_CATEGORY_STUN) and not u.apply_stun(2.0), "4th stun must be rejected (permanent immunity)")
+
+	# 4. Category "displacement" is tracked independently: 100% -> 50% -> 25% -> immune
+	u.path_position = 5.0
+	assert(u.displace_along_path(2.0, 20.0) and is_equal_approx(u.path_position, 7.0), "1st displacement = +2.0 hexes")
+	assert(u.displace_along_path(2.0, 20.0) and is_equal_approx(u.path_position, 8.0), "2nd displacement = +1.0 hex")
+	assert(u.displace_along_path(2.0, 20.0) and is_equal_approx(u.path_position, 8.5), "3rd displacement = +0.5 hex")
+	assert(u.is_cc_immune(_CombatUnit.CC_CATEGORY_DISPLACEMENT) and not u.displace_along_path(2.0, 20.0), "4th displacement must be rejected")
+
+	# 5. Slows have NO diminishing returns and remain forever
+	for _i in range(20):
+		u.apply_timed_slow(0.40, 5.0)
+		u.add_fear_stack(5)
+	u.drain_slow_strength = 0.35
+	assert(is_equal_approx(u.timed_slow_strength, 0.40), "Timed slows must never suffer diminishing returns")
+	assert(u.fear_stacks == 5, "Fear slow stacks must remain active forever")
+	assert(u.get_effective_speed_multiplier() < 0.50, "Slows must continue slowing the unit indefinitely even when immune to all 4 hard-CC categories")
+

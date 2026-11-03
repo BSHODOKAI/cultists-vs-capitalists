@@ -184,7 +184,12 @@ func confirm_build() -> void:
 
 
 func _select(index: int) -> void:
-	inspect_tower(index)
+	if index < 0 or index >= _types.size():
+		return
+	if is_menu_open() and _inspected_data == _types[index]:
+		confirm_build()
+	else:
+		inspect_tower(index)
 
 
 func _on_tower_selected(data: TowerData) -> void:

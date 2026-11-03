@@ -182,9 +182,11 @@ func _build_or_update_chunk(chunk_coord: Vector2i, grid: HexGrid, pgen: PathGene
 		var xform := Transform3D(Basis(Vector3.UP, yaw_rad), world_p)
 
 		var inst_col: Color = Color.WHITE
-		if not is_path and not in_zone and not is_blk:
-			# Subtle dimming for outer urban blocks outside the 2-hex buildable band
-			inst_col = Color(0.80, 0.82, 0.88, 1.0)
+		if is_blk:
+			inst_col = Color(0.68, 0.70, 0.78, 1.0)
+		elif not is_path and not in_zone:
+			# Distinct dimming for outer urban blocks outside the 2-hex buildable band
+			inst_col = Color(0.52, 0.56, 0.65, 1.0)
 
 		var bucket: Dictionary = buckets[bucket_key]
 		(bucket["transforms"] as Array).append(xform)

@@ -348,6 +348,10 @@ func compute_budget_breakdown(
 	)
 	var cycle_mult: float = 1.0 + balance.budget_cycle_scaling * float(cycles)
 	var full_b: float = poly * cycle_mult * eff_rubber
+	if w > balance.late_ramp_start_wave:
+		var dw: float = float(w - balance.late_ramp_start_wave)
+		var late_mult: float = 1.0 + balance.late_ramp_linear_per_wave * dw + balance.late_ramp_quadratic_per_wave * dw * dw
+		full_b *= late_mult
 	if stars_wave:
 		full_b *= balance.stars_are_right_budget_multiplier
 
@@ -375,10 +379,10 @@ func compute_effective_cost(base_cost: int, level: int) -> float:
 	return float(maxi(1, base_cost)) * (1.0 + balance.unit_level_cost_multiplier * float(maxi(0, level)))
 
 
-## Boss HP = base_hp * (1 + 0.30 * (n - 1))
+## Boss HP = base_hp * (1 + 0.55 * (n - 1) + 0.15 * (n - 1)^2)
 func compute_boss_hp(base_hp: float, boss_index: int) -> float:
-	var n: int = maxi(1, boss_index)
-	return base_hp * (1.0 + balance.boss_hp_scaling_per_index * float(n - 1))
+	var n: float = float(maxi(1, boss_index) - 1)
+	return base_hp * (1.0 + balance.boss_hp_scaling_per_index * n + balance.boss_hp_quadratic_per_index * n * n)
 
 
 # --- Scoring & Counter-Biases ------------------------------------------------
@@ -680,8 +684,8 @@ func generate_wave(wave_number: int, inputs: Dictionary = {}) -> WaveRoster:
 	var path_layout: Dictionary = inputs.get("path_layout_summary", {}) as Dictionary
 	var history_src: Variant = inputs.get("history", null)
 
-	# 5. Resolve per-unit kill levels
-	var level_map: Dictionary = _resolve_unit_levels(inputs)
+	# 5. Resolve per-unit kill levels (with interval minimum level floor)
+	var level_map: Dictionary = _resolve_unit_levels(inputs, interval_idx)
 
 	# 6. Build candidate unit pool
 	var allow_cloaked: bool = is_cloaked_allowed_on_wave(w)
@@ -993,10 +997,13 @@ func generate_wave(wave_number: int, inputs: Dictionary = {}) -> WaveRoster:
 
 # --- Candidate Pool & Constraint Helpers -------------------------------------
 
-func _resolve_unit_levels(inputs: Dictionary) -> Dictionary:
+func _resolve_unit_levels(inputs: Dictionary, interval_idx: int = 1) -> Dictionary:
 	var out: Dictionary = {}
+	var min_floor: int = 0
+	if not inputs.has("unit_levels") and not bool(inputs.get("disable_interval_floor", false)):
+		min_floor = _UnitLeveling.compute_interval_level_floor(interval_idx)
 	for u: UnitData in regular_catalog:
-		out[u.id] = leveling.get_level_for_id(u.id, false)
+		out[u.id] = maxi(min_floor, leveling.get_level_for_id(u.id, false))
 
 	if inputs.has("unit_levels"):
 		var ul: Variant = inputs["unit_levels"]
