@@ -40,6 +40,12 @@ const ZOOM_STEP_FACTOR: float = 0.14
 @export var touch_pan_enabled: bool = true
 @export var touch_zoom_enabled: bool = true
 @export var touch_drag_threshold_px: float = 8.0
+## When true, the camera focus is clamped to the playable area (committed path +
+## preview/build zone) so panning can never wander off into the empty void.
+@export var pan_bounds_enabled: bool = true
+## Extra hexes of slack added beyond the path/build-zone bounds when clamping.
+## Should cover the 2-hex build zone plus a little breathing room.
+@export var pan_bounds_extra_hexes: float = 3.0
 
 var camera: Camera3D
 var _middle_dragging: bool = false
@@ -88,8 +94,7 @@ func _process(delta: float) -> void:
 
 	if move_dir.length_squared() > 0.0001:
 		var zoom_scale: float = clampf(ortho_size / DEFAULT_ORTHO_SIZE, 0.5, 2.5)
-		global_position += move_dir.normalized() * pan_speed * zoom_scale * delta
-		global_position.y = 0.0
+		_set_ground_position(global_position + move_dir.normalized() * pan_speed * zoom_scale * delta)
 		_emit_view_moved()
 
 
@@ -202,7 +207,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if cur_hit != null:
 			var delta_world: Vector3 = _last_drag_world - (cur_hit as Vector3)
 			delta_world.y = 0.0
-			global_position += delta_world
+			_set_ground_position(global_position + delta_world)
 			_emit_view_moved()
 		return
 
@@ -243,7 +248,7 @@ func rotate_step(steps_90: int) -> void:
 
 
 func focus_world(world_pos: Vector3) -> void:
-	global_position = Vector3(world_pos.x, 0.0, world_pos.z)
+	_set_ground_position(Vector3(world_pos.x, 0.0, world_pos.z))
 	_apply_camera_transform()
 	_emit_view_moved()
 
@@ -302,8 +307,7 @@ func pan_by_screen_delta(prev_screen_pos: Vector2, cur_screen_pos: Vector2) -> V
 		if prev_hit != null and cur_hit != null:
 			var delta_world: Vector3 = (prev_hit as Vector3) - (cur_hit as Vector3)
 			delta_world.y = 0.0
-			global_position += delta_world
-			global_position.y = 0.0
+			_set_ground_position(global_position + delta_world)
 			_emit_view_moved()
 			return delta_world
 
@@ -316,8 +320,7 @@ func pan_by_screen_delta(prev_screen_pos: Vector2, cur_screen_pos: Vector2) -> V
 	var units_per_px: float = ortho_size / maxf(1.0, vp_size.y)
 	var fallback_delta: Vector3 = (-_ground_right() * screen_delta.x + _ground_forward() * screen_delta.y) * units_per_px
 	fallback_delta.y = 0.0
-	global_position += fallback_delta
-	global_position.y = 0.0
+	_set_ground_position(global_position + fallback_delta)
 	_emit_view_moved()
 	return fallback_delta
 
@@ -343,6 +346,53 @@ func _get_other_touch_pos(exclude_index: int, fallback: Vector2) -> Vector2:
 		if idx != exclude_index:
 			return _active_touches[idx] as Vector2
 	return fallback
+
+
+## Sets the rig's ground-plane focus, clamped to the playable area when
+## [member pan_bounds_enabled] is true, so the camera can never pan off into the
+## empty void. Does not emit [signal view_moved]; callers do after adjusting.
+func _set_ground_position(new_pos: Vector3) -> void:
+	new_pos.y = 0.0
+	if pan_bounds_enabled:
+		var rect: Dictionary = _compute_playable_rect()
+		if not rect.is_empty():
+			new_pos.x = clampf(new_pos.x, float(rect["min_x"]), float(rect["max_x"]))
+			new_pos.z = clampf(new_pos.z, float(rect["min_z"]), float(rect["max_z"]))
+	global_position = new_pos
+
+
+## Returns the world-space (x/z) bounds of the playable area — the committed path
+## and any previewed extension — expanded by [member pan_bounds_extra_hexes] to
+## cover the build zone. Returns an empty Dictionary when no path exists yet.
+func _compute_playable_rect() -> Dictionary:
+	var gs: Node = get_node_or_null("/root/GameState")
+	if gs == null:
+		return {}
+	var pgen: PathGenerator = gs.get("path_generator") as PathGenerator
+	if pgen == null:
+		return {}
+	var hexes: Array = []
+	hexes.append_array(pgen.path_hexes)
+	hexes.append_array(pgen.ghost_path_hexes)
+	if hexes.is_empty():
+		return {}
+	var min_x: float = INF
+	var max_x: float = -INF
+	var min_z: float = INF
+	var max_z: float = -INF
+	for h: Vector2i in hexes:
+		var w: Vector3 = _HexMath.hex_to_world(h, 0.0)
+		min_x = minf(min_x, w.x)
+		max_x = maxf(max_x, w.x)
+		min_z = minf(min_z, w.z)
+		max_z = maxf(max_z, w.z)
+	var margin: float = pan_bounds_extra_hexes * sqrt(3.0) * _HexMath.HEX_SIZE
+	return {
+		"min_x": min_x - margin,
+		"max_x": max_x + margin,
+		"min_z": min_z - margin,
+		"max_z": max_z + margin,
+	}
 
 
 func _apply_camera_transform() -> void:
