@@ -61,7 +61,7 @@ salvaged things made sacred. This is the *heart* of the fantasy: it should feel 
 > plates, propane tanks, drone salvage, union picket hardware, hardware-store nail guns.
 
 ### Pillar B — Corporate Satire
-The enemy is not "evil." The enemy is *efficient*. Corporate evil here is bureaucratic, branded,
+The enemy is *efficient*. Corporate evil here is exploitative, bureaucratic, branded,
 and banal — taxes, audits, buyouts, subscriptions, same-day delivery. Play it straight and let it
 be funny; the joke is that it's all totally normal.
 
