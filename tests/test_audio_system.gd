@@ -8,6 +8,7 @@ const _AudioBalance = preload("res://scripts/audio/audio_balance_data.gd")
 const _AudioCueSystem = preload("res://scripts/audio/audio_cue_system.gd")
 const _AudioSettings = preload("res://scripts/audio/audio_settings.gd")
 const _SoundManager = preload("res://scripts/audio/sound_manager.gd")
+const _EventLibrary = preload("res://scripts/events/event_library.gd")
 
 
 # --- Test 1: Resource & Stream Validation ------------------------------------
@@ -42,6 +43,20 @@ func test_01_audio_balance_resource_and_all_wav_files_load() -> void:
 		_AudioBalance.CUE_WAVE_ENDED,
 		_AudioBalance.CUE_STARS_ARE_RIGHT,
 		_AudioBalance.CUE_RUN_EVENT,
+		_AudioBalance.CUE_EVENT_STARS_ARE_RIGHT,
+		_AudioBalance.CUE_EVENT_DARK_PATRON_GRANT,
+		_AudioBalance.CUE_EVENT_BLACK_MARKET_HAUL,
+		_AudioBalance.CUE_EVENT_CARGO_CULT_WINDFALL,
+		_AudioBalance.CUE_EVENT_RITES_OF_HASTE,
+		_AudioBalance.CUE_EVENT_THE_VEIL_THINS,
+		_AudioBalance.CUE_EVENT_SALVAGE_BLOOM,
+		_AudioBalance.CUE_EVENT_MARKET_CORRECTION,
+		_AudioBalance.CUE_EVENT_SCRAP_GLUT,
+		_AudioBalance.CUE_EVENT_SUPPLY_SHOCK,
+		_AudioBalance.CUE_EVENT_HARDENED_PLATING,
+		_AudioBalance.CUE_EVENT_STATIC_INTERFERENCE,
+		_AudioBalance.CUE_EVENT_CREEPING_RUST,
+		_AudioBalance.CUE_EVENT_CORPORATE_AUDIT,
 		_AudioBalance.CUE_PATH_EXTENDED,
 		_AudioBalance.CUE_ENEMY_LEAKED,
 		_AudioBalance.CUE_GAME_OVER,
@@ -373,3 +388,33 @@ func test_06_audio_settings_sliders_0_to_100_mute_at_0_and_live_sync_with_sound_
 
 	remove_child(main_inst)
 	main_inst.free()
+
+
+# --- Test 7: Every Run Event has a unique, loadable stinger ------------------
+
+func test_07_every_run_event_has_a_unique_loadable_stinger() -> void:
+	var bal := load(_AudioBalance.DEFAULT_RESOURCE_PATH) as AudioBalanceData
+	assert(bal != null, "audio_balance.tres must load")
+
+	var events: Array = _EventLibrary.load_events()
+	assert(events.size() == 14, "Expected 14 Event cards, found %d" % events.size())
+
+	var seen_cue_ids: Dictionary = {}
+	var seen_paths: Dictionary = {}
+	for ev: EventData in events:
+		var cue_id: String = bal.get_event_cue(ev.id)
+		assert(cue_id != _AudioBalance.CUE_RUN_EVENT, "Event '%s' must have a dedicated stinger, not the generic fallback" % ev.id)
+		assert(not seen_cue_ids.has(cue_id), "Cue '%s' is shared by events '%s' and '%s'" % [cue_id, seen_cue_ids.get(cue_id, ""), ev.id])
+		seen_cue_ids[cue_id] = ev.id
+
+		var cfg: Dictionary = bal.get_cue_config(cue_id)
+		assert(not cfg.is_empty(), "Event '%s' cue '%s' has no config" % [ev.id, cue_id])
+		var path: String = String(cfg.get("path", ""))
+		assert(ResourceLoader.exists(path), "Event '%s' stinger file missing: %s" % [ev.id, path])
+		assert(not seen_paths.has(path), "Events '%s' and '%s' share the same sound file %s" % [seen_paths.get(path, ""), ev.id, path])
+		seen_paths[path] = ev.id
+
+		# The resolved cue must actually route through the audio system.
+		var sys := _AudioCueSystem.new(bal, null, 7)
+		var res: Dictionary = sys.on_run_event(ev.id)
+		assert(bool(res["played"]) and String(res["cue_id"]) == cue_id, "on_run_event('%s') must play cue '%s'" % [ev.id, cue_id])

@@ -45,6 +45,22 @@ const CUE_ENEMY_ABILITY: String = "enemy_ability"
 const CUE_UI_CLICK: String = "ui_click"
 const CUE_UI_ERROR: String = "ui_error"
 
+# --- Per-Event Run Event Stingers (one unique cue per Event card) ------------
+const CUE_EVENT_STARS_ARE_RIGHT: String = "event_stars_are_right"
+const CUE_EVENT_DARK_PATRON_GRANT: String = "event_dark_patron_grant"
+const CUE_EVENT_BLACK_MARKET_HAUL: String = "event_black_market_haul"
+const CUE_EVENT_CARGO_CULT_WINDFALL: String = "event_cargo_cult_windfall"
+const CUE_EVENT_RITES_OF_HASTE: String = "event_rites_of_haste"
+const CUE_EVENT_THE_VEIL_THINS: String = "event_the_veil_thins"
+const CUE_EVENT_SALVAGE_BLOOM: String = "event_salvage_bloom"
+const CUE_EVENT_MARKET_CORRECTION: String = "event_market_correction"
+const CUE_EVENT_SCRAP_GLUT: String = "event_scrap_glut"
+const CUE_EVENT_SUPPLY_SHOCK: String = "event_supply_shock"
+const CUE_EVENT_HARDENED_PLATING: String = "event_hardened_plating"
+const CUE_EVENT_STATIC_INTERFERENCE: String = "event_static_interference"
+const CUE_EVENT_CREEPING_RUST: String = "event_creeping_rust"
+const CUE_EVENT_CORPORATE_AUDIT: String = "event_corporate_audit"
+
 const DEFAULT_RESOURCE_PATH: String = "res://data/audio_balance.tres"
 
 @export var sfx_pool_size: int = 16
@@ -73,10 +89,48 @@ const DEFAULT_RESOURCE_PATH: String = "res://data/audio_balance.tres"
 ## }
 @export var cues: Dictionary = {}
 
+## Run Event id -> cue ID. Every Event card has its own unique stinger so the
+## player can recognise an event by ear before reading the banner. Events not
+## listed fall back to CUE_RUN_EVENT.
+@export var event_cues: Dictionary = {}
+
 
 func _init() -> void:
 	if cues.is_empty():
 		cues = build_default_cues()
+	if event_cues.is_empty():
+		event_cues = build_default_event_cues()
+
+
+## Event id -> cue id mapping for every shipped Event card.
+static func build_default_event_cues() -> Dictionary:
+	return {
+		"stars_are_right": CUE_EVENT_STARS_ARE_RIGHT,
+		"dark_patron_grant": CUE_EVENT_DARK_PATRON_GRANT,
+		"black_market_haul": CUE_EVENT_BLACK_MARKET_HAUL,
+		"cargo_cult_windfall": CUE_EVENT_CARGO_CULT_WINDFALL,
+		"rites_of_haste": CUE_EVENT_RITES_OF_HASTE,
+		"the_veil_thins": CUE_EVENT_THE_VEIL_THINS,
+		"salvage_bloom": CUE_EVENT_SALVAGE_BLOOM,
+		"market_correction": CUE_EVENT_MARKET_CORRECTION,
+		"scrap_glut": CUE_EVENT_SCRAP_GLUT,
+		"supply_shock": CUE_EVENT_SUPPLY_SHOCK,
+		"hardened_plating": CUE_EVENT_HARDENED_PLATING,
+		"static_interference": CUE_EVENT_STATIC_INTERFERENCE,
+		"creeping_rust": CUE_EVENT_CREEPING_RUST,
+		"corporate_audit": CUE_EVENT_CORPORATE_AUDIT,
+	}
+
+
+## Returns the cue ID for [param event_id], falling back to the generic run-event
+## cue when the event has no dedicated stinger.
+func get_event_cue(event_id: String) -> String:
+	if event_cues.has(event_id):
+		return String(event_cues[event_id])
+	var defaults: Dictionary = build_default_event_cues()
+	if defaults.has(event_id):
+		return String(defaults[event_id])
+	return CUE_RUN_EVENT
 
 
 static func build_default_cues() -> Dictionary:
@@ -362,6 +416,148 @@ static func build_default_cues() -> Dictionary:
 			"pitch_min": 1.0,
 			"pitch_max": 1.0,
 			"active_duration": 1.70,
+			"loop": false,
+		},
+
+		# --- Per-Event Stingers (one unique sound per Event card) ---
+		CUE_EVENT_STARS_ARE_RIGHT: {
+			"path": "res://assets/generated/audio/evt_stars_are_right.mp3",
+			"volume_db": -4.5,
+			"min_interval": 0.50,
+			"max_voices": 1,
+			"pitch_min": 1.0,
+			"pitch_max": 1.0,
+			"active_duration": 4.70,
+			"loop": false,
+		},
+		CUE_EVENT_DARK_PATRON_GRANT: {
+			"path": "res://assets/generated/audio/evt_dark_patron_grant.mp3",
+			"volume_db": -4.5,
+			"min_interval": 0.50,
+			"max_voices": 1,
+			"pitch_min": 1.0,
+			"pitch_max": 1.0,
+			"active_duration": 4.20,
+			"loop": false,
+		},
+		CUE_EVENT_BLACK_MARKET_HAUL: {
+			"path": "res://assets/generated/audio/evt_black_market_haul.mp3",
+			"volume_db": -4.5,
+			"min_interval": 0.50,
+			"max_voices": 1,
+			"pitch_min": 1.0,
+			"pitch_max": 1.0,
+			"active_duration": 3.70,
+			"loop": false,
+		},
+		CUE_EVENT_CARGO_CULT_WINDFALL: {
+			"path": "res://assets/generated/audio/evt_cargo_cult_windfall.mp3",
+			"volume_db": -4.5,
+			"min_interval": 0.50,
+			"max_voices": 1,
+			"pitch_min": 1.0,
+			"pitch_max": 1.0,
+			"active_duration": 3.70,
+			"loop": false,
+		},
+		CUE_EVENT_RITES_OF_HASTE: {
+			"path": "res://assets/generated/audio/evt_rites_of_haste.mp3",
+			"volume_db": -5.0,
+			"min_interval": 0.50,
+			"max_voices": 1,
+			"pitch_min": 1.0,
+			"pitch_max": 1.0,
+			"active_duration": 3.70,
+			"loop": false,
+		},
+		CUE_EVENT_THE_VEIL_THINS: {
+			"path": "res://assets/generated/audio/evt_the_veil_thins.mp3",
+			"volume_db": -4.5,
+			"min_interval": 0.50,
+			"max_voices": 1,
+			"pitch_min": 1.0,
+			"pitch_max": 1.0,
+			"active_duration": 4.70,
+			"loop": false,
+		},
+		CUE_EVENT_SALVAGE_BLOOM: {
+			"path": "res://assets/generated/audio/evt_salvage_bloom.mp3",
+			"volume_db": -5.0,
+			"min_interval": 0.50,
+			"max_voices": 1,
+			"pitch_min": 1.0,
+			"pitch_max": 1.0,
+			"active_duration": 3.70,
+			"loop": false,
+		},
+		CUE_EVENT_MARKET_CORRECTION: {
+			"path": "res://assets/generated/audio/evt_market_correction.mp3",
+			"volume_db": -5.0,
+			"min_interval": 0.50,
+			"max_voices": 1,
+			"pitch_min": 1.0,
+			"pitch_max": 1.0,
+			"active_duration": 3.70,
+			"loop": false,
+		},
+		CUE_EVENT_SCRAP_GLUT: {
+			"path": "res://assets/generated/audio/evt_scrap_glut.mp3",
+			"volume_db": -5.5,
+			"min_interval": 0.50,
+			"max_voices": 1,
+			"pitch_min": 1.0,
+			"pitch_max": 1.0,
+			"active_duration": 4.20,
+			"loop": false,
+		},
+		CUE_EVENT_SUPPLY_SHOCK: {
+			"path": "res://assets/generated/audio/evt_supply_shock.mp3",
+			"volume_db": -5.0,
+			"min_interval": 0.50,
+			"max_voices": 1,
+			"pitch_min": 1.0,
+			"pitch_max": 1.0,
+			"active_duration": 3.70,
+			"loop": false,
+		},
+		CUE_EVENT_HARDENED_PLATING: {
+			"path": "res://assets/generated/audio/evt_hardened_plating.mp3",
+			"volume_db": -5.0,
+			"min_interval": 0.50,
+			"max_voices": 1,
+			"pitch_min": 1.0,
+			"pitch_max": 1.0,
+			"active_duration": 3.70,
+			"loop": false,
+		},
+		CUE_EVENT_STATIC_INTERFERENCE: {
+			"path": "res://assets/generated/audio/evt_static_interference.mp3",
+			"volume_db": -6.0,
+			"min_interval": 0.50,
+			"max_voices": 1,
+			"pitch_min": 1.0,
+			"pitch_max": 1.0,
+			"active_duration": 4.20,
+			"loop": false,
+		},
+		CUE_EVENT_CREEPING_RUST: {
+			"path": "res://assets/generated/audio/evt_creeping_rust.mp3",
+			"volume_db": -5.5,
+			"min_interval": 0.50,
+			"max_voices": 1,
+			"pitch_min": 1.0,
+			"pitch_max": 1.0,
+			"active_duration": 4.70,
+			"loop": false,
+		},
+		CUE_EVENT_CORPORATE_AUDIT: {
+			"path": "res://assets/generated/audio/evt_corporate_audit.mp3",
+			"volume_db": -5.0,
+			"min_interval": 0.50,
+			"max_voices": 1,
+			"pitch_min": 1.0,
+			"pitch_max": 1.0,
+			"active_duration": 4.70,
 			"loop": false,
 		},
 		CUE_PATH_EXTENDED: {

@@ -1,5 +1,4 @@
-Banners for events need to be more obvious (unique sound effects per)
-global penance shoudl be in top ui (like draw rite)
+Better ambient music
 knockbacks need dr, dont target mobs with knockback attack that are immune
 higher resolutions windows/alerts scale odd (growing to fill screen for no reason), lets make them more consistent and bounded
 need a 'slow' tower that affects air

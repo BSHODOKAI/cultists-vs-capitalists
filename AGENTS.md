@@ -241,13 +241,17 @@ with tunables in `res://data/event_balance.tres`.
   may fire on any wave except the **first boss wave (10)**.
 - **Not advertised:** the upcoming event is resolved at intermission (so its budget modifier is
   baked into the locked roster) but is revealed to the player only at wave start, via the
-  `event_triggered` banner (`TelegraphLayer`) and an audio cue. The `IntelPanel` no longer
-  telegraphs it.
+  `event_triggered` banner (`TelegraphLayer`) and a per-event audio stinger. The `IntelPanel` no
+  longer telegraphs it.
 - **Effects (mixed instant + wave-duration):** instant effects fire once at wave start
   (Offerings/Scrap grants, percentage drains, Corruption change, +Jank on Rigged towers);
   duration effects last the flagged wave and clear at wave end (additive Revealed damage bonus,
   all-tower damage/fire-rate multipliers, enemy speed/HP multipliers, Scrap-income multiplier,
   Revealed-bonus suppression, and the director `budget_mult`).
+- **Announcement:** every Event card has a **unique** stinger mapped by
+  `AudioBalanceData.event_cues` (event id -> cue id) and a **larger, pulsing, bordered banner**
+  (`TelegraphLayer.show_banner(..., emphasis: true)`), so an event is recognisable by ear and
+  unmissable on screen. Unlisted ids fall back to `CUE_RUN_EVENT`.
 - **Buff roster (7):** `stars_are_right`, `dark_patron_grant` (Offerings), `black_market_haul`
   (Scrap), `cargo_cult_windfall` (Offerings + Scrap hybrid), `rites_of_haste`, `the_veil_thins`,
   `salvage_bloom`.
