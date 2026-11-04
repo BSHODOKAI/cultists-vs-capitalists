@@ -109,6 +109,14 @@ const PATH_PREVIEW_UNDEFENDED_BIAS: float = 1.15
 const LONG_EXPOSED_STRETCH_THRESHOLD: int = 5
 const DENSE_OVERLAP_ZONES_THRESHOLD: int = 3
 
+# --- Fork Budget & Multi-Lane Constants --------------------------------------
+const FORK_SINGLE_LANE_BUDGET_SHARE: float = 0.25
+const FORK_MULTI_LANE_BUDGET_SHARE_EACH: float = 0.20
+const FORK_READINESS_RAMP_WAVE_1: float = 0.65
+const FORK_READINESS_RAMP_WAVE_2: float = 0.85
+const FORK_EXTRA_UNITS_PER_LANE: int = 18
+const FORK_SECONDARY_FACTION_START_WAVE: int = 50
+
 # --- Exported tunable properties (defaulting to named constants) -------------
 @export var waves_per_interval: int = WAVES_PER_INTERVAL
 @export var intervals_per_cycle: int = INTERVALS_PER_CYCLE
@@ -185,3 +193,10 @@ const DENSE_OVERLAP_ZONES_THRESHOLD: int = 3
 @export var path_preview_undefended_bias: float = PATH_PREVIEW_UNDEFENDED_BIAS
 @export var long_exposed_stretch_threshold: int = LONG_EXPOSED_STRETCH_THRESHOLD
 @export var dense_overlap_zones_threshold: int = DENSE_OVERLAP_ZONES_THRESHOLD
+
+@export var fork_single_lane_budget_share: float = FORK_SINGLE_LANE_BUDGET_SHARE
+@export var fork_multi_lane_budget_share_each: float = FORK_MULTI_LANE_BUDGET_SHARE_EACH
+@export var fork_readiness_ramp_wave_1: float = FORK_READINESS_RAMP_WAVE_1
+@export var fork_readiness_ramp_wave_2: float = FORK_READINESS_RAMP_WAVE_2
+@export var fork_extra_units_per_lane: int = FORK_EXTRA_UNITS_PER_LANE
+@export var fork_secondary_faction_start_wave: int = FORK_SECONDARY_FACTION_START_WAVE

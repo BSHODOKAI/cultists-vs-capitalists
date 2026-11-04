@@ -115,7 +115,7 @@ func refresh_around_hex(focus_hex: Vector2i, view_radius_chunks: int = 1, force_
 			active_chunks[cc] = true
 
 	# Also include any chunk containing path or ghost path hexes so the whole path is always visible
-	for ph: Vector2i in pgen.path_hexes:
+	for ph: Vector2i in pgen.get_all_path_hexes():
 		var pcc: Vector2i = grid.hex_to_chunk(ph)
 		grid.ensure_chunk(pcc)
 		active_chunks[pcc] = true
@@ -123,6 +123,11 @@ func refresh_around_hex(focus_hex: Vector2i, view_radius_chunks: int = 1, force_
 		var gcc: Vector2i = grid.hex_to_chunk(gh)
 		grid.ensure_chunk(gcc)
 		active_chunks[gcc] = true
+	for fc: Dictionary in pgen.fork_candidates:
+		for fch: Vector2i in (fc.get("new_hexes", []) as Array):
+			var fcc: Vector2i = grid.hex_to_chunk(fch)
+			grid.ensure_chunk(fcc)
+			active_chunks[fcc] = true
 
 	# Unload distant unpinned chunks from view and HexGrid
 	var to_remove: Array[Vector2i] = []

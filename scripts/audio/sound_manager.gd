@@ -130,6 +130,8 @@ func bind_to_game_state(gs: Node) -> void:
 	_connect_once(gs, "wave_ended", _on_wave_ended)
 	_connect_once(gs, "event_triggered", _on_event_triggered)
 	_connect_once(gs, "path_extended", _on_path_extended)
+	_connect_once(gs, "fork_preview_ready", _on_fork_preview_ready)
+	_connect_once(gs, "fork_candidate_selected", _on_fork_candidate_selected)
 	_connect_once(gs, "loss_report_ready", _on_loss_report_ready)
 	_connect_once(gs, "biome_changed", _on_biome_changed)
 
@@ -534,6 +536,14 @@ func _on_event_triggered(event_id: String, _display_name: String, _category: int
 
 func _on_path_extended(growth_result: Dictionary) -> void:
 	play_path_extended(growth_result)
+
+
+func _on_fork_preview_ready(_candidates: Array, _selected_idx: int) -> void:
+	play_path_extended({"is_fork_preview": true})
+
+
+func _on_fork_candidate_selected(_selected_idx: int, _candidate: Dictionary) -> void:
+	play_ui_click()
 
 
 func _on_loss_report_ready(_report: Variant) -> void:

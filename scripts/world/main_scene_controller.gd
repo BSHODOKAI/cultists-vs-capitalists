@@ -78,6 +78,12 @@ func _connect_signals() -> void:
 	gs.connect("state_changed", _on_state_changed)
 	gs.connect("path_extended", func(_r: Dictionary) -> void: _rebuild_world_views())
 	gs.connect("path_preview_ready", func(_p: Dictionary) -> void: _rebuild_world_views())
+	if gs.has_signal("fork_preview_ready"):
+		gs.connect("fork_preview_ready", func(_c: Array, _idx: int) -> void: _rebuild_world_views())
+	if gs.has_signal("fork_candidate_selected"):
+		gs.connect("fork_candidate_selected", func(_idx: int, _cand: Dictionary) -> void: _rebuild_world_views())
+	if gs.has_signal("lane_bounty_claimed"):
+		gs.connect("lane_bounty_claimed", _on_lane_bounty_claimed)
 	gs.connect("tower_placed_on_hex", _on_tower_placed)
 	gs.connect("tower_upgraded_on_hex", _on_tower_upgraded)
 	gs.connect("tower_sold_from_hex", _on_tower_sold)
@@ -120,7 +126,7 @@ func _process(_delta: float) -> void:
 	var prev_pos: Dictionary = gs.get("prev_unit_positions") as Dictionary
 
 	if enemy_pool != null:
-		enemy_pool.update_all_views(tsys.units, pgen.path_hexes, prev_pos, alpha)
+		enemy_pool.update_all_views(tsys.units, pgen.path_hexes, prev_pos, alpha, pgen.lanes)
 	if tower_factory != null:
 		tower_factory.update_all_statuses()
 	if effects_view != null:
@@ -263,6 +269,13 @@ func _handle_hex_tap_or_click(screen_pos: Vector2, keep_build_mode: bool, gs: No
 	else:
 		# Select placed tower by hex lookup (never physics picking)
 		var existing: TowerInstance = gs.call("get_tower_at_hex", hex) as TowerInstance
+		var pgen: PathGenerator = gs.get("path_generator") as PathGenerator
+		if existing == null and pgen != null and pgen.preview_is_fork:
+			for c_idx in range(pgen.fork_candidates.size()):
+				var c_nh: Array = pgen.fork_candidates[c_idx].get("new_hexes", []) as Array
+				if c_nh.has(hex):
+					gs.call("request_select_fork_candidate", c_idx)
+					break
 		gs.call("select_placed_tower", existing)
 		_refresh_hover_and_overlays()
 	return true
@@ -340,7 +353,7 @@ func _rebuild_world_views() -> void:
 	if terrain_view != null:
 		terrain_view.refresh_around_hex(focus_h, 1, true)
 	if path_view != null:
-		path_view.refresh_path(pgen.path_hexes)
+		path_view.refresh_lanes(pgen.lanes)
 	if overlay_view != null:
 		overlay_view.refresh_path_overlays(pgen)
 	_refresh_hover_and_overlays()
@@ -519,6 +532,23 @@ func _on_currency_earned(currency: int, amount: int, _reason: String) -> void:
 	var label_txt: String = ("+%d Off" % amount) if currency == 0 else ("+%d Scrap" % amount)
 	var col: Color = Color(0.85, 0.55, 1.0) if currency == 0 else Color(1.0, 0.65, 0.25)
 	effects_view.spawn_floating_text(Vector3(0.0, 1.2, 0.0), label_txt, col)
+
+
+func _on_lane_bounty_claimed(_lane_id: int, unit_id: int, offerings_paid: int, scrap_paid: int) -> void:
+	if effects_view == null:
+		return
+	var pos: Vector3 = Vector3(0.0, 1.4, 0.0)
+	if enemy_pool != null and enemy_pool.active_views.has(unit_id):
+		var ev: EnemyMoverView = enemy_pool.active_views[unit_id] as EnemyMoverView
+		if is_instance_valid(ev):
+			pos = ev.get_aim_world_position() + Vector3(0.0, 0.35, 0.0)
+	var parts: PackedStringArray = []
+	if offerings_paid > 0:
+		parts.append("+%d Off" % offerings_paid)
+	if scrap_paid > 0:
+		parts.append("+%d Scrap" % scrap_paid)
+	if not parts.is_empty():
+		effects_view.spawn_floating_text(pos, "BOUNTY %s" % " ".join(parts), Color(1.0, 0.68, 0.20))
 
 
 func _on_ability_telegraphed(ev: Dictionary) -> void:

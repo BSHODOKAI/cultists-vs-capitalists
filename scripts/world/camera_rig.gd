@@ -372,8 +372,10 @@ func _compute_playable_rect() -> Dictionary:
 	if pgen == null:
 		return {}
 	var hexes: Array = []
-	hexes.append_array(pgen.path_hexes)
+	hexes.append_array(pgen.get_all_path_hexes())
 	hexes.append_array(pgen.ghost_path_hexes)
+	for fc: Dictionary in pgen.fork_candidates:
+		hexes.append_array(fc.get("new_hexes", []) as Array)
 	if hexes.is_empty():
 		return {}
 	var min_x: float = INF

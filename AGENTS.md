@@ -102,6 +102,7 @@ All 10 cult towers live in `res://data/towers/*.tres` and their 50 upgrades (`10
 - At `100`: Spawns hostile **Rogue Entities** (`res://data/units/rogue_entity.tres`: base 550 HP, speed 1.25, 25%–50% all-damage resistance, `Breakthrough`, `TowerDisable` every 5s, `leak_cost = 3+`).
 - Rogue Entities level up `+1` every time one is killed (`1.45^level` HP compounding + wave scaling) and spawn in multiples (`1..5`) as Rogue level and wave number rise.
 - **Penance:** Pay `40 Offerings` to reduce Corruption by `5`.
+- **Rite branch visibility:** the Rite T3 card is **hidden until the cult has received its first Rite** (`TowerSystem.has_ever_drawn_rite()` — holds one, or `rites_drawn_total > 0`). On every tower from wave 1 it was a dead button (0 Rites, no Reservoir) and spoiled the branch. Spending the Rite does **not** re-hide it: the T3 choice is permanent, so a committed player must still see what comes next.
 - **Rites & the Reckoning (the price of power):**
 - **Rites** are Corruption *spent as a resource*. Drawing a Rite costs `10 Corruption` (`RITE_CORRUPTION_COST`) and banks `1 Rite`. The sink for Rites is the third tower branch.
 - Drawing Rites requires the cult to **hold a Corruption Reservoir** site — the Reservoir is what makes the rot drawable, and is the reason to fight for one.
@@ -324,6 +325,7 @@ counts, guaranteeing claimability).
 - `MainMenu` (`res://scenes/main_menu.tscn`) -> `Main` (`res://scenes/main.tscn`).
 - `SettingsMenu` & `DisplaySettings` (`user://display_settings.cfg`): machine-bounded resolution & aspect-ratio filtering, PC window modes (hidden on Steam Deck), 5-second confirmation with auto-revert, and `0..100` Background/FX audio sliders.
 - `BuildPalette`: Toggle with `B`, inspect with `1–9` or single click, confirm build with `Enter`, a second click, or double-click.
+- `TowerPanel`: **Selling takes two presses** — the first arms the button (`_sell_armed_for`, keyed by `tower_id`, so changing selection disarms), the second sells. Confirming a Rite tower's sale states that the Rite is **not** refunded. Selling is irreversible and Rites are never returned, so a single misclick used to destroy both the tower and a drawn Rite.
 - `IntelPanel` & `TelegraphLayer`: Pre-wave Intel preview; post-boss "BOSS SLAIN / Next Faction" banners automatically clear when the next wave starts.
 - `CameraRig`: Orthographic (`size 7..48`, default `18`), WASD/arrow pan, middle-mouse drag pan, single-finger touchscreen drag pan, mouse-wheel & two-finger pinch zoom, `Home` (focus base), `End` (focus spawn/preview).
 

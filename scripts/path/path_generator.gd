@@ -48,8 +48,15 @@ var grid: HexGrid
 var run_seed: int = 1
 var extension_index: int = 0
 
-## Ordered path hexes: index 0 is the player's base, last index is the spawn hex.
+## Ordered path hexes: index 0 is the player's base, last index is the spawn hex (Main Lane 0).
 var path_hexes: Array[Vector2i] = []
+## All committed lanes (each element is an Array[Vector2i] from index 0 = base to last index = spawn).
+## lanes[0] is always synchronized with path_hexes.
+var lanes: Array[Array] = []
+## Wave number when each lane in [member lanes] was committed (lane 0 = 0).
+var lane_opened_wave: Array[int] = []
+## Total number of fork growth events committed during this run.
+var forks_committed_count: int = 0
 
 ## UI Hook: previewed next extension hexes (empty when no preview is active).
 var ghost_path_hexes: Array[Vector2i] = []
@@ -57,6 +64,11 @@ var ghost_path_hexes: Array[Vector2i] = []
 var preview_overlap_hexes: Array[Vector2i] = []
 ## UI Hook: all current overlap hexes on the committed path (drawn subtly).
 var persistent_overlap_hexes: Array[Vector2i] = []
+
+## Fork preview state (active when the upcoming post-boss growth is a multi-candidate fork).
+var preview_is_fork: bool = false
+var fork_candidates: Array[Dictionary] = []
+var selected_fork_candidate_index: int = 0
 
 ## Tunables (defaulting to PathConstants; can be overridden via PathBalanceData).
 var min_ext: int = _C.MIN_EXT
@@ -72,6 +84,19 @@ var terrain_margin: int = _C.TERRAIN_MARGIN
 var build_zone_distance: int = _C.BUILD_ZONE_DISTANCE
 var preview_lead_waves: int = _C.PREVIEW_LEAD_WAVES
 var boss_wave_interval: int = _C.BOSS_WAVE_INTERVAL
+var max_lanes: int = _C.MAX_LANES
+var fork_min_wave: int = _C.FORK_MIN_WAVE
+var fork_guaranteed_by_wave: int = _C.FORK_GUARANTEED_BY_WAVE
+var fork_always_wave: int = _C.FORK_ALWAYS_WAVE
+var fork_chance_w20: float = _C.FORK_CHANCE_W20
+var fork_chance_w30: float = _C.FORK_CHANCE_W30
+var fork_chance_w40: float = _C.FORK_CHANCE_W40
+var fork_candidates_early: int = _C.FORK_CANDIDATES_EARLY
+var fork_candidates_late: int = _C.FORK_CANDIDATES_LATE
+var fork_min_ext: int = _C.FORK_MIN_EXT
+var fork_max_ext: int = _C.FORK_MAX_EXT
+var fork_max_join_index: int = _C.FORK_MAX_JOIN_INDEX
+var forks_enabled: bool = true
 
 ## Logs of fallback relaxations and errors for diagnostics and tests.
 var relaxation_logs: Array[String] = []
@@ -132,6 +157,9 @@ func generate_initial_path(base_hex: Vector2i = Vector2i.ZERO, initial_length: i
 	var built: Array[Vector2i] = _build_initial_chain(base_hex, target_len, rng)
 	for h: Vector2i in built:
 		_append_committed_hex(h)
+	lanes.clear()
+	lanes.append(path_hexes.duplicate())
+	lane_opened_wave = [0]
 	grid.set_path_hexes(path_hexes)
 	_refresh_persistent_overlaps()
 	extension_index = 1
@@ -140,6 +168,12 @@ func generate_initial_path(base_hex: Vector2i = Vector2i.ZERO, initial_length: i
 
 func _reset_state() -> void:
 	path_hexes.clear()
+	lanes.clear()
+	lane_opened_wave.clear()
+	forks_committed_count = 0
+	preview_is_fork = false
+	fork_candidates.clear()
+	selected_fork_candidate_index = 0
 	ghost_path_hexes.clear()
 	preview_overlap_hexes.clear()
 	persistent_overlap_hexes.clear()
@@ -263,11 +297,21 @@ func _append_committed_hex(hex: Vector2i) -> void:
 			_last_corner_index = idx - 1
 
 	path_hexes.append(hex)
+	if lanes.is_empty():
+		var l0: Array[Vector2i] = [hex]
+		lanes.append(l0)
+		lane_opened_wave = [0]
+	else:
+		(lanes[0] as Array[Vector2i]).append(hex)
 	_path_index_map[hex] = idx
 	if _potential_overlap_set.erase(hex):
 		persistent_overlap_hexes.erase(hex)
 	grid.append_path_hex(hex, idx)
 
+	_register_hex_build_zone_and_overlaps(hex, idx)
+
+
+func _register_hex_build_zone_and_overlaps(hex: Vector2i, idx: int) -> void:
 	for off: Vector2i in _HexGrid.get_disk_2_offsets():
 		var bz: Vector2i = hex + off
 		_build_zone_map[bz] = true
@@ -279,6 +323,47 @@ func _append_committed_hex(hex: Vector2i) -> void:
 				_potential_overlap_set[bz] = true
 				if not grid.is_tower_occupied(bz):
 					persistent_overlap_hexes.append(bz)
+
+
+# --- Multi-Lane Queries ------------------------------------------------------
+
+func get_lane_count() -> int:
+	if not lanes.is_empty():
+		return lanes.size()
+	return 1 if not path_hexes.is_empty() else 0
+
+
+func get_lane(lane_id: int) -> Array[Vector2i]:
+	if lanes.is_empty():
+		return path_hexes
+	var idx: int = clampi(lane_id, 0, lanes.size() - 1)
+	return lanes[idx] as Array[Vector2i]
+
+
+func get_all_path_hexes() -> Array[Vector2i]:
+	if lanes.size() <= 1:
+		return path_hexes.duplicate()
+	var seen: Dictionary = {}
+	var out: Array[Vector2i] = []
+	for lane: Array in lanes:
+		for h_var: Variant in lane:
+			var h: Vector2i = h_var as Vector2i
+			if not seen.has(h):
+				seen[h] = true
+				out.append(h)
+	return out
+
+
+func get_lane_opened_wave(lane_id: int) -> int:
+	if lane_id <= 0 or lane_id >= lane_opened_wave.size():
+		return 0
+	return lane_opened_wave[lane_id]
+
+
+func get_lane_age_waves(lane_id: int, at_wave: int) -> int:
+	if lane_id <= 0:
+		return maxi(0, at_wave)
+	return maxi(0, at_wave - get_lane_opened_wave(lane_id))
 
 
 # --- Validation (H1 - H5) ----------------------------------------------------
@@ -1288,44 +1373,606 @@ func _average_extension_length() -> float:
 	return float(_total_extension_hexes) / float(_completed_extensions)
 
 
+# --- Fork Cadence, Candidate Generation & Selection --------------------------
+
+## Deterministic check whether the growth for [param boss_wave] (10, 20, 30...) should be a Fork.
+##   • Wave 10: Always false (0% fork chance).
+##   • Waves 20, 30, 40: Ramping chance (35% -> 50% -> 65%), guaranteed by Wave 30 if none yet.
+##   • Wave 50+: Always true (100% fork mode, 3 candidates).
+func should_fork_for_boss_wave(boss_wave: int) -> bool:
+	if not forks_enabled or boss_wave < fork_min_wave:
+		return false
+	if boss_wave >= fork_always_wave:
+		return true
+	if boss_wave >= fork_guaranteed_by_wave and forks_committed_count == 0:
+		return true
+	var rng := RandomNumberGenerator.new()
+	rng.seed = compute_extension_seed(run_seed, boss_wave * 97 + 777)
+	var chance: float = fork_chance_w20
+	if boss_wave >= 40:
+		chance = fork_chance_w40
+	elif boss_wave >= 30:
+		chance = fork_chance_w30
+	return rng.randf() < chance
+
+
+## Number of fork candidates offered at [param boss_wave] (2 before W50, 3 at W50+).
+func get_fork_candidate_count_for_boss_wave(boss_wave: int) -> int:
+	if boss_wave >= fork_always_wave:
+		return maxi(2, fork_candidates_late)
+	return maxi(2, fork_candidates_early)
+
+
+## Returns all tower-occupied hexes on [param hex_list].
+func _collect_condemned_tower_hexes(hex_list: Array[Vector2i]) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	for h: Vector2i in hex_list:
+		if grid.is_tower_occupied(h):
+			out.append(h)
+	return out
+
+
+## Returns the tower-occupied hexes on the currently selected fork preview route (empty if not a fork).
+func get_condemned_tower_hexes() -> Array[Vector2i]:
+	if not preview_is_fork or ghost_path_hexes.is_empty():
+		return []
+	return _collect_condemned_tower_hexes(ghost_path_hexes)
+
+
+## Refreshes condemned_hexes across all active fork_candidates when towers are placed or sold during preview.
+func _refresh_fork_candidate_condemned_hexes() -> void:
+	if not preview_is_fork or fork_candidates.is_empty():
+		return
+	for cand: Dictionary in fork_candidates:
+		var nh: Array[Vector2i] = cand.get("new_hexes", []) as Array[Vector2i]
+		cand["condemned_hexes"] = _collect_condemned_tower_hexes(nh)
+	if selected_fork_candidate_index >= 0 and selected_fork_candidate_index < fork_candidates.size():
+		_pending_preview_result = fork_candidates[selected_fork_candidate_index].duplicate(true)
+
+
+## Generates [param count_override] (or wave-appropriate 2..3) distinct fork candidates.
+func generate_fork_candidates(for_boss_wave: int = 20, count_override: int = -1) -> Array[Dictionary]:
+	if path_hexes.size() < 2:
+		generate_initial_path()
+	var desired_count: int = count_override if count_override > 0 else get_fork_candidate_count_for_boss_wave(for_boss_wave)
+	var ext_seed: int = compute_extension_seed(run_seed, extension_index * 31 + for_boss_wave)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = ext_seed
+
+	var is_new_lane: bool = (get_lane_count() < max_lanes)
+	var raw_pool: Array[Dictionary] = []
+
+	if is_new_lane:
+		raw_pool = _search_new_lane_fork_candidates(rng, fork_min_ext, fork_max_ext, ext_seed)
+		if raw_pool.size() < desired_count:
+			var fallback_pool: Array[Dictionary] = _search_new_lane_fork_candidates(rng, _C.FALLBACK_MIN_EXT, fork_min_ext, ext_seed)
+			for fc: Dictionary in fallback_pool:
+				raw_pool.append(fc)
+	else:
+		raw_pool = _search_existing_fork_extension_candidates(rng, fork_min_ext, fork_max_ext, ext_seed)
+		if raw_pool.size() < desired_count:
+			var fallback_ext: Array[Dictionary] = _search_existing_fork_extension_candidates(rng, _C.FALLBACK_MIN_EXT, fork_min_ext, ext_seed)
+			for fc: Dictionary in fallback_ext:
+				raw_pool.append(fc)
+
+	# Pick up to desired_count geographically distinct candidates (different exit sectors / endpoints)
+	var picked: Array[Dictionary] = []
+	var used_sectors: Dictionary = {}
+	for cand: Dictionary in raw_pool:
+		var sector_key: String = String(cand.get("sector_key", ""))
+		if not sector_key.is_empty() and not used_sectors.has(sector_key):
+			used_sectors[sector_key] = true
+			picked.append(cand)
+			if picked.size() >= desired_count:
+				break
+
+	if picked.size() < desired_count:
+		for cand: Dictionary in raw_pool:
+			if picked.has(cand):
+				continue
+			var nh: Array[Vector2i] = cand["new_hexes"] as Array[Vector2i]
+			var end_h: Vector2i = nh[nh.size() - 1]
+			var distinct_end: bool = true
+			for p: Dictionary in picked:
+				var p_nh: Array[Vector2i] = p["new_hexes"] as Array[Vector2i]
+				if _HexGrid.hex_distance(end_h, p_nh[p_nh.size() - 1]) < 3:
+					distinct_end = false
+					break
+			if distinct_end:
+				picked.append(cand)
+				if picked.size() >= desired_count:
+					break
+
+	if picked.size() < desired_count:
+		for cand: Dictionary in raw_pool:
+			if not picked.has(cand):
+				picked.append(cand)
+				if picked.size() >= desired_count:
+					break
+
+	# Sort picked candidates so Route A (index 0) is the least destructive (fewest condemned towers),
+	# breaking ties by higher score.
+	picked.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var ca: int = (a.get("condemned_hexes", []) as Array).size()
+		var cb: int = (b.get("condemned_hexes", []) as Array).size()
+		if ca != cb:
+			return ca < cb
+		return float(a.get("score", 0.0)) > float(b.get("score", 0.0))
+	)
+
+	var labels: Array[String] = ["Route A", "Route B", "Route C", "Route D"]
+	for i in range(picked.size()):
+		picked[i]["candidate_index"] = i
+		picked[i]["label"] = labels[mini(i, labels.size() - 1)]
+
+	return picked
+
+
+func _search_new_lane_fork_candidates(
+	rng: RandomNumberGenerator,
+	cur_min_len: int,
+	cur_max_len: int,
+	ext_seed: int
+) -> Array[Dictionary]:
+	var results: Array[Dictionary] = []
+	var seen_sigs: Dictionary = {}
+	var target_lane_id: int = get_lane_count()
+	var max_join: int = mini(fork_max_join_index, maxi(0, path_hexes.size() - 2))
+	var center: Vector2 = _bounding_center()
+	grid.ensure_chunks_around(path_hexes[0], cur_max_len + terrain_margin + 8)
+
+	for join_idx in range(max_join + 1):
+		var anchor_hex: Vector2i = path_hexes[join_idx]
+		for dir_idx in range(_C.HEX_DIRECTIONS.size()):
+			var start_dir: Vector2i = _C.HEX_DIRECTIONS[dir_idx]
+			var first_hex: Vector2i = anchor_hex + start_dir
+			if not _is_valid_fork_step(first_hex, 0, join_idx, {}):
+				continue
+			for attempt in range(18):
+				var target_len: int = rng.randi_range(cur_min_len, maxi(cur_min_len, cur_max_len))
+				var walk: Dictionary = _build_fork_walk_from(
+					first_hex, start_dir, join_idx, target_len, attempt, center, rng
+				)
+				if not bool(walk.get("valid", false)):
+					continue
+				var new_hexes: Array[Vector2i] = walk["new_hexes"] as Array[Vector2i]
+				var sig: String = "%d:%s->%s:%d" % [join_idx, str(new_hexes[0]), str(new_hexes[new_hexes.size() - 1]), new_hexes.size()]
+				if seen_sigs.has(sig):
+					continue
+				seen_sigs[sig] = true
+
+				var lane_hexes: Array[Vector2i] = path_hexes.slice(0, join_idx + 1)
+				lane_hexes.append_array(new_hexes)
+				var overlaps: Array[Vector2i] = _compute_new_overlap_hexes(new_hexes, walk["cand_index_map"] as Dictionary)
+				var condemned: Array[Vector2i] = _collect_condemned_tower_hexes(new_hexes)
+				var relaxations: Array[String] = []
+				var cand_dict: Dictionary = {
+					"is_fork": true,
+					"is_new_lane": true,
+					"target_lane_id": target_lane_id,
+					"join_index": join_idx,
+					"sector_key": "%d_%d" % [join_idx, dir_idx],
+					"new_hexes": new_hexes,
+					"lane_hexes": lane_hexes,
+					"corner_hexes": walk["corner_hexes"],
+					"overlap_hexes": overlaps,
+					"condemned_hexes": condemned,
+					"turn_sequence": walk["turn_sequence"],
+					"seed": ext_seed,
+					"candidates_tried": 18,
+					"relaxations_applied": relaxations,
+				}
+				cand_dict["score"] = _score_candidate(cand_dict) + float(overlaps.size()) * 6.0 - float(join_idx) * 4.0
+				results.append(cand_dict)
+
+	results.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return float(a["score"]) > float(b["score"])
+	)
+	return results
+
+
+func _search_existing_fork_extension_candidates(
+	rng: RandomNumberGenerator,
+	cur_min_len: int,
+	cur_max_len: int,
+	ext_seed: int
+) -> Array[Dictionary]:
+	var results: Array[Dictionary] = []
+	var seen_sigs: Dictionary = {}
+	var center: Vector2 = _bounding_center()
+
+	# Candidate pool across fork lanes (1..lanes.size()-1), sorted shortest-first
+	var fork_lane_ids: Array[int] = []
+	for lid in range(1, get_lane_count()):
+		fork_lane_ids.append(lid)
+	if fork_lane_ids.is_empty():
+		fork_lane_ids.append(0)
+	fork_lane_ids.sort_custom(func(a: int, b: int) -> bool:
+		return get_lane(a).size() < get_lane(b).size()
+	)
+
+	for target_lid: int in fork_lane_ids:
+		var base_lane: Array[Vector2i] = get_lane(target_lid)
+		if base_lane.size() < 2:
+			continue
+		var join_idx: int = base_lane.size() - 1
+		var spawn_hex: Vector2i = base_lane[join_idx]
+		var inc_dir: Vector2i = base_lane[join_idx] - base_lane[join_idx - 1]
+		grid.ensure_chunks_around(spawn_hex, cur_max_len + terrain_margin + 6)
+
+		for dir_step in [0, 1, -1]:
+			var start_dir: Vector2i = inc_dir if dir_step == 0 else _HexGrid.rotate_direction(inc_dir, dir_step)
+			var first_hex: Vector2i = spawn_hex + start_dir
+			if not _is_valid_fork_ext_step(first_hex, base_lane, 0, {}):
+				continue
+			for attempt in range(16):
+				var target_len: int = rng.randi_range(cur_min_len, maxi(cur_min_len, cur_max_len))
+				var walk: Dictionary = _build_fork_ext_walk_from(
+					first_hex, start_dir, base_lane, target_len, attempt, center, rng
+				)
+				if not bool(walk.get("valid", false)):
+					continue
+				var new_hexes: Array[Vector2i] = walk["new_hexes"] as Array[Vector2i]
+				var sig: String = "L%d:%s->%s:%d" % [target_lid, str(new_hexes[0]), str(new_hexes[new_hexes.size() - 1]), new_hexes.size()]
+				if seen_sigs.has(sig):
+					continue
+				seen_sigs[sig] = true
+
+				var lane_hexes: Array[Vector2i] = base_lane.duplicate()
+				lane_hexes.append_array(new_hexes)
+				var overlaps: Array[Vector2i] = _compute_new_overlap_hexes(new_hexes, walk["cand_index_map"] as Dictionary)
+				var condemned: Array[Vector2i] = _collect_condemned_tower_hexes(new_hexes)
+				var relaxations: Array[String] = []
+				var cand_dict: Dictionary = {
+					"is_fork": true,
+					"is_new_lane": false,
+					"target_lane_id": target_lid,
+					"join_index": join_idx,
+					"sector_key": "L%d_%d" % [target_lid, dir_step],
+					"new_hexes": new_hexes,
+					"lane_hexes": lane_hexes,
+					"corner_hexes": walk["corner_hexes"],
+					"overlap_hexes": overlaps,
+					"condemned_hexes": condemned,
+					"turn_sequence": walk["turn_sequence"],
+					"seed": ext_seed,
+					"candidates_tried": 16,
+					"relaxations_applied": relaxations,
+				}
+				cand_dict["score"] = _score_candidate(cand_dict) + float(overlaps.size()) * 6.0
+				results.append(cand_dict)
+
+	results.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return float(a["score"]) > float(b["score"])
+	)
+	return results
+
+
+func _build_fork_walk_from(
+	first_hex: Vector2i,
+	start_dir: Vector2i,
+	join_idx: int,
+	target_len: int,
+	attempt: int,
+	center: Vector2,
+	rng: RandomNumberGenerator
+) -> Dictionary:
+	var new_hexes: Array[Vector2i] = [first_hex]
+	var corner_hexes: Array[Vector2i] = []
+	var cand_index_map: Dictionary = {first_hex: 0}
+	var turn_tokens: Array[String] = []
+	var cur_hex: Vector2i = first_hex
+	var cur_dir: Vector2i = start_dir
+	var straight_since_corner: int = 1
+	var curl_sign: int = 1 if (attempt % 2 == 0) else -1
+
+	for step in range(1, target_len):
+		var can_turn: bool = (straight_since_corner >= min_corner_spacing) and (step <= target_len - 2)
+		var dirs: Array[Vector2i] = [cur_dir]
+		if can_turn:
+			var d_curl: Vector2i = _HexGrid.rotate_direction(cur_dir, curl_sign)
+			var d_counter: Vector2i = _HexGrid.rotate_direction(cur_dir, -curl_sign)
+			if rng.randf() < 0.55:
+				dirs = [d_curl, cur_dir, d_counter]
+			else:
+				dirs = _sort_dirs_by_openness(cur_hex, [cur_dir, d_curl, d_counter], center, cand_index_map, rng)
+
+		var chosen_dir: Vector2i = Vector2i.ZERO
+		var chosen_next: Vector2i = Vector2i.ZERO
+		for d: Vector2i in dirs:
+			var nh: Vector2i = cur_hex + d
+			if not _is_valid_fork_step(nh, step, join_idx, cand_index_map):
+				continue
+			if d != cur_dir:
+				# Must be able to take at least min_corner_spacing straight steps after turning
+				var next_after_turn: Vector2i = nh + d
+				if step + 1 < target_len and not _is_valid_fork_step(next_after_turn, step + 1, join_idx, cand_index_map):
+					continue
+			chosen_dir = d
+			chosen_next = nh
+			break
+
+		if chosen_dir == Vector2i.ZERO:
+			return {"valid": false}
+		if chosen_dir != cur_dir:
+			turn_tokens.append(str(_HexGrid.turn_step(cur_dir, chosen_dir)))
+			corner_hexes.append(cur_hex)
+			straight_since_corner = 1
+			cur_dir = chosen_dir
+		else:
+			straight_since_corner += 1
+		cur_hex = chosen_next
+		cand_index_map[cur_hex] = step
+		new_hexes.append(cur_hex)
+
+	return {
+		"valid": true,
+		"new_hexes": new_hexes,
+		"corner_hexes": corner_hexes,
+		"cand_index_map": cand_index_map,
+		"turn_sequence": ",".join(turn_tokens),
+	}
+
+
+func _is_valid_fork_step(
+	next_hex: Vector2i,
+	step_in_fork: int,
+	join_idx: int,
+	cand_index_map: Dictionary
+) -> bool:
+	grid.ensure_chunks_around(next_hex, 2)
+	if _path_index_map.has(next_hex) or cand_index_map.has(next_hex):
+		return false
+	# Forks NEVER step on BLOCKED terrain, but ARE allowed to step on tower-occupied hexes (condemning them).
+	if grid.is_blocked(next_hex):
+		return false
+	for d: Vector2i in _C.HEX_DIRECTIONS:
+		var nb: Vector2i = next_hex + d
+		if cand_index_map.has(nb):
+			if absi(step_in_fork - int(cand_index_map[nb])) > 1:
+				return false
+		if _path_index_map.has(nb):
+			if step_in_fork == 0:
+				# Step 0 leaves path_hexes[join_idx]; allow adjacency only within the base join hub (0..join_idx+1)
+				var nb_idx: int = int(_path_index_map[nb])
+				if nb_idx > join_idx + 1:
+					return false
+			else:
+				return false
+	return true
+
+
+func _build_fork_ext_walk_from(
+	first_hex: Vector2i,
+	start_dir: Vector2i,
+	base_lane: Array[Vector2i],
+	target_len: int,
+	attempt: int,
+	center: Vector2,
+	rng: RandomNumberGenerator
+) -> Dictionary:
+	var new_hexes: Array[Vector2i] = [first_hex]
+	var corner_hexes: Array[Vector2i] = []
+	var cand_index_map: Dictionary = {first_hex: 0}
+	var turn_tokens: Array[String] = []
+	var cur_hex: Vector2i = first_hex
+	var cur_dir: Vector2i = start_dir
+	var straight_since_corner: int = 1
+	var curl_sign: int = 1 if (attempt % 2 == 0) else -1
+
+	for step in range(1, target_len):
+		var can_turn: bool = (straight_since_corner >= min_corner_spacing) and (step <= target_len - 2)
+		var dirs: Array[Vector2i] = [cur_dir]
+		if can_turn:
+			var d_curl: Vector2i = _HexGrid.rotate_direction(cur_dir, curl_sign)
+			var d_counter: Vector2i = _HexGrid.rotate_direction(cur_dir, -curl_sign)
+			if rng.randf() < 0.55:
+				dirs = [d_curl, cur_dir, d_counter]
+			else:
+				dirs = _sort_dirs_by_openness(cur_hex, [cur_dir, d_curl, d_counter], center, cand_index_map, rng)
+
+		var chosen_dir: Vector2i = Vector2i.ZERO
+		var chosen_next: Vector2i = Vector2i.ZERO
+		for d: Vector2i in dirs:
+			var nh: Vector2i = cur_hex + d
+			if not _is_valid_fork_ext_step(nh, base_lane, step, cand_index_map):
+				continue
+			chosen_dir = d
+			chosen_next = nh
+			break
+
+		if chosen_dir == Vector2i.ZERO:
+			return {"valid": false}
+		if chosen_dir != cur_dir:
+			turn_tokens.append(str(_HexGrid.turn_step(cur_dir, chosen_dir)))
+			corner_hexes.append(cur_hex)
+			straight_since_corner = 1
+			cur_dir = chosen_dir
+		else:
+			straight_since_corner += 1
+		cur_hex = chosen_next
+		cand_index_map[cur_hex] = step
+		new_hexes.append(cur_hex)
+
+	return {
+		"valid": true,
+		"new_hexes": new_hexes,
+		"corner_hexes": corner_hexes,
+		"cand_index_map": cand_index_map,
+		"turn_sequence": ",".join(turn_tokens),
+	}
+
+
+func _is_valid_fork_ext_step(
+	next_hex: Vector2i,
+	base_lane: Array[Vector2i],
+	step_in_fork: int,
+	cand_index_map: Dictionary
+) -> bool:
+	grid.ensure_chunks_around(next_hex, 2)
+	if _path_index_map.has(next_hex) or cand_index_map.has(next_hex):
+		return false
+	if grid.is_blocked(next_hex):
+		return false
+	var tail_hex: Vector2i = base_lane[base_lane.size() - 1]
+	for d: Vector2i in _C.HEX_DIRECTIONS:
+		var nb: Vector2i = next_hex + d
+		if cand_index_map.has(nb) and absi(step_in_fork - int(cand_index_map[nb])) > 1:
+			return false
+		if _path_index_map.has(nb):
+			if step_in_fork == 0 and nb == tail_hex:
+				continue
+			return false
+	return true
+
+
+## Selects one of the active [member fork_candidates] by index (0..count-1) during the preview window.
+func select_fork_candidate(candidate_idx: int) -> bool:
+	if not preview_is_fork or fork_candidates.is_empty():
+		return false
+	if candidate_idx < 0 or candidate_idx >= fork_candidates.size():
+		return false
+	selected_fork_candidate_index = candidate_idx
+	var chosen: Dictionary = fork_candidates[selected_fork_candidate_index]
+	chosen["condemned_hexes"] = _collect_condemned_tower_hexes(chosen["new_hexes"] as Array[Vector2i])
+	_pending_preview_result = chosen.duplicate(true)
+	ghost_path_hexes = (chosen["new_hexes"] as Array[Vector2i]).duplicate()
+	_update_preview_reservations_and_overlaps()
+	return true
+
+
 # --- Preview & commit lifecycle ----------------------------------------------
 
-## Generates and activates the preview for the next extension (called
-## PREVIEW_LEAD_WAVES = 2 waves before the boss wave, e.g. wave 8 for wave 10).
+## Generates and activates the preview for the next extension or fork (called
+## PREVIEW_LEAD_WAVES = 2 waves before the boss wave, e.g. wave 8 for wave 10, wave 18 for wave 20).
 ## Immediately reserves previewed path hexes and any hex in the build zone ONLY
-## of the previewed extension.
-func preview_next_extension() -> Dictionary:
+## of the previewed extension/fork.
+func preview_next_extension(for_boss_wave: int = -1) -> Dictionary:
 	if not _pending_preview_result.is_empty():
 		return _pending_preview_result
 
+	var target_boss_wave: int = for_boss_wave
+	if target_boss_wave < 0 and current_wave > 0:
+		target_boss_wave = current_wave + preview_lead_waves
+
+	if target_boss_wave >= fork_min_wave and should_fork_for_boss_wave(target_boss_wave):
+		var cands: Array[Dictionary] = generate_fork_candidates(target_boss_wave)
+		if not cands.is_empty():
+			preview_is_fork = true
+			fork_candidates = cands
+			select_fork_candidate(0)
+			return _pending_preview_result
+
+	preview_is_fork = false
+	fork_candidates.clear()
+	selected_fork_candidate_index = 0
 	var result: Dictionary = generate_extension_candidate(extension_index)
+	result["is_fork"] = false
+	result["lane_id"] = 0
 	_pending_preview_result = result
 	ghost_path_hexes = (result["new_hexes"] as Array[Vector2i]).duplicate()
 	_update_preview_reservations_and_overlaps()
 	return result
 
 
-## Commits the next extension. If a preview was already generated, commits the
-## EXACT previewed extension without regenerating. Otherwise generates and
-## commits immediately.
+## Explicitly previews a fork with [param candidate_count] candidates (used by tests and debug tools).
+func preview_fork(for_boss_wave: int = 20, candidate_count: int = -1) -> Dictionary:
+	_pending_preview_result.clear()
+	var cands: Array[Dictionary] = generate_fork_candidates(for_boss_wave, candidate_count)
+	if cands.is_empty():
+		return preview_next_extension(0)
+	preview_is_fork = true
+	fork_candidates = cands
+	select_fork_candidate(0)
+	return _pending_preview_result
+
+
+## Commits the next extension or fork. If a preview was already generated, commits the
+## EXACT previewed extension (or currently selected fork candidate) without regenerating.
 func commit_extension() -> Dictionary:
 	var result: Dictionary
+	var was_fork: bool = preview_is_fork
 	if not _pending_preview_result.is_empty():
-		result = _pending_preview_result.duplicate(true)
+		if preview_is_fork and selected_fork_candidate_index >= 0 and selected_fork_candidate_index < fork_candidates.size():
+			result = fork_candidates[selected_fork_candidate_index].duplicate(true)
+		else:
+			result = _pending_preview_result.duplicate(true)
 	else:
 		result = generate_extension_candidate(extension_index)
+		result["is_fork"] = false
+		result["lane_id"] = 0
 
 	var new_hexes: Array[Vector2i] = result["new_hexes"]
+	var is_fork_commit: bool = bool(result.get("is_fork", was_fork))
 	_pending_preview_result.clear()
+	preview_is_fork = false
+	fork_candidates.clear()
+	selected_fork_candidate_index = 0
 	ghost_path_hexes.clear()
 	preview_overlap_hexes.clear()
 	grid.clear_reserved_hexes()
 
 	if not new_hexes.is_empty():
-		for h: Vector2i in new_hexes:
-			_append_committed_hex(h)
-		_total_extension_hexes += new_hexes.size()
-		_completed_extensions += 1
+		if is_fork_commit:
+			var is_new_l: bool = bool(result.get("is_new_lane", get_lane_count() < max_lanes))
+			var target_lid: int = int(result.get("target_lane_id", get_lane_count()))
+			var condemned: Array[Vector2i] = _collect_condemned_tower_hexes(new_hexes)
+			result["condemned_hexes"] = condemned
+
+			if is_new_l and get_lane_count() < max_lanes:
+				var join_idx: int = clampi(int(result.get("join_index", 0)), 0, maxi(0, path_hexes.size() - 1))
+				var new_lane: Array[Vector2i] = path_hexes.slice(0, join_idx + 1)
+				new_lane.append_array(new_hexes)
+				lanes.append(new_lane)
+				var opened_w: int = current_wave if current_wave > 0 else fork_min_wave
+				lane_opened_wave.append(opened_w)
+				target_lid = lanes.size() - 1
+				for i in range(new_hexes.size()):
+					var fh: Vector2i = new_hexes[i]
+					var pseudo_idx: int = join_idx + 1 + i
+					_min_q = mini(_min_q, fh.x)
+					_max_q = maxi(_max_q, fh.x)
+					_min_r = mini(_min_r, fh.y)
+					_max_r = maxi(_max_r, fh.y)
+					_path_index_map[fh] = pseudo_idx
+					if _potential_overlap_set.erase(fh):
+						persistent_overlap_hexes.erase(fh)
+					grid.append_path_hex(fh, pseudo_idx)
+					_register_hex_build_zone_and_overlaps(fh, pseudo_idx)
+			else:
+				target_lid = clampi(target_lid, 0, maxi(0, lanes.size() - 1))
+				if target_lid == 0:
+					for h: Vector2i in new_hexes:
+						_append_committed_hex(h)
+				else:
+					var existing_lane: Array[Vector2i] = lanes[target_lid] as Array[Vector2i]
+					var base_sz: int = existing_lane.size()
+					for i in range(new_hexes.size()):
+						var fh: Vector2i = new_hexes[i]
+						var pseudo_idx: int = base_sz + i
+						existing_lane.append(fh)
+						_min_q = mini(_min_q, fh.x)
+						_max_q = maxi(_max_q, fh.x)
+						_min_r = mini(_min_r, fh.y)
+						_max_r = maxi(_max_r, fh.y)
+						_path_index_map[fh] = pseudo_idx
+						if _potential_overlap_set.erase(fh):
+							persistent_overlap_hexes.erase(fh)
+						grid.append_path_hex(fh, pseudo_idx)
+						_register_hex_build_zone_and_overlaps(fh, pseudo_idx)
+
+			result["is_fork"] = true
+			result["lane_id"] = target_lid
+			forks_committed_count += 1
+			_total_extension_hexes += new_hexes.size()
+			_completed_extensions += 1
+		else:
+			for h: Vector2i in new_hexes:
+				_append_committed_hex(h)
+			result["is_fork"] = false
+			result["lane_id"] = 0
+			_total_extension_hexes += new_hexes.size()
+			_completed_extensions += 1
 
 		var seq: String = String(result.get("turn_sequence", ""))
 		_previous_turn_sequences.append(seq)
@@ -1530,6 +2177,7 @@ func place_tower(hex: Vector2i, occupant: Variant = true) -> bool:
 	_refresh_persistent_overlaps()
 	if not ghost_path_hexes.is_empty():
 		_update_preview_reservations_and_overlaps()
+		_refresh_fork_candidate_condemned_hexes()
 	return true
 
 
@@ -1541,4 +2189,5 @@ func remove_tower(hex: Vector2i) -> bool:
 	_refresh_persistent_overlaps()
 	if not ghost_path_hexes.is_empty():
 		_update_preview_reservations_and_overlaps()
+		_refresh_fork_candidate_condemned_hexes()
 	return true

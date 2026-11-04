@@ -116,6 +116,15 @@ func _build_ui() -> void:
 		_gs().call("debug_force_growth")
 		refresh()
 	)
+	_add_cmd_btn(row2, "Preview Fork", func() -> void:
+		var gs: Node = _gs()
+		var pgen: PathGenerator = gs.get("path_generator") as PathGenerator
+		if pgen != null:
+			var p_res: Dictionary = pgen.preview_fork(maxi(20, int(gs.get("current_wave"))))
+			gs.emit_signal("path_preview_ready", p_res)
+			gs.emit_signal("fork_preview_ready", pgen.fork_candidates, pgen.selected_fork_candidate_index)
+		refresh()
+	)
 
 	# Command buttons row 3: Spawn Unit / Boss & Set Seed
 	var row3 := HBoxContainer.new()
@@ -321,6 +330,18 @@ func refresh() -> void:
 			obj.get_state_hexes(ObjectiveInstance.State.CLAIMED).size(),
 			obj.get_state_hexes(ObjectiveInstance.State.CAPTURED).size(),
 			obj.get_aura_radius()
+		])
+	var pgen: PathGenerator = gs.get("path_generator") as PathGenerator
+	if pgen != null and tsys != null:
+		var b_pool: Dictionary = tsys.get_total_bounty_pool()
+		lines.append("Lanes: %d/%d | Forks: %d | PreviewFork: %s (%d cands) | Bounty: +%dO/+%dS" % [
+			pgen.get_lane_count(),
+			pgen.max_lanes,
+			pgen.forks_committed_count,
+			str(pgen.preview_is_fork),
+			pgen.fork_candidates.size(),
+			int(b_pool.get("offerings", 0)),
+			int(b_pool.get("scrap", 0))
 		])
 
 	if roster != null:

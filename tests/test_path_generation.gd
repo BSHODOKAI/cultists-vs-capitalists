@@ -464,3 +464,56 @@ func test_11_persistent_overlap_hexes_stays_correct_after_placements_removals_an
 		gen.persistent_overlap_hexes.size() == count_before_place,
 		"persistent_overlap_hexes count must be restored after tower removal"
 	)
+
+
+# --- Test 12: Fork cadence, 2-vs-3 candidates, player selection & max-3-lanes cap
+
+func test_12_fork_cadence_candidate_selection_and_max_3_lanes_cap() -> void:
+	var gen := _PathGen.new(424242)
+	gen.generate_initial_path()
+	assert(gen.get_lane_count() == 1, "Initial path must have 1 lane")
+
+	# 1. Wave 10 is NEVER a fork; Wave 30 is GUARANTEED if Wave 20 did not fork; Wave 50+ is ALWAYS a fork
+	assert(not gen.should_fork_for_boss_wave(10), "Wave 10 must never fork")
+	assert(gen.should_fork_for_boss_wave(30), "Wave 30 must guarantee a fork when forks_committed_count == 0")
+	assert(gen.should_fork_for_boss_wave(50), "Wave 50+ must always fork")
+	assert(gen.get_fork_candidate_count_for_boss_wave(20) == 2, "Before Wave 50, fork preview must offer 2 candidates")
+	assert(gen.get_fork_candidate_count_for_boss_wave(50) == 3, "At Wave 50+, fork preview must offer 3 candidates")
+
+	# 2. Preview a Wave-30 fork (2 candidates), switch between Route A (0) and Route B (1), and commit Route B
+	var prev_w30: Dictionary = gen.preview_next_extension(30)
+	assert(gen.preview_is_fork, "Wave 30 preview must activate preview_is_fork")
+	assert(gen.fork_candidates.size() == 2, "Wave 30 fork preview must generate 2 candidates, got %d" % gen.fork_candidates.size())
+	var cand_0_hexes: Array[Vector2i] = (gen.fork_candidates[0]["new_hexes"] as Array[Vector2i]).duplicate()
+	var cand_1_hexes: Array[Vector2i] = (gen.fork_candidates[1]["new_hexes"] as Array[Vector2i]).duplicate()
+	assert(cand_0_hexes != cand_1_hexes, "Fork candidates Route A and Route B must be distinct routes")
+	assert(gen.ghost_path_hexes == cand_0_hexes, "Default selected candidate 0 must populate ghost_path_hexes")
+
+	assert(gen.select_fork_candidate(1), "Selecting candidate 1 (Route B) must succeed")
+	assert(gen.selected_fork_candidate_index == 1, "selected_fork_candidate_index must be 1")
+	assert(gen.ghost_path_hexes == cand_1_hexes, "ghost_path_hexes must update to candidate 1")
+
+	var commit_1: Dictionary = gen.commit_extension()
+	assert(bool(commit_1.get("is_fork", false)), "Committed growth must be flagged is_fork=true")
+	assert(gen.get_lane_count() == 2, "Committing first fork must create Lane 1 (total 2 lanes)")
+	var lane_1: Array[Vector2i] = gen.get_lane(1)
+	assert(lane_1[0] == gen.path_hexes[0], "Fork Lane 1 must start at the shared Sanctum base at index 0")
+	assert(lane_1.slice(lane_1.size() - cand_1_hexes.size()) == cand_1_hexes, "Committed Lane 1 must end with exact Route B hexes")
+
+	# 3. Preview a Wave-50 fork (3 candidates), commit Lane 2 (reaching max_lanes = 3), then verify a 3rd fork extends an existing fork lane without exceeding 3 lanes
+	var _prev_w50: Dictionary = gen.preview_next_extension(50)
+	assert(gen.preview_is_fork, "Wave 50 preview must be a fork")
+	assert(gen.fork_candidates.size() == 3, "Wave 50 fork preview must offer 3 candidates, got %d" % gen.fork_candidates.size())
+	gen.commit_extension()
+	assert(gen.get_lane_count() == 3, "Committing second fork must reach max_lanes = 3")
+
+	var lane_1_len_before: int = gen.get_lane(1).size()
+	var lane_2_len_before: int = gen.get_lane(2).size()
+	var _prev_w60: Dictionary = gen.preview_next_extension(60)
+	assert(gen.preview_is_fork, "Wave 60 preview must still be a fork choice")
+	gen.commit_extension()
+	assert(gen.get_lane_count() == 3, "Total lanes must remain capped at max_lanes = 3")
+	assert(
+		gen.get_lane(1).size() > lane_1_len_before or gen.get_lane(2).size() > lane_2_len_before,
+		"Once at 3 lanes, fork commits must extend one of the fork lanes"
+	)

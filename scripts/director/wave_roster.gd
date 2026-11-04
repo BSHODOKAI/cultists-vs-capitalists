@@ -43,6 +43,14 @@ var unspent_budget: float = 0.0
 var wave_time_window: float = 36.0
 var max_deliverable_units: int = 60
 
+## Multi-lane fork metadata for this wave:
+var lane_count: int = 1
+var fork_budget: float = 0.0
+## Maps fork lane_id (int >= 1) -> faction_id (String).
+var fork_factions: Dictionary = {}
+## Maps lane_id (int >= 0) -> regular unit count scheduled on that lane.
+var lane_unit_counts: Dictionary = {0: 0}
+
 ## Array of {
 ##   "unit_id": String,
 ##   "display_name": String,

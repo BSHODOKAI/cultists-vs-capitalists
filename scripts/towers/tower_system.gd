@@ -48,12 +48,15 @@ signal tower_damaged_enemy(tower_id: int, tower_type: String, unit_id: int, unit
 signal tower_cooldown_used(tower_id: int, tower_type: String, ability_id: String, hex: Vector2i)
 signal ability_telegraphed(event: Dictionary)
 signal loss_report_generated(report: LossReport)
+signal lane_bounty_paid(lane_id: int, unit_id: int, offerings_paid: int, scrap_paid: int, offerings_remaining: int, scrap_remaining: int)
 
 # --- Configuration & Grid state ----------------------------------------------
 var balance: TowerBalanceData
 var unit_balance: UnitBalanceData
 var grid: HexGrid
 var path_hexes: Array[Vector2i] = []
+## Each element is an Array[Vector2i] representing one lane from index 0 (base) to spawn.
+var lanes: Array[Array] = []
 var tower_defs: Dictionary = {}
 var upgrade_defs: Dictionary = {}
 var unit_defs: Dictionary = {}
@@ -66,6 +69,10 @@ var lives: int = _Balance.DEFAULT_STARTING_LIVES
 var corruption: int = 0
 ## Rites: Corruption spent as a resource. Spendable on run-wide boons.
 var rites: int = 0
+## How many Rites have EVER been drawn this run. The tower panel keeps the Rite upgrade
+## branch hidden until the cult has received its first Rite, so a player who cannot use it
+## is not shown a dead button (0 Rites, no Reservoir held) that also spoils the branch.
+var rites_drawn_total: int = 0
 ## Corporate Attention accrued by drawing Rites. Accrues SINCE the last reckoning:
 ## it scales how bad the next Rogue wave is and resets when that wave arrives.
 var rite_debt: int = 0
@@ -116,6 +123,9 @@ var _next_blocker_id: int = 1
 var towers: Dictionary = {}
 ## Hex lookup: Vector2i -> TowerInstance.
 var towers_by_hex: Dictionary = {}
+## Per-lane salvage bounty pool from towers crushed by a fork commit:
+## lane_id (int) -> { "offerings": int, "scrap": int }
+var lane_bounty_pools: Dictionary = {}
 ## Active enemy units on the path.
 var units: Array[CombatUnit] = []
 ## Active ground puddles (e.g. ichor_bloom):
@@ -159,10 +169,59 @@ func _init(
 
 func set_path(ordered_path: Array[Vector2i]) -> void:
 	path_hexes = ordered_path.duplicate()
+	lanes.clear()
+	if not path_hexes.is_empty():
+		lanes.append(path_hexes.duplicate())
 	grid.set_path_hexes(path_hexes)
 	for t: TowerInstance in towers.values():
 		if t.get_type_id() == "the_congregation":
 			_sync_congregation_blockers(t)
+
+
+func set_lanes(p_lanes: Array) -> void:
+	lanes.clear()
+	for l_var: Variant in p_lanes:
+		if l_var is Array:
+			var arr: Array[Vector2i] = []
+			for h_var: Variant in (l_var as Array):
+				arr.append(h_var as Vector2i)
+			if not arr.is_empty():
+				lanes.append(arr)
+	if not lanes.is_empty():
+		path_hexes = lanes[0].duplicate()
+	else:
+		path_hexes.clear()
+	grid.set_path_hexes(get_all_path_hexes())
+	for t: TowerInstance in towers.values():
+		if t.get_type_id() == "the_congregation":
+			_sync_congregation_blockers(t)
+
+
+func get_lane_count() -> int:
+	if not lanes.is_empty():
+		return lanes.size()
+	return 1 if not path_hexes.is_empty() else 0
+
+
+func get_lane_hexes(lane_id: int = 0) -> Array[Vector2i]:
+	if lanes.is_empty():
+		return path_hexes
+	var idx: int = clampi(lane_id, 0, lanes.size() - 1)
+	return lanes[idx] as Array[Vector2i]
+
+
+func get_all_path_hexes() -> Array[Vector2i]:
+	if lanes.size() <= 1:
+		return path_hexes.duplicate()
+	var seen: Dictionary = {}
+	var out: Array[Vector2i] = []
+	for lane: Array in lanes:
+		for h_var: Variant in lane:
+			var h: Vector2i = h_var as Vector2i
+			if not seen.has(h):
+				seen[h] = true
+				out.append(h)
+	return out
 
 
 # --- Wave type queries -------------------------------------------------------
@@ -300,8 +359,15 @@ func draw_rites(count: int = 1) -> bool:
 	var corruption_paid: int = get_rite_cost() * n
 	corruption = maxi(balance.corruption_min, corruption - corruption_paid)
 	rites += n
+	rites_drawn_total += n
 	rite_debt += maxi(0, balance.rite_debt_per_rite) * n
 	return true
+
+
+## True once the cult holds a Rite or has ever drawn one: the gate on offering the Rite
+## upgrade branch at all.
+func has_ever_drawn_rite() -> bool:
+	return rites > 0 or rites_drawn_total > 0
 
 
 ## Total Corporate Attention: current Corruption plus outstanding Rite debt.
@@ -381,6 +447,12 @@ func get_tower_build_cost(tower_id_or_def: Variant) -> int:
 
 ## True when [param hex] is within hex distance <= build_distance (2) of at least one path hex.
 func is_within_build_distance_of_path(hex: Vector2i) -> bool:
+	if lanes.size() > 1:
+		for lane: Array in lanes:
+			for ph_var: Variant in lane:
+				if _HexGrid.hex_distance(hex, ph_var as Vector2i) <= balance.build_distance:
+					return true
+		return false
 	for ph: Vector2i in path_hexes:
 		if _HexGrid.hex_distance(hex, ph) <= balance.build_distance:
 			return true
@@ -389,6 +461,12 @@ func is_within_build_distance_of_path(hex: Vector2i) -> bool:
 
 ## True when [param hex] is directly adjacent (hex distance == 1) to at least one path hex.
 func is_adjacent_to_path(hex: Vector2i) -> bool:
+	if lanes.size() > 1:
+		for lane: Array in lanes:
+			for ph_var: Variant in lane:
+				if _HexGrid.hex_distance(hex, ph_var as Vector2i) == 1:
+					return true
+		return false
 	for ph: Vector2i in path_hexes:
 		if _HexGrid.hex_distance(hex, ph) == 1:
 			return true
@@ -402,6 +480,10 @@ func can_place_at_hex(hex: Vector2i) -> bool:
 		return false
 	if grid.is_path_hex(hex) or path_hexes.has(hex):
 		return false
+	if lanes.size() > 1:
+		for lane: Array in lanes:
+			if lane.has(hex):
+				return false
 	if grid.is_reserved(hex):
 		return false
 	if grid.is_blocked(hex):
@@ -489,6 +571,107 @@ func sell_tower(tower_or_hex: Variant) -> Dictionary:
 		"offerings_refund": off_refund,
 		"scrap_refund": scrap_refund,
 		"total_refund": off_refund + scrap_refund,
+	}
+
+
+# --- Fork Tower Condemnation & Lane Kill Bounty Pool -------------------------
+
+## Returns { "offerings": int, "scrap": int } remaining in [param lane_id]'s bounty pool.
+func get_lane_bounty_pool(lane_id: int) -> Dictionary:
+	if not lane_bounty_pools.has(lane_id):
+		return {"offerings": 0, "scrap": 0}
+	var p: Dictionary = lane_bounty_pools[lane_id] as Dictionary
+	return {
+		"offerings": int(p.get("offerings", 0)),
+		"scrap": int(p.get("scrap", 0)),
+	}
+
+
+## Returns { "offerings": int, "scrap": int } summed across all active lane bounty pools.
+func get_total_bounty_pool() -> Dictionary:
+	var tot_off: int = 0
+	var tot_scr: int = 0
+	for lid_var: Variant in lane_bounty_pools.keys():
+		var p: Dictionary = lane_bounty_pools[lid_var] as Dictionary
+		tot_off += int(p.get("offerings", 0))
+		tot_scr += int(p.get("scrap", 0))
+	return {"offerings": tot_off, "scrap": tot_scr}
+
+
+## Preview helper: computes 100% of total invested Offerings & Scrap for any towers on [param hexes].
+func compute_condemned_bounty_for_hexes(hexes: Array[Vector2i]) -> Dictionary:
+	var count: int = 0
+	var off_sum: int = 0
+	var scr_sum: int = 0
+	var ids: Array[int] = []
+	for h: Vector2i in hexes:
+		if towers_by_hex.has(h):
+			var inst: TowerInstance = towers_by_hex[h] as TowerInstance
+			if inst != null:
+				count += 1
+				var o_inv: int = inst.total_offerings_spent if inst.total_offerings_spent > 0 else (inst.def.cost if inst.def != null and not inst.def.is_scrap_build_cost() else 0)
+				var s_inv: int = inst.total_scrap_spent if inst.total_scrap_spent > 0 else (inst.def.cost if inst.def != null and inst.def.is_scrap_build_cost() else 0)
+				off_sum += o_inv
+				scr_sum += s_inv
+				ids.append(inst.tower_id)
+	return {
+		"tower_count": count,
+		"offerings": off_sum,
+		"scrap": scr_sum,
+		"tower_ids": ids,
+	}
+
+
+## Crushes all placed towers standing on [param hexes] when a fork commits on [param lane_id].
+## Adds 100% of each crushed tower's invested Offerings & Scrap into [member lane_bounty_pools][lane_id].
+func crush_towers_on_hexes(hexes: Array[Vector2i], lane_id: int) -> Dictionary:
+	var crushed_list: Array[Dictionary] = []
+	var added_off: int = 0
+	var added_scr: int = 0
+
+	for h: Vector2i in hexes:
+		if not towers_by_hex.has(h):
+			continue
+		var inst: TowerInstance = towers_by_hex[h] as TowerInstance
+		if inst == null:
+			continue
+		var o_inv: int = inst.total_offerings_spent if inst.total_offerings_spent > 0 else (inst.def.cost if inst.def != null and not inst.def.is_scrap_build_cost() else 0)
+		var s_inv: int = inst.total_scrap_spent if inst.total_scrap_spent > 0 else (inst.def.cost if inst.def != null and inst.def.is_scrap_build_cost() else 0)
+		added_off += o_inv
+		added_scr += s_inv
+
+		for b: Dictionary in inst.active_blockers:
+			var bid: int = int(b["id"])
+			for u: CombatUnit in units:
+				if u.engaged_blocker_id == bid:
+					u.engaged_blocker_id = -1
+
+		crushed_list.append({
+			"tower_id": inst.tower_id,
+			"hex": inst.hex,
+			"type": inst.get_type_id(),
+			"offerings": o_inv,
+			"scrap": s_inv,
+		})
+		towers.erase(inst.tower_id)
+		towers_by_hex.erase(h)
+		grid.remove_tower(h)
+
+	if added_off > 0 or added_scr > 0:
+		var cur_pool: Dictionary = get_lane_bounty_pool(lane_id)
+		lane_bounty_pools[lane_id] = {
+			"offerings": int(cur_pool["offerings"]) + added_off,
+			"scrap": int(cur_pool["scrap"]) + added_scr,
+		}
+
+	if not crushed_list.is_empty():
+		_invalidate_all_tower_caches()
+
+	return {
+		"lane_id": lane_id,
+		"crushed": crushed_list,
+		"bounty_offerings_added": added_off,
+		"bounty_scrap_added": added_scr,
 	}
 
 
@@ -1076,10 +1259,11 @@ func end_wave(wave_number: int = -1) -> void:
 
 # --- Unit Spawning, Path Hex Mapping & Detection -----------------------------
 
-func get_spawn_path_index() -> float:
-	if path_hexes.is_empty():
+func get_spawn_path_index(lane_id: int = 0) -> float:
+	var lh: Array[Vector2i] = get_lane_hexes(lane_id)
+	if lh.is_empty():
 		return 10.0
-	return float(path_hexes.size() - 1)
+	return float(lh.size() - 1)
 
 
 func spawn_unit(
@@ -1088,11 +1272,13 @@ func spawn_unit(
 	speed: float = 1.0,
 	start_path_pos: float = -1.0,
 	cost: int = 10,
-	offerings_reward: int = 5
+	offerings_reward: int = 5,
+	lane_id: int = 0
 ) -> CombatUnit:
-	var pos: float = start_path_pos if start_path_pos >= 0.0 else get_spawn_path_index()
+	var pos: float = start_path_pos if start_path_pos >= 0.0 else get_spawn_path_index(lane_id)
 	var unit := _CombatUnit.new(_next_unit_id, max_hp, unit_tags, pos, speed)
 	_next_unit_id += 1
+	unit.lane_id = maxi(0, lane_id)
 	unit.cost = cost
 	unit.offerings_reward = offerings_reward
 	_apply_event_enemy_scaling(unit)
@@ -1110,15 +1296,15 @@ func compute_rogue_entity_spawn_count(severity: int = 0) -> int:
 ## Spawns a Rogue Entity. [param severity] adds Rite-debt levels on top of the
 ## per-kill Rogue level, so a run that drew heavily since the last reckoning faces
 ## a harder one -- without that debt ever becoming permanent.
-func spawn_rogue_entity(start_path_pos: float = -1.0, severity: int = 0) -> CombatUnit:
+func spawn_rogue_entity(start_path_pos: float = -1.0, severity: int = 0, lane_id: int = 0) -> CombatUnit:
 	var r_lvl: int = leveling.get_rogue_entity_level() if leveling != null else 0
 	var eff_lvl: int = maxi(0, r_lvl + maxi(0, severity))
 	var wave_mult: float = 1.0 + 0.08 * float(maxi(0, current_wave - 1))
 	var hp_val: float = _Balance.ROGUE_ENTITY_BASE_HP * pow(_Balance.ROGUE_ENTITY_HP_SCALE_PER_KILL, float(eff_lvl)) * wave_mult
 	var spd_val: float = minf(_Balance.ROGUE_ENTITY_BASE_SPEED * (1.0 + 0.04 * float(eff_lvl)), 1.85)
-	var pos: float = start_path_pos if start_path_pos >= 0.0 else get_spawn_path_index()
+	var pos: float = start_path_pos if start_path_pos >= 0.0 else get_spawn_path_index(lane_id)
 	var kill_off: int = balance.rogue_entity_kill_offerings + eff_lvl * 5
-	var rogue := spawn_unit(hp_val, [_C.UnitTag.GROUND], spd_val, pos, 0, kill_off)
+	var rogue := spawn_unit(hp_val, [_C.UnitTag.GROUND], spd_val, pos, 0, kill_off, lane_id)
 	rogue.unit_name = "Rogue Entity"
 	rogue.unit_type_id = "rogue_entity"
 	rogue.is_rogue_entity = true
@@ -1164,16 +1350,18 @@ func spawn_unit_from_data(
 	start_path_pos: float = -1.0,
 	boss_index: int = 1,
 	rng: RandomNumberGenerator = null,
-	boss_cycle_override: int = -1
+	boss_cycle_override: int = -1,
+	lane_id: int = 0
 ) -> CombatUnit:
 	var def: UnitData = _resolve_unit_def(unit_id_or_def)
 	if def == null:
 		return null
 
 	var snap: Dictionary = leveling.snapshot_spawn_stats(def, boss_index, boss_cycle_override)
-	var pos: float = start_path_pos if start_path_pos >= 0.0 else get_spawn_path_index()
+	var pos: float = start_path_pos if start_path_pos >= 0.0 else get_spawn_path_index(lane_id)
 	var unit := _CombatUnit.new(_next_unit_id, float(snap["max_hp"]), def.tags, pos, float(snap["speed"]))
 	_next_unit_id += 1
+	unit.lane_id = maxi(0, lane_id)
 
 	unit.unit_type_id = def.id
 	unit.unit_name = def.display_name
@@ -1301,18 +1489,26 @@ func _resolve_placed_tower(tower_or_id: Variant) -> TowerInstance:
 	return null
 
 
-## Returns the axial hex on [member path_hexes] corresponding to [param unit]'s current path_position.
+## Returns the axial hex on [param unit]'s lane corresponding to its current path_position.
 func get_unit_hex(unit: CombatUnit) -> Vector2i:
-	if path_hexes.is_empty() or unit == null:
+	if unit == null:
 		return Vector2i.ZERO
-	var plen: int = path_hexes.size()
-	if unit.cached_hex_path_len == plen and is_equal_approx(unit.path_position, unit.cached_hex_path_pos):
+	var lh: Array[Vector2i] = get_lane_hexes(unit.lane_id)
+	if lh.is_empty():
+		return Vector2i.ZERO
+	var plen: int = lh.size()
+	if (
+		unit.cached_hex_lane_id == unit.lane_id
+		and unit.cached_hex_path_len == plen
+		and is_equal_approx(unit.path_position, unit.cached_hex_path_pos)
+	):
 		return unit.cached_hex
 	var idx: int = clampi(roundi(unit.path_position), 0, plen - 1)
-	var h: Vector2i = path_hexes[idx]
+	var h: Vector2i = lh[idx]
 	unit.cached_hex = h
 	unit.cached_hex_path_pos = unit.path_position
 	unit.cached_hex_path_len = plen
+	unit.cached_hex_lane_id = unit.lane_id
 	return h
 
 
@@ -1512,6 +1708,33 @@ func _handle_unit_death(unit: CombatUnit, killer_tower: TowerInstance, from_gutt
 	offerings += off_gain
 	scrap += scrap_gain
 
+	# Lane Kill Bounty payout: killing enemies on a fork lane pays back 100% of any towers
+	# crushed when that fork opened.
+	if lane_bounty_pools.has(unit.lane_id):
+		var b_pool: Dictionary = lane_bounty_pools[unit.lane_id] as Dictionary
+		var rem_off: int = int(b_pool.get("offerings", 0))
+		var rem_scr: int = int(b_pool.get("scrap", 0))
+		if rem_off > 0 or rem_scr > 0:
+			var base_payout: int = maxi(4, roundi(float(maxi(2, unit.cost)) * 1.5))
+			if unit.is_boss():
+				base_payout = maxi(25, rem_off)
+			var pay_off: int = mini(rem_off, base_payout)
+			var pay_scr: int = mini(rem_scr, maxi(2, roundi(float(base_payout) * 0.75)))
+			if unit.is_boss():
+				pay_scr = rem_scr
+			offerings += pay_off
+			scrap += pay_scr
+			b_pool["offerings"] = rem_off - pay_off
+			b_pool["scrap"] = rem_scr - pay_scr
+			lane_bounty_paid.emit(
+				unit.lane_id,
+				unit.unit_id,
+				pay_off,
+				pay_scr,
+				int(b_pool["offerings"]),
+				int(b_pool["scrap"])
+			)
+
 	# DeathBurst ability (hype_influencer: allies in aura radius 2 get +40% speed for 3 s)
 	var death_hex: Vector2i = get_unit_hex(unit)
 	for ab: AbilityData in unit.abilities:
@@ -1532,7 +1755,7 @@ func _handle_unit_death(unit: CombatUnit, killer_tower: TowerInstance, from_gutt
 			if remaining_to_spawn > 0:
 				_emit_telegraph(ab.ability_id, ab.telegraph_event, unit, 0.0, {"released_on_death": remaining_to_spawn, "spawn_unit_id": ab.unit_id})
 				for _i in range(remaining_to_spawn):
-					var child: CombatUnit = spawn_unit_from_data(ab.unit_id, unit.path_position)
+					var child: CombatUnit = spawn_unit_from_data(ab.unit_id, unit.path_position, 1, null, -1, unit.lane_id)
 					if child != null:
 						unit.total_spawned_count += 1
 						unit.active_spawned_unit_ids.append(child.unit_id)
@@ -1575,8 +1798,10 @@ func _sync_congregation_blockers(tower: TowerInstance) -> void:
 	var dps: float = (tower.def.summon_dps if tower.def != null else 2.0) * tower.get_upgrade_damage_multiplier()
 	var dmg_red: float = 0.30 if tower.has_behavior("picket_line") else 0.0
 
-	var default_path_idx: int = _get_default_congregation_path_idx(tower.hex)
-	var default_hex: Vector2i = path_hexes[default_path_idx] if not path_hexes.is_empty() else tower.hex
+	var station: Dictionary = _get_default_congregation_station(tower.hex)
+	var default_lane_id: int = int(station["lane_id"])
+	var default_path_idx: int = int(station["path_idx"])
+	var default_hex: Vector2i = station["hex"] as Vector2i
 
 	# Update existing blockers' stats and keep unengaged blockers stationed at the adjacent path hex
 	for b: Dictionary in tower.active_blockers:
@@ -1589,6 +1814,7 @@ func _sync_congregation_blockers(tower: TowerInstance) -> void:
 		if int(b.get("engaged_unit_id", -1)) < 0:
 			b["hex"] = default_hex
 			b["path_idx"] = default_path_idx
+			b["lane_id"] = default_lane_id
 
 	# Spawn new blockers up to max_b if not waiting on resummon timers
 	while (tower.active_blockers.size() + tower.resummon_timers.size()) < max_b:
@@ -1599,10 +1825,33 @@ func _sync_congregation_blockers(tower: TowerInstance) -> void:
 			"dps": dps,
 			"hex": default_hex,
 			"path_idx": default_path_idx,
+			"lane_id": default_lane_id,
 			"damage_reduction": dmg_red,
 			"engaged_unit_id": -1,
 		})
 		_next_blocker_id += 1
+
+
+## Returns the primary adjacent station { "lane_id": int, "path_idx": int, "hex": Vector2i }
+## where a Congregation tower at [param tower_hex] stations its blockers across all active lanes.
+func _get_default_congregation_station(tower_hex: Vector2i) -> Dictionary:
+	var lane_cnt: int = get_lane_count()
+	for lid in range(lane_cnt):
+		var lh: Array[Vector2i] = get_lane_hexes(lid)
+		var adj: Array[int] = []
+		for i in range(lh.size()):
+			if _HexGrid.hex_distance(tower_hex, lh[i]) == 1:
+				adj.append(i)
+		if not adj.is_empty():
+			var pick_idx: int = adj[floori(float(adj.size()) * 0.5)] if adj.size() >= 3 else adj[0]
+			return {"lane_id": lid, "path_idx": pick_idx, "hex": lh[pick_idx]}
+	for lid in range(lane_cnt):
+		var lh: Array[Vector2i] = get_lane_hexes(lid)
+		for i in range(lh.size()):
+			if _HexGrid.hex_distance(tower_hex, lh[i]) <= 2:
+				return {"lane_id": lid, "path_idx": i, "hex": lh[i]}
+	var fallback_hex: Vector2i = path_hexes[0] if not path_hexes.is_empty() else tower_hex
+	return {"lane_id": 0, "path_idx": 0, "hex": fallback_hex}
 
 
 ## Returns all path indices directly adjacent (hex distance == 1) to [param center_hex],
@@ -1620,12 +1869,7 @@ func _get_adjacent_path_indices(center_hex: Vector2i) -> Array[int]:
 ## Selects the primary adjacent path index where a Congregation tower at [param tower_hex]
 ## stations its blockers.
 func _get_default_congregation_path_idx(tower_hex: Vector2i) -> int:
-	var adj: Array[int] = _get_adjacent_path_indices(tower_hex)
-	if adj.is_empty():
-		return 0
-	if adj.size() >= 3:
-		return adj[floori(float(adj.size()) * 0.5)]
-	return adj[0]
+	return int(_get_default_congregation_station(tower_hex)["path_idx"])
 
 
 func _disengage_all_congregation_blockers(tower: TowerInstance) -> void:
@@ -1930,7 +2174,7 @@ func _step_gutter_circle_tower(tower: TowerInstance, delta: float) -> void:
 		# propane_pulse: knocks back 1 hex along the path (not Bosses)
 		if tower.has_behavior("propane_pulse"):
 			var kb: float = float(tower.get_behavior_param("propane_pulse", "knockback_hexes", 1))
-			u.displace_along_path(kb, get_spawn_path_index())
+			u.displace_along_path(kb, get_spawn_path_index(u.lane_id))
 
 		var hit_dmg: float = calculate_hit_damage(
 			tower, u, tower.def.damage * ring_mult * crowd_mult, tower.def.damage_tag, true
@@ -2016,7 +2260,7 @@ func _step_storm_drain_tower(tower: TowerInstance, delta: float) -> void:
 				var tgt: CombatUnit = in_range_targets[idx]
 				tgt.apply_root(root_dur, true)
 				if drag_hexes > 0.0:
-					tgt.displace_along_path(drag_hexes, get_spawn_path_index())
+					tgt.displace_along_path(drag_hexes, get_spawn_path_index(tgt.lane_id))
 			tower_cooldown_used.emit(tower.tower_id, tower.get_type_id(), root_ability_id, tower.hex)
 
 	tower.attack_cooldown -= delta
@@ -2156,8 +2400,10 @@ func _step_congregation_tower(tower: TowerInstance, delta: float) -> void:
 	var max_hp: float = tower.get_summon_max_hp() * get_rite_stat_multiplier(tower, "summon_hp")
 	var dps: float = (tower.def.summon_dps if tower.def != null else 2.0) * tower.get_upgrade_damage_multiplier()
 	var dmg_red: float = 0.30 if tower.has_behavior("picket_line") else 0.0
-	var default_idx: int = _get_default_congregation_path_idx(tower.hex)
-	var default_hex: Vector2i = path_hexes[default_idx] if not path_hexes.is_empty() else tower.hex
+	var station: Dictionary = _get_default_congregation_station(tower.hex)
+	var default_lane_id: int = int(station["lane_id"])
+	var default_idx: int = int(station["path_idx"])
+	var default_hex: Vector2i = station["hex"] as Vector2i
 
 	for i in range(tower.resummon_timers.size() - 1, -1, -1):
 		tower.resummon_timers[i] -= delta
@@ -2170,6 +2416,7 @@ func _step_congregation_tower(tower: TowerInstance, delta: float) -> void:
 				"dps": dps,
 				"hex": default_hex,
 				"path_idx": default_idx,
+				"lane_id": default_lane_id,
 				"damage_reduction": dmg_red,
 				"engaged_unit_id": -1,
 			})
@@ -2189,6 +2436,7 @@ func _step_congregation_tower(tower: TowerInstance, delta: float) -> void:
 		var bid: int = int(blocker["id"])
 		var b_hex: Vector2i = blocker.get("hex", default_hex) as Vector2i
 		var b_path_idx: int = int(blocker.get("path_idx", default_idx))
+		var b_lane_id: int = int(blocker.get("lane_id", default_lane_id))
 
 		var engaged_unit: CombatUnit = null
 		for u: CombatUnit in units:
@@ -2206,8 +2454,10 @@ func _step_congregation_tower(tower: TowerInstance, delta: float) -> void:
 			blocker["engaged_unit_id"] = -1
 			blocker["hex"] = default_hex
 			blocker["path_idx"] = default_idx
+			blocker["lane_id"] = default_lane_id
 			b_hex = default_hex
 			b_path_idx = default_idx
+			b_lane_id = default_lane_id
 
 			# 1. Prefer an unengaged Ground unit that has reached the blocker's adjacent path hex
 			for u: CombatUnit in units:
@@ -2216,7 +2466,7 @@ func _step_congregation_tower(tower: TowerInstance, delta: float) -> void:
 				if u.engaged_blocker_id >= 0 or u.flee_timer > 0.0 or u.confuse_timer > 0.0:
 					continue
 				var u_hex: Vector2i = get_unit_hex(u)
-				var on_blocker_hex: bool = (u_hex == b_hex or absf(u.path_position - float(b_path_idx)) <= 0.50)
+				var on_blocker_hex: bool = (u_hex == b_hex or (u.lane_id == b_lane_id and absf(u.path_position - float(b_path_idx)) <= 0.50))
 				var stationary_on_adj: bool = (u.speed <= 0.0 and _HexGrid.hex_distance(tower.hex, u_hex) == 1)
 				if on_blocker_hex or stationary_on_adj:
 					if u.has_breakthrough:
@@ -2225,11 +2475,13 @@ func _step_congregation_tower(tower: TowerInstance, delta: float) -> void:
 						engaged_unit = null
 						break
 					u.engaged_blocker_id = bid
-					if u.speed > 0.0 and on_blocker_hex:
+					if u.speed > 0.0 and on_blocker_hex and u.lane_id == b_lane_id:
 						u.path_position = float(b_path_idx)
 					blocker["engaged_unit_id"] = u.unit_id
 					blocker["hex"] = get_unit_hex(u)
-					blocker["path_idx"] = clampi(roundi(u.path_position), 0, maxi(0, path_hexes.size() - 1))
+					var u_lh: Array[Vector2i] = get_lane_hexes(u.lane_id)
+					blocker["path_idx"] = clampi(roundi(u.path_position), 0, maxi(0, u_lh.size() - 1))
+					blocker["lane_id"] = u.lane_id
 					b_hex = blocker["hex"] as Vector2i
 					engaged_unit = u
 					break
@@ -2501,7 +2753,7 @@ func _step_enemy_abilities(delta: float, rng: RandomNumberGenerator) -> void:
 		if pod.pod_open_timer <= 0.0:
 			var count: int = maxi(1, pod.pod_drones_to_spawn)
 			for _i in range(count):
-				spawn_unit_from_data(_UnitBalance.DISPATCHER_SPAWN_UNIT_ID, pod.path_position)
+				spawn_unit_from_data(_UnitBalance.DISPATCHER_SPAWN_UNIT_ID, pod.path_position, 1, null, -1, pod.lane_id)
 			pod.hp = 0.0
 
 	# Step each living unit's abilities
@@ -2610,7 +2862,7 @@ func _step_unit_ability_component(
 				if allowed > 0:
 					_emit_telegraph(ab.ability_id, ab.telegraph_event, u, 0.0, {"spawn_unit_id": ab.unit_id, "count": allowed})
 					for _i in range(allowed):
-						var child: CombatUnit = spawn_unit_from_data(ab.unit_id, u.path_position)
+						var child: CombatUnit = spawn_unit_from_data(ab.unit_id, u.path_position, 1, null, -1, u.lane_id)
 						if child != null:
 							u.total_spawned_count += 1
 							u.active_spawned_unit_ids.append(child.unit_id)
@@ -2733,7 +2985,7 @@ func _step_tower_convert_ability(
 	if is_raider_buyout:
 		# Spawn a 150 HP (scaled by effect_scale) Bid Drone with the beam; killing it breaks the beam/conversion
 		var bid_hp: float = _UnitBalance.RAIDER_BID_DRONE_HP * effect_scale
-		var drone: CombatUnit = spawn_unit(bid_hp, [_C.UnitTag.AIR, _C.UnitTag.CYBERNETIC], 0.0, u.path_position, 0, 0)
+		var drone: CombatUnit = spawn_unit(bid_hp, [_C.UnitTag.AIR, _C.UnitTag.CYBERNETIC], 0.0, u.path_position, 0, 0, u.lane_id)
 		drone.unit_type_id = "bid_drone"
 		drone.unit_name = "Bid Drone"
 		drone.is_bid_drone = true
@@ -2831,7 +3083,7 @@ func _trigger_chairman_restructuring_transition(
 
 	var escort_ids: Array[int] = []
 	for _i in range(_UnitBalance.CHAIRMAN_ESCORT_COUNT):
-		var escort: CombatUnit = spawn_unit_from_data(_UnitBalance.CHAIRMAN_ESCORT_UNIT_ID, u.path_position)
+		var escort: CombatUnit = spawn_unit_from_data(_UnitBalance.CHAIRMAN_ESCORT_UNIT_ID, u.path_position, 1, null, -1, u.lane_id)
 		if escort != null:
 			escort_ids.append(escort.unit_id)
 
@@ -2872,11 +3124,11 @@ func _step_boss_same_day_delivery(u: CombatUnit, ab: AbilityData, delta: float, 
 	if u.delivery_cooldown_timer <= 0.0:
 		u.delivery_cooldown_timer += interval
 		u.delivery_telegraphed_this_cycle = false
-		var max_idx: float = get_spawn_path_index()
+		var max_idx: float = get_spawn_path_index(u.lane_id)
 		for i in range(_UnitBalance.DISPATCHER_POD_COUNT):
 			var offset: float = -1.0 if i == 0 else 1.0
 			var pod_pos: float = clampf(u.path_position + offset, 1.0, maxf(1.0, max_idx))
-			var pod: CombatUnit = spawn_unit(pod_hp, [_C.UnitTag.GROUND], 0.0, pod_pos, 0, 0)
+			var pod: CombatUnit = spawn_unit(pod_hp, [_C.UnitTag.GROUND], 0.0, pod_pos, 0, 0, u.lane_id)
 			pod.unit_type_id = "supply_pod"
 			pod.unit_name = "Supply Pod"
 			pod.is_supply_pod = true
@@ -2993,10 +3245,10 @@ func _check_boss_hp_thresholds(u: CombatUnit, rng: RandomNumberGenerator = null)
 
 
 func _step_units(delta: float) -> void:
-	var max_idx: float = get_spawn_path_index()
 	for u: CombatUnit in units.duplicate():
 		if not u.is_alive():
 			continue
+		var max_idx: float = get_spawn_path_index(u.lane_id)
 
 		if u.cloak_revealed_timer > 0.0:
 			u.cloak_revealed_timer = maxf(0.0, u.cloak_revealed_timer - delta)
@@ -3073,7 +3325,8 @@ func _step_units(delta: float) -> void:
 
 func _handle_unit_leak(unit: CombatUnit) -> void:
 	var leak_hex: Vector2i = get_unit_hex(unit)
-	var leak_path_idx: int = clampi(roundi(unit.path_position), 0, maxi(0, path_hexes.size() - 1))
+	var u_lh: Array[Vector2i] = get_lane_hexes(unit.lane_id)
+	var leak_path_idx: int = clampi(roundi(unit.path_position), 0, maxi(0, u_lh.size() - 1))
 	unit.hp = 0.0
 
 	# LeakSteal ability (e.g. gig_runner steals 5 Offerings on leak)

@@ -126,6 +126,25 @@ const SCORE_DRIFT_PENALTY_PER_HEX: float = 8.0
 ## (e.g. wave 8 for the wave-10 boss).
 const PREVIEW_LEAD_WAVES: int = 2
 
+# --- Fork & Multi-Lane constants ---------------------------------------------
+## Maximum number of independent lanes terminating at the Sanctum base (1 Main + up to 2 Forks).
+const MAX_LANES: int = 3
+## Earliest boss wave that may fork (Wave 10 is always a standard extension).
+const FORK_MIN_WAVE: int = 20
+## Latest boss wave by which the run's first fork is guaranteed if Wave 20 did not fork.
+const FORK_GUARANTEED_BY_WAVE: int = 30
+## Boss wave at and after which growth always uses fork multi-candidate mode (3 candidates).
+const FORK_ALWAYS_WAVE: int = 50
+const FORK_CHANCE_W20: float = 0.35
+const FORK_CHANCE_W30: float = 0.50
+const FORK_CHANCE_W40: float = 0.65
+const FORK_CANDIDATES_EARLY: int = 2
+const FORK_CANDIDATES_LATE: int = 3
+const FORK_MIN_EXT: int = 10
+const FORK_MAX_EXT: int = 15
+## Maximum base-approach index (0..3) on lane 0 from which a new fork lane may branch outward.
+const FORK_MAX_JOIN_INDEX: int = 3
+
 # --- Lookahead constants -----------------------------------------------------
 ## Number of rollout attempts used by H4 lookahead to confirm a valid next extension.
 const LOOKAHEAD_MAX_ATTEMPTS: int = 48

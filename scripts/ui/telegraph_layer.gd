@@ -43,10 +43,32 @@ func _connect_signals() -> void:
 		show_banner("WAVE %d EVENT [%s]: %s" % [int(gs.get("current_wave")), tag, banner_text], 4.5, banner_color)
 	)
 	gs.connect("next_faction_announced", func(fac: String, _logo: String) -> void:
-		show_banner("PATH EXTENDED! Next Corporate Faction: %s" % fac.replace("_", " ").to_upper(), 4.5, Color(0.45, 0.95, 1.0))
+		var pgen: PathGenerator = gs.get("path_generator") as PathGenerator
+		var lanes_cnt: int = pgen.get_lane_count() if pgen != null else 1
+		if lanes_cnt > 1:
+			show_banner("COMPANY DROP LANDED (%d LANES ACTIVE)! Next Corporate Faction: %s" % [lanes_cnt, fac.replace("_", " ").to_upper()], 4.8, Color(1.0, 0.62, 0.22))
+		else:
+			show_banner("PATH EXTENDED! Next Corporate Faction: %s" % fac.replace("_", " ").to_upper(), 4.5, Color(0.45, 0.95, 1.0))
 	)
+	if gs.has_signal("fork_preview_ready"):
+		gs.connect("fork_preview_ready", func(cands: Array, _sel_idx: int) -> void:
+			show_banner("COMPANY DROP INBOUND! %d Drop Routes Detected — Choose Route in Intel Panel!" % cands.size(), 5.0, Color(1.0, 0.48, 0.18))
+		)
+	if gs.has_signal("towers_crushed_by_fork"):
+		gs.connect("towers_crushed_by_fork", func(lane_id: int, crushed: Array, b_off: int, b_scr: int) -> void:
+			show_banner(
+				"%d TOWER(S) CRUSHED BY COMPANY DROP! +%d Off / +%d Scrap Kill Bounty on Lane #%d!" % [
+					crushed.size(), b_off, b_scr, lane_id + 1
+				],
+				5.2,
+				Color(1.0, 0.35, 0.35)
+			)
+		)
 	gs.connect("wave_started", func(_w: int) -> void:
-		if _banner_label != null and _banner_label.visible and _banner_label.text.begins_with("PATH EXTENDED!"):
+		if _banner_label != null and _banner_label.visible and (
+			_banner_label.text.begins_with("PATH EXTENDED!")
+			or _banner_label.text.begins_with("COMPANY DROP LANDED")
+		):
 			_banner_label.visible = false
 			_banner_timer = 0.0
 	)

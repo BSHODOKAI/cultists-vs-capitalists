@@ -689,3 +689,81 @@ func test_10_path_layout_summary_emits_real_director_signals() -> void:
 				int(summary_towered["long_exposed_stretches"]) <= int(summary_after["long_exposed_stretches"]),
 				"Covering the mid-path must not increase the longest exposed stretch"
 			)
+
+
+# --- Test 11: Fork condemnation crushes towers into 100% Bounty Pool & pays out on lane kills
+
+func test_11_fork_condemnation_100_pct_bounty_pool_and_multi_lane_combat() -> void:
+	var gs: GameStateNode = _get_game_state()
+	var clock: SimClockNode = _get_sim_clock()
+	clock.manual_mode = true
+
+	gs.start_new_run(90210)
+	gs.add_currency(_GameState.Currency.OFFERINGS, 500, "test_setup")
+	gs.add_currency(_GameState.Currency.SCRAP, 500, "test_setup")
+
+	# 1. Generate a fork preview first to see where Route A and Route B go, then place a tower
+	#    on a hex that Route B will cross (before activating the fork preview reservation).
+	var probe_cands: Array[Dictionary] = gs.path_generator.generate_fork_candidates(30, 2)
+	assert(probe_cands.size() == 2, "Must generate 2 fork candidates")
+	var target_cand_idx: int = 1
+	var cand_hexes: Array[Vector2i] = probe_cands[target_cand_idx]["new_hexes"] as Array[Vector2i]
+	var tower_hex: Vector2i = Vector2i.ZERO
+	var placed_condemned: TowerInstance = null
+	for ch: Vector2i in cand_hexes:
+		if gs.path_generator.can_place_tower(ch):
+			placed_condemned = gs.request_place_tower(ch, "hexed_nail_gun")
+			if placed_condemned != null:
+				tower_hex = ch
+				break
+	assert(placed_condemned != null, "Must place a tower on a buildable hex along candidate fork route")
+	# Upgrade it to T2 so total_offerings_spent includes both build + upgrade investment
+	gs.request_upgrade_tower(tower_hex, "rapid_cycling")
+	var invested_offerings: int = placed_condemned.total_offerings_spent
+	assert(invested_offerings > 30, "Upgraded tower must have >30 total_offerings_spent")
+
+	# 2. Activate the fork preview and select the candidate that crosses tower_hex
+	gs.path_generator.preview_fork(30, 2)
+	var found_idx: int = -1
+	for i in range(gs.path_generator.fork_candidates.size()):
+		var nh: Array = gs.path_generator.fork_candidates[i]["new_hexes"] as Array
+		if nh.has(tower_hex):
+			found_idx = i
+			break
+	assert(found_idx >= 0, "One of the fork candidates must cross the placed tower at %s" % str(tower_hex))
+	assert(gs.request_select_fork_candidate(found_idx), "Selecting fork candidate %d via GameState must succeed" % found_idx)
+	assert(gs.path_generator.get_condemned_tower_hexes().has(tower_hex), "Selected fork route must mark tower_hex as condemned")
+
+	# 3. Commit growth (simulating POST_BOSS): the condemned tower must be crushed and 100% of its
+	#    invested Offerings added to Lane 1's Kill Bounty Pool.
+	var growth_res: Dictionary = gs.debug_force_growth()
+	assert(bool(growth_res.get("is_fork", false)), "Committed growth must be a fork")
+	assert(gs.path_generator.get_lane_count() == 2, "PathGenerator must now have 2 lanes")
+	assert(gs.get_tower_at_hex(tower_hex) == null, "Crushed tower must be removed from tower_system")
+	var pool_before: Dictionary = gs.tower_system.get_lane_bounty_pool(1)
+	assert(
+		int(pool_before["offerings"]) == invested_offerings,
+		"Lane 1 bounty pool must equal 100%% of invested Offerings (%d), got %d" % [invested_offerings, int(pool_before["offerings"])]
+	)
+
+	# 4. Spawn enemies on Fork Lane 1 and kill them: verify each kill pays out from Lane 1's bounty pool
+	#    until the entire 100% invested amount is recovered.
+	var off_before_kills: int = gs.offerings
+	var normal_kill_rewards: int = 0
+	for _k in range(12):
+		var u: CombatUnit = gs.tower_system.spawn_unit_from_data("sponsor_mech", -1.0, 1, null, -1, 1)
+		assert(u != null and u.lane_id == 1, "Unit must spawn on Fork Lane 1")
+		var u_start_hex: Vector2i = gs.tower_system.get_unit_hex(u)
+		var lane_1_hexes: Array[Vector2i] = gs.path_generator.get_lane(1)
+		assert(u_start_hex == lane_1_hexes[lane_1_hexes.size() - 1], "Unit on Lane 1 must start at Lane 1's spawn hex")
+		normal_kill_rewards += u.offerings_reward
+		gs.tower_system.deal_damage_from_tower(null, u, u.hp + 100.0, _C.DamageTag.VOID, true)
+		if int(gs.tower_system.get_lane_bounty_pool(1)["offerings"]) == 0:
+			break
+
+	var pool_after: Dictionary = gs.tower_system.get_lane_bounty_pool(1)
+	assert(int(pool_after["offerings"]) == 0, "Killing units on Lane 1 must drain Lane 1's bounty pool to 0")
+	assert(
+		gs.offerings == off_before_kills + normal_kill_rewards + invested_offerings,
+		"Player Offerings must equal normal kill rewards + 100%% recovered tower bounty"
+	)

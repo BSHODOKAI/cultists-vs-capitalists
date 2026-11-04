@@ -15,6 +15,7 @@ var _path_multimesh_instance: MultiMeshInstance3D
 var _connector_multimesh_instance: MultiMeshInstance3D
 var _base_marker: Node3D
 var _spawn_marker: Node3D
+var _extra_spawn_markers: Array[Node3D] = []
 var _tile_mesh: ArrayMesh
 var _connector_mesh: ArrayMesh
 var _tile_material: StandardMaterial3D
@@ -130,8 +131,54 @@ func _build_markers() -> void:
 	_spawn_marker.add_child(spawn_lbl)
 
 
+func _create_spawn_marker_node(marker_name: String, label_text: String, tint_col: Color) -> Node3D:
+	var marker := Node3D.new()
+	marker.name = marker_name
+	add_child(marker)
+
+	var spawn_gate := MeshInstance3D.new()
+	var torus := TorusMesh.new()
+	torus.inner_radius = 0.45
+	torus.outer_radius = 0.68
+	spawn_gate.mesh = torus
+	spawn_gate.position = Vector3(0.0, 0.25, 0.0)
+	var gate_mat := StandardMaterial3D.new()
+	gate_mat.albedo_color = tint_col
+	gate_mat.emission_enabled = true
+	gate_mat.emission = tint_col * 0.7
+	spawn_gate.material_override = gate_mat
+	marker.add_child(spawn_gate)
+
+	var spawn_lbl := Label3D.new()
+	spawn_lbl.name = "SpawnLabel"
+	spawn_lbl.text = label_text
+	spawn_lbl.font_size = 28
+	spawn_lbl.pixel_size = 0.008
+	spawn_lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	spawn_lbl.modulate = Color(1.0, 0.55, 0.55, 1.0)
+	spawn_lbl.position = Vector3(0.0, 1.15, 0.0)
+	marker.add_child(spawn_lbl)
+	return marker
+
+
 func refresh_path(path_hexes: Array[Vector2i]) -> void:
 	if path_hexes.is_empty():
+		refresh_lanes([])
+	else:
+		refresh_lanes([path_hexes])
+
+
+func refresh_lanes(lanes: Array) -> void:
+	for em: Node3D in _extra_spawn_markers:
+		if is_instance_valid(em):
+			em.visible = false
+
+	var valid_lanes: Array[Array] = []
+	for l_var: Variant in lanes:
+		if l_var is Array and not (l_var as Array).is_empty():
+			valid_lanes.append(l_var as Array)
+
+	if valid_lanes.is_empty():
 		_path_multimesh_instance.multimesh = null
 		if _connector_multimesh_instance != null:
 			_connector_multimesh_instance.multimesh = null
@@ -139,55 +186,100 @@ func refresh_path(path_hexes: Array[Vector2i]) -> void:
 		_spawn_marker.visible = false
 		return
 
+	# Collect deduplicated tile transforms/colors and road connector segments across all lanes
+	var tile_transforms: Array[Transform3D] = []
+	var tile_colors: Array[Color] = []
+	var seen_tiles: Dictionary = {}
+	var seg_transforms: Array[Transform3D] = []
+	var seg_colors: Array[Color] = []
+	var seen_segs: Dictionary = {}
+
+	for lane_idx in range(valid_lanes.size()):
+		var lane_hexes: Array = valid_lanes[lane_idx]
+		var n: int = maxi(1, lane_hexes.size() - 1)
+		var lane_tint: Color = Color(1.0, 0.82, 0.95, 1.0) if lane_idx == 0 else Color(0.75, 0.95, 1.0, 1.0)
+		for i in range(lane_hexes.size()):
+			var h: Vector2i = lane_hexes[i] as Vector2i
+			if seen_tiles.has(h):
+				continue
+			seen_tiles[h] = true
+			var wp: Vector3 = _HexMath.hex_to_world(h, 0.008)
+			var next_h: Vector2i = (lane_hexes[i - 1] as Vector2i) if i > 0 else ((lane_hexes[1] as Vector2i) if lane_hexes.size() > 1 else h)
+			var next_wp: Vector3 = _HexMath.hex_to_world(next_h, 0.008)
+			var dir: Vector3 = next_wp - wp
+			dir.y = 0.0
+			var lane_basis := Basis.IDENTITY
+			if dir.length_squared() > 0.001:
+				lane_basis = Basis.looking_at(dir.normalized(), Vector3.UP)
+			var t: float = float(i) / float(n)
+			var col: Color = Color.WHITE.lerp(lane_tint, t * 0.25)
+			tile_transforms.append(Transform3D(lane_basis, wp))
+			tile_colors.append(col)
+
+		var seg_count: int = maxi(0, lane_hexes.size() - 1)
+		for i in range(seg_count):
+			var ha: Vector2i = lane_hexes[i + 1] as Vector2i
+			var hb: Vector2i = lane_hexes[i] as Vector2i
+			var seg_key: String = "%s->%s" % [str(ha), str(hb)]
+			var rev_key: String = "%s->%s" % [str(hb), str(ha)]
+			if seen_segs.has(seg_key) or seen_segs.has(rev_key):
+				continue
+			seen_segs[seg_key] = true
+			var wp_a: Vector3 = _HexMath.hex_to_world(ha, 0.006)
+			var wp_b: Vector3 = _HexMath.hex_to_world(hb, 0.006)
+			var mid_wp: Vector3 = (wp_a + wp_b) * 0.5
+			var seg_dir: Vector3 = wp_b - wp_a
+			seg_dir.y = 0.0
+			var seg_basis := Basis.IDENTITY
+			if seg_dir.length_squared() > 0.001:
+				seg_basis = Basis.looking_at(seg_dir.normalized(), Vector3.UP)
+			seg_transforms.append(Transform3D(seg_basis, mid_wp))
+			seg_colors.append(Color.WHITE if lane_idx == 0 else Color(0.88, 0.96, 1.0, 1.0))
+
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_colors = true
 	mm.mesh = _tile_mesh
-	mm.instance_count = path_hexes.size()
-
-	var n: int = maxi(1, path_hexes.size() - 1)
-	for i in range(path_hexes.size()):
-		var h: Vector2i = path_hexes[i]
-		var wp: Vector3 = _HexMath.hex_to_world(h, 0.008)
-		var next_h: Vector2i = path_hexes[i - 1] if i > 0 else (path_hexes[1] if path_hexes.size() > 1 else h)
-		var next_wp: Vector3 = _HexMath.hex_to_world(next_h, 0.008)
-		var dir: Vector3 = next_wp - wp
-		dir.y = 0.0
-		var lane_basis := Basis.IDENTITY
-		if dir.length_squared() > 0.001:
-			lane_basis = Basis.looking_at(dir.normalized(), Vector3.UP)
-		var t: float = float(i) / float(n)
-		var col: Color = Color.WHITE.lerp(Color(1.0, 0.82, 0.95, 1.0), t * 0.25)
-		mm.set_instance_transform(i, Transform3D(lane_basis, wp))
-		mm.set_instance_color(i, col)
-
+	mm.instance_count = tile_transforms.size()
+	for i in range(tile_transforms.size()):
+		mm.set_instance_transform(i, tile_transforms[i])
+		mm.set_instance_color(i, tile_colors[i])
 	_path_multimesh_instance.multimesh = mm
 
 	if _connector_multimesh_instance != null:
-		var seg_count: int = maxi(0, path_hexes.size() - 1)
-		if seg_count == 0:
+		if seg_transforms.is_empty():
 			_connector_multimesh_instance.multimesh = null
 		else:
 			var c_mm := MultiMesh.new()
 			c_mm.transform_format = MultiMesh.TRANSFORM_3D
 			c_mm.use_colors = true
 			c_mm.mesh = _connector_mesh
-			c_mm.instance_count = seg_count
-			for i in range(seg_count):
-				var wp_a: Vector3 = _HexMath.hex_to_world(path_hexes[i + 1], 0.006)
-				var wp_b: Vector3 = _HexMath.hex_to_world(path_hexes[i], 0.006)
-				var mid_wp: Vector3 = (wp_a + wp_b) * 0.5
-				var seg_dir: Vector3 = wp_b - wp_a
-				seg_dir.y = 0.0
-				var seg_basis := Basis.IDENTITY
-				if seg_dir.length_squared() > 0.001:
-					seg_basis = Basis.looking_at(seg_dir.normalized(), Vector3.UP)
-				c_mm.set_instance_transform(i, Transform3D(seg_basis, mid_wp))
-				c_mm.set_instance_color(i, Color.WHITE)
+			c_mm.instance_count = seg_transforms.size()
+			for i in range(seg_transforms.size()):
+				c_mm.set_instance_transform(i, seg_transforms[i])
+				c_mm.set_instance_color(i, seg_colors[i])
 			_connector_multimesh_instance.multimesh = c_mm
 
+	var primary_lane: Array = valid_lanes[0]
 	_base_marker.visible = true
-	_base_marker.global_position = _HexMath.hex_to_world(path_hexes[0], 0.0)
+	_base_marker.global_position = _HexMath.hex_to_world(primary_lane[0] as Vector2i, 0.0)
 
 	_spawn_marker.visible = true
-	_spawn_marker.global_position = _HexMath.hex_to_world(path_hexes[path_hexes.size() - 1], 0.0)
+	_spawn_marker.global_position = _HexMath.hex_to_world(primary_lane[primary_lane.size() - 1] as Vector2i, 0.0)
+
+	# Render additional spawn markers for fork lanes (lane 1..N-1)
+	for fork_idx in range(1, valid_lanes.size()):
+		var fork_lane: Array = valid_lanes[fork_idx]
+		var extra_idx: int = fork_idx - 1
+		while _extra_spawn_markers.size() <= extra_idx:
+			var n_idx: int = _extra_spawn_markers.size() + 2
+			var col_m: Color = Color(1.0, 0.52, 0.18, 1.0) if (n_idx % 2 == 0) else Color(0.25, 0.90, 1.0, 1.0)
+			var m_node: Node3D = _create_spawn_marker_node(
+				"ForkSpawnMarker_%d" % n_idx,
+				"CORP DROP #%d [SPAWN]" % n_idx,
+				col_m
+			)
+			_extra_spawn_markers.append(m_node)
+		var marker: Node3D = _extra_spawn_markers[extra_idx]
+		marker.visible = true
+		marker.global_position = _HexMath.hex_to_world(fork_lane[fork_lane.size() - 1] as Vector2i, 0.0)

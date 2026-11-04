@@ -666,3 +666,55 @@ func test_08_excess_budget_bounded_levels_boss_compensation_and_unspent_accounti
 		worst_hp_mult < 100.0,
 		"Worst-case late-wave HP multiplier must stay under 100x (got x%.0f); unbounded levels reached thousands" % worst_hp_mult
 	)
+
+
+# --- Test 9: Multi-lane fork budget, 2-wave readiness ramp & W50+ secondary faction
+
+func test_09_multi_lane_fork_budget_readiness_ramp_and_w50_secondary_faction() -> void:
+	var director := _WaveDirector.new(777)
+
+	# 1. Readiness ramp: a newly opened fork lane (age 1 -> age 2 -> age 3+) ramps its budget/unit share
+	var share_age_1: float = director.compute_fork_lane_share(1, 2, 1)
+	var share_age_2: float = director.compute_fork_lane_share(1, 2, 2)
+	var share_age_3: float = director.compute_fork_lane_share(1, 2, 5)
+	assert(share_age_1 < share_age_2 and share_age_2 < share_age_3, "Fork share must ramp up across the first 2 waves after opening")
+
+	# 2. Before Wave 50 (e.g. Wave 25), fork lane uses the SAME corporate faction as Lane 0
+	var roster_w25: WaveRoster = director.generate_wave(25, {
+		"path_layout_summary": {
+			"lane_count": 2,
+			"lane_ages": [25, 2],
+		}
+	})
+	assert(roster_w25.lane_count == 2, "Roster must record lane_count = 2")
+	assert(roster_w25.fork_budget > 0.0, "Roster with 2 lanes must allocate positive fork_budget")
+	assert(String(roster_w25.fork_factions.get(1, "")) == roster_w25.active_faction, "Before W50, fork lane must use the main active_faction")
+	assert(int(roster_w25.lane_unit_counts.get(0, 0)) > 0 and int(roster_w25.lane_unit_counts.get(1, 0)) > 0, "Both Lane 0 and Lane 1 must receive scheduled units")
+
+	# 3. After Wave 50 (e.g. Wave 55, after the first Coalition boss), fork lanes roll distinct secondary factions
+	var roster_w55: WaveRoster = director.generate_wave(55, {
+		"path_layout_summary": {
+			"lane_count": 3,
+			"lane_ages": [55, 25, 5],
+		}
+	})
+	var main_fac: String = roster_w55.active_faction
+	var fork_1_fac: String = String(roster_w55.fork_factions.get(1, ""))
+	var fork_2_fac: String = String(roster_w55.fork_factions.get(2, ""))
+	assert(not fork_1_fac.is_empty() and fork_1_fac != main_fac, "At W50+, Fork Lane 1 must roll a secondary faction distinct from Lane 0 (%s vs %s)" % [fork_1_fac, main_fac])
+	assert(not fork_2_fac.is_empty() and fork_2_fac != main_fac and fork_2_fac != fork_1_fac, "At W50+, Fork Lane 2 must roll a faction distinct from both Lane 0 and Lane 1")
+	assert(int(roster_w55.lane_unit_counts.get(1, 0)) > 0 and int(roster_w55.lane_unit_counts.get(2, 0)) > 0, "All 3 lanes must receive scheduled units")
+
+	# 4. Boss waves with multiple lanes always spawn the Boss on Lane 0 while splitting escorts
+	var roster_w60_boss: WaveRoster = director.generate_wave(60, {
+		"path_layout_summary": {
+			"lane_count": 2,
+			"lane_ages": [60, 30],
+		}
+	})
+	var boss_found_on_lane_0: bool = false
+	for item: Dictionary in roster_w60_boss.spawn_schedule:
+		if bool(item.get("is_boss", false)):
+			assert(int(item.get("lane_id", -1)) == 0, "Boss must always spawn on Main Lane 0")
+			boss_found_on_lane_0 = true
+	assert(boss_found_on_lane_0, "Wave 60 boss schedule must contain a boss on Lane 0")

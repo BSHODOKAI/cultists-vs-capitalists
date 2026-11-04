@@ -342,9 +342,12 @@ func test_04_tower_panel_upgrade_fork_stays_on_screen() -> void:
 			fork_boxes.append(c)
 	assert(fork_boxes.size() == 1, "T2 must show exactly one fork row")
 	assert(fork_boxes[0].get_child_count() == 2, "The fork row must offer Revealed and Rigged side by side")
+	# The Rite row is deliberately ABSENT here: this test never draws a Rite, and the branch
+	# stays hidden until the cult has received one (pinned by test_06). Warning + fork pair is
+	# the whole of T2 for a player who has no Rites.
 	assert(
-		tower_panel._tier_container.get_child_count() == 3,
-		"T2 must show the locking warning, the fork pair and the Rite row"
+		tower_panel._tier_container.get_child_count() == 2,
+		"With no Rite received, T2 must show only the locking warning and the fork pair"
 	)
 
 	# The descriptions must still be READABLE, just no longer inside the buttons.
@@ -457,5 +460,140 @@ func test_05_player_path_charges_rite_nodes_from_the_rites_bank_not_scrap() -> v
 
 	main_inst.queue_free()
 	clock.manual_mode = false
+
+
+## The Rite upgrade branch stays hidden until the cult has received its first Rite. Offering it
+## from wave 1 with 0 Rites and no Reservoir held shows a dead button AND spoils the branch.
+func test_06_panel_hides_the_rite_branch_until_the_first_rite_is_received() -> void:
+	var gs: GameStateNode = _get_game_state()
+	var clock: SimClockNode = _get_sim_clock()
+	clock.manual_mode = true
+
+	var main_packed := load("res://scenes/main.tscn") as PackedScene
+	var main_inst: Node = main_packed.instantiate()
+	add_child(main_inst)
+	var tower_panel: TowerPanel = main_inst.get_node("HUD/TowerPanel") as TowerPanel
+
+	var placed: TowerInstance = null
+	for h: Vector2i in gs.path_generator.get_buildable_hexes():
+		placed = gs.request_place_tower(h, "gutter_ritual_circle")
+		if placed != null:
+			break
+	assert(placed != null, "Must place a tower")
+	assert(placed.def.rite_t3_upgrade != null, "This tower must offer a Rite branch or the test proves nothing")
+	gs.add_currency(0, 10000, "test")
+	assert(gs.request_upgrade_tower(placed, placed.def.t2_upgrade.id), "T2 must purchase")
+	gs.select_placed_tower(placed)
+
+	# Reset so the test does not depend on what earlier tests drew.
+	gs.tower_system.rites = 0
+	gs.tower_system.rites_drawn_total = 0
+	assert(not gs.tower_system.has_ever_drawn_rite(), "Setup: the cult has never received a Rite")
+	assert(
+		not _tier_text_contains(tower_panel, "RITE T3"),
+		"The Rite branch must stay hidden until the cult has received a Rite"
+	)
+	assert(_tier_text_contains(tower_panel, "REVEALED T3"), "The Revealed branch must still be offered")
+	assert(_tier_text_contains(tower_panel, "RIGGED T3"), "The Rigged branch must still be offered")
+
+	# Receive one through the real draw path; only then may the branch be offered.
+	gs.tower_system.set_corruption(60)
+	assert(gs.tower_system.draw_rites(1), "Setup: drawing a Rite must succeed")
+	tower_panel.refresh()
+	assert(gs.tower_system.has_ever_drawn_rite(), "Drawing a Rite must record that one was received")
+	assert(_tier_text_contains(tower_panel, "RITE T3"), "The Rite branch must appear once a Rite is held")
+
+	# Spending it must NOT hide the branch again: it has been received, and the T3 choice is
+	# permanent, so a player who committed to Rites must still see what comes next.
+	assert(gs.tower_system.spend_rites(1), "Setup: the Rite must be spendable")
+	tower_panel.refresh()
+	assert(gs.tower_system.rites == 0, "Setup: the bank is empty again")
+	assert(
+		_tier_text_contains(tower_panel, "RITE T3"),
+		"Spending the Rite must not re-hide the branch: it was already received"
+	)
+
+	main_inst.queue_free()
+	clock.manual_mode = false
+
+
+## Selling is irreversible, and a Rite spent on a tower never comes back, so the Sell button
+## must ask for a confirming second press rather than selling on the first click.
+func test_07_selling_requires_a_confirming_second_press_and_warns_about_rites() -> void:
+	var gs: GameStateNode = _get_game_state()
+	var clock: SimClockNode = _get_sim_clock()
+	clock.manual_mode = true
+
+	var main_packed := load("res://scenes/main.tscn") as PackedScene
+	var main_inst: Node = main_packed.instantiate()
+	add_child(main_inst)
+	var tower_panel: TowerPanel = main_inst.get_node("HUD/TowerPanel") as TowerPanel
+	gs.add_currency(0, 10000, "test")
+	gs.add_currency(1, 10000, "test")
+
+	var placed: TowerInstance = null
+	for h: Vector2i in gs.path_generator.get_buildable_hexes():
+		placed = gs.request_place_tower(h, "hexed_nail_gun")
+		if placed != null:
+			break
+	assert(placed != null, "Must place a tower")
+	var hex: Vector2i = placed.hex
+	gs.select_placed_tower(placed)
+
+	# A single press only ARMS the button.
+	tower_panel._on_sell_pressed()
+	assert(gs.get_tower_at_hex(hex) != null, "One press must NOT sell the tower")
+	assert(tower_panel._sell_armed_for == placed.tower_id, "One press must arm the sell button")
+	assert(
+		tower_panel._sell_button.text.begins_with("CONFIRM SELL"),
+		"An armed button must say what the next press does (got '%s')" % tower_panel._sell_button.text
+	)
+
+	# Changing selection must disarm, so an armed state can never leak onto another tower.
+	gs.select_placed_tower(null)
+	gs.select_placed_tower(placed)
+	assert(tower_panel._sell_armed_for == -1, "Changing selection must disarm the sell button")
+	assert(
+		tower_panel._sell_button.text.begins_with("Sell Tower"),
+		"A disarmed button must read as a plain Sell (got '%s')" % tower_panel._sell_button.text
+	)
+
+	# Confirming the sale of a RITE tower must say the Rite does not come back.
+	assert(gs.request_upgrade_tower(placed, placed.def.t2_upgrade.id), "T2 must purchase")
+	gs.tower_system.set_corruption(60)
+	assert(gs.tower_system.draw_rites(1), "Setup: draw the Rite this tower is about to spend")
+	assert(gs.request_upgrade_tower(placed, placed.def.rite_t3_upgrade.id), "The Rite T3 must purchase")
+	assert(placed.branch == _UpgradeNode.Branch.RITE, "Setup: the tower must be on the Rite branch")
+	tower_panel._on_sell_pressed()
+	assert(
+		tower_panel._sell_button.text.contains("NOT refunded"),
+		(
+			"Confirming the sale of a Rite tower must warn that the Rite is lost (got '%s')"
+			% tower_panel._sell_button.text
+		)
+	)
+	assert(gs.get_tower_at_hex(hex) != null, "The warning press must still not sell the tower")
+
+	# The confirming second press sells and disarms.
+	tower_panel._on_sell_pressed()
+	assert(gs.get_tower_at_hex(hex) == null, "The second press must sell the tower")
+	assert(tower_panel._sell_armed_for == -1, "Selling must disarm the button")
+
+	main_inst.queue_free()
+	clock.manual_mode = false
+
+
+## True when any upgrade button in the panel's tier list carries [param needle] in its text.
+func _tier_text_contains(panel: TowerPanel, needle: String) -> bool:
+	return _subtree_text_contains(panel._tier_container, needle)
+
+
+func _subtree_text_contains(node: Node, needle: String) -> bool:
+	for c: Node in node.get_children():
+		if c is Button and (c as Button).text.contains(needle):
+			return true
+		if _subtree_text_contains(c, needle):
+			return true
+	return false
 
 

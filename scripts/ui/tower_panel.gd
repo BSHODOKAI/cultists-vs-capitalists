@@ -35,6 +35,9 @@ const PANEL_SAFE_TOP = 58.0
 const PANEL_MIN_HEIGHT = 120.0
 ## Guards the deferred second layout pass so it cannot reschedule itself forever.
 var _rect_settle_pending: bool = false
+## Which tower's Sell button is ARMED, waiting for a confirming second press. Keyed by
+## tower_id so changing selection disarms it automatically; -1 means nothing is armed.
+var _sell_armed_for: int = -1
 
 
 func _ready() -> void:
@@ -116,12 +119,22 @@ func _connect_signals() -> void:
 	var gs: Node = get_node_or_null("/root/GameState")
 	if gs == null:
 		return
-	gs.connect("selected_tower_changed", func(_t: Variant) -> void: refresh())
+	gs.connect("selected_tower_changed", func(_t: Variant) -> void:
+		# Selecting a different tower must not leave a Sell button armed from the last one.
+		_sell_armed_for = -1
+		refresh()
+	)
 	gs.connect("build_mode_changed", func(_td: Variant) -> void: refresh())
 	gs.connect("tower_upgraded_on_hex", func(_t: Variant, _n: String) -> void: refresh())
 	gs.connect("tower_maintained", func(_t: Variant) -> void: refresh())
 	gs.connect("currencies_changed", func(_o: int, _s: int) -> void: refresh())
 	gs.connect("corruption_changed", func(_c: int) -> void: refresh())
+	if gs.has_signal("fork_candidate_selected"):
+		gs.connect("fork_candidate_selected", func(_idx: int, _cand: Dictionary) -> void: refresh())
+	if gs.has_signal("path_preview_ready"):
+		gs.connect("path_preview_ready", func(_p: Dictionary) -> void: refresh())
+	if gs.has_signal("path_extended"):
+		gs.connect("path_extended", func(_r: Dictionary) -> void: refresh())
 
 
 func refresh() -> void:
@@ -227,6 +240,20 @@ func refresh() -> void:
 	if not rite_line.is_empty():
 		_stats_label.text += "\n" + rite_line
 
+	# Condemned-by-fork readout: if the currently selected fork candidate crosses this tower's hex,
+	# tell the player that it keeps fighting through the boss wave and then converts 100% of its
+	# invested Offerings/Scrap into the new lane's Kill Bounty Pool.
+	var pgen: PathGenerator = gs.get("path_generator") as PathGenerator
+	if pgen != null and pgen.preview_is_fork and pgen.get_condemned_tower_hexes().has(inst.hex):
+		var b_off: int = inst.total_offerings_spent if inst.total_offerings_spent > 0 else (inst.def.cost if not inst.def.is_scrap_build_cost() else 0)
+		var b_scr: int = inst.total_scrap_spent if inst.total_scrap_spent > 0 else (inst.def.cost if inst.def.is_scrap_build_cost() else 0)
+		var b_parts: PackedStringArray = []
+		if b_off > 0:
+			b_parts.append("+%d Off" % b_off)
+		if b_scr > 0:
+			b_parts.append("+%d Scrap" % b_scr)
+		_stats_label.text += "\n[CONDEMNED BY FORK ROUTE]\nCrushed after boss -> 100%% Kill Bounty (%s)" % ", ".join(b_parts)
+
 	_build_upgrade_ladder(inst, tsys)
 
 	_maintenance_button.visible = inst.is_rigged()
@@ -243,12 +270,22 @@ func refresh() -> void:
 	_sell_button.visible = true
 	var off_ref: int = roundi(float(inst.total_offerings_spent) * tsys.balance.sell_refund_ratio)
 	var scr_ref: int = roundi(float(inst.total_scrap_spent) * tsys.balance.sell_refund_ratio)
+	var refund_str: String = ""
 	if off_ref > 0 and scr_ref > 0:
-		_sell_button.text = "Sell Tower (+%d Off, +%d Scrap)" % [off_ref, scr_ref]
+		refund_str = "+%d Off, +%d Scrap" % [off_ref, scr_ref]
 	elif scr_ref > 0:
-		_sell_button.text = "Sell Tower (+%d Scrap)" % scr_ref
+		refund_str = "+%d Scrap" % scr_ref
 	else:
-		_sell_button.text = "Sell Tower (+%d Offerings)" % off_ref
+		refund_str = "+%d Offerings" % off_ref
+	# Selling is irreversible and a Rite spent on the tower never comes back, so the button
+	# asks for a confirming second press. The first press only ARMS it.
+	if _sell_armed_for == inst.tower_id:
+		var rite_note: String = ""
+		if inst.branch == _UpgradeNode.Branch.RITE:
+			rite_note = "\nThe Rite spent here is NOT refunded"
+		_sell_button.text = "CONFIRM SELL — press again for %s%s" % [refund_str, rite_note]
+	else:
+		_sell_button.text = "Sell Tower (%s)" % refund_str
 	_sync_right_aligned_rect()
 
 
@@ -383,8 +420,10 @@ func _build_upgrade_ladder(inst: TowerInstance, tsys: TowerSystem) -> void:
 			rig_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			fork_hbox.add_child(rig_card)
 		# The optional Rite branch gets its own row: it is paid in a different
-		# currency (Rites) and is only offered by some towers.
-		if def.rite_t3_upgrade != null:
+		# currency (Rites) and is only offered by some towers. It stays hidden until the
+		# cult has received its first Rite -- offering it from wave 1 both spoils the
+		# branch and shows a button that cannot be used (0 Rites, no Reservoir held).
+		if def.rite_t3_upgrade != null and tsys.has_ever_drawn_rite():
 			_tier_container.add_child(_create_upgrade_card(inst, tsys, def.rite_t3_upgrade))
 	elif inst.tier == 3:
 		var cap_node: UpgradeNode = def.revealed_t4_upgrade if inst.is_revealed() else def.rigged_t4_upgrade
@@ -487,8 +526,19 @@ func _on_cleanse_pressed() -> void:
 
 func _on_sell_pressed() -> void:
 	var gs: Node = get_node_or_null("/root/GameState")
-	if gs != null and gs.get("selected_placed_tower") != null:
-		gs.call("request_sell_tower", gs.get("selected_placed_tower"))
+	if gs == null:
+		return
+	var inst: TowerInstance = gs.get("selected_placed_tower") as TowerInstance
+	if inst == null:
+		return
+	# First press arms the button, second press sells. A single accidental click used to
+	# destroy the tower outright -- and with it, permanently, a Rite.
+	if _sell_armed_for != inst.tower_id:
+		_sell_armed_for = inst.tower_id
+		refresh()
+		return
+	_sell_armed_for = -1
+	gs.call("request_sell_tower", inst)
 
 
 func _on_penance_pressed() -> void:

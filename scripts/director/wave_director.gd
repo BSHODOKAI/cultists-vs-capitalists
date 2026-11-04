@@ -271,6 +271,45 @@ func get_next_interval_faction_for_wave(wave_number: int) -> String:
 	return get_faction_for_interval(compute_interval_index(wave_number) + 1)
 
 
+## Returns the corporate faction assigned to [param lane_id] on [param wave_number].
+##   • Lane 0 (or any lane at wave <= fork_secondary_faction_start_wave = 50) uses the active main faction.
+##   • At wave > 50 (after the first Coalition boss), fork lanes (lane_id >= 1) deterministically
+##     roll a distinct secondary corporate faction per interval.
+func get_fork_faction_for_wave(wave_number: int, lane_id: int, main_faction_override: String = "") -> String:
+	var primary: String = main_faction_override if not main_faction_override.is_empty() else get_faction_for_wave(wave_number)
+	if lane_id <= 0 or wave_number <= balance.fork_secondary_faction_start_wave:
+		return primary
+	var interval_idx: int = compute_interval_index(wave_number)
+	var excluded: Array[String] = [primary]
+	if lane_id >= 2:
+		var lane_1_fac: String = get_fork_faction_for_wave(wave_number, 1, primary)
+		if not excluded.has(lane_1_fac):
+			excluded.append(lane_1_fac)
+	var candidates: Array[String] = []
+	for fac: String in _UnitData.VALID_REGULAR_FACTIONS:
+		if not excluded.has(fac):
+			candidates.append(fac)
+	if candidates.is_empty():
+		return primary
+	var fork_rng := RandomNumberGenerator.new()
+	fork_rng.seed = compute_schedule_seed(run_seed) + interval_idx * 4099 + lane_id * 997
+	return candidates[fork_rng.randi_range(0, candidates.size() - 1)]
+
+
+## Computes the fraction of regular wave budget/units routed to fork [param lane_id],
+## scaled by the 2-wave readiness ramp when a fork first opens.
+func compute_fork_lane_share(lane_id: int, lane_count: int, lane_age_waves: int = 99) -> float:
+	if lane_id <= 0 or lane_count <= 1:
+		return 0.0
+	var base_share: float = balance.fork_single_lane_budget_share if lane_count == 2 else balance.fork_multi_lane_budget_share_each
+	var ramp: float = 1.0
+	if lane_age_waves <= 1:
+		ramp = balance.fork_readiness_ramp_wave_1
+	elif lane_age_waves == 2:
+		ramp = balance.fork_readiness_ramp_wave_2
+	return clampf(base_share * ramp, 0.05, 0.45)
+
+
 static func get_faction_logo(faction_id: String) -> String:
 	return String(FACTION_LOGOS.get(faction_id, "logo_" + faction_id))
 
@@ -688,6 +727,19 @@ func generate_wave(wave_number: int, inputs: Dictionary = {}) -> WaveRoster:
 	var level_map: Dictionary = _resolve_unit_levels(inputs, interval_idx)
 
 	# 6. Build candidate unit pool
+	var lane_count: int = clampi(int(path_layout.get("lane_count", inputs.get("lane_count", 1))), 1, 4)
+	var lane_ages: Array = path_layout.get("lane_ages", inputs.get("lane_ages", [])) as Array
+	var fork_factions: Dictionary = {}
+	var fork_shares: Dictionary = {}
+	var total_fork_share: float = 0.0
+	for lid in range(1, lane_count):
+		var age_w: int = int(lane_ages[lid]) if lid < lane_ages.size() else 99
+		var f_share: float = compute_fork_lane_share(lid, lane_count, age_w)
+		var f_fac: String = get_fork_faction_for_wave(w, lid, active_fac)
+		fork_shares[lid] = f_share
+		fork_factions[lid] = f_fac
+		total_fork_share += f_share
+
 	var allow_cloaked: bool = is_cloaked_allowed_on_wave(w)
 	var pool: Array[UnitData] = _build_candidate_pool(
 		active_fac,
@@ -697,6 +749,12 @@ func generate_wave(wave_number: int, inputs: Dictionary = {}) -> WaveRoster:
 		path_layout,
 		w
 	)
+	if lane_count > 1 and w > balance.fork_secondary_faction_start_wave and not inputs.has("candidate_pool"):
+		for lid in range(1, lane_count):
+			var sec_fac: String = String(fork_factions.get(lid, ""))
+			for sec_u: UnitData in get_faction_unit_pool(sec_fac):
+				if (allow_cloaked or not sec_u.has_tag(_C.UnitTag.CLOAKED)) and not _pool_has_unit(pool, sec_u.id):
+					pool.append(sec_u)
 
 	# 7. Constraint parameters
 	var spendable_budget: float = float(b_info["budget"])
@@ -948,6 +1006,12 @@ func generate_wave(wave_number: int, inputs: Dictionary = {}) -> WaveRoster:
 	roster.unspent_budget = maxf(0.0, spendable_budget - total_spent)
 	roster.wave_time_window = wave_time_window
 	roster.max_deliverable_units = max_units_cap
+	roster.lane_count = lane_count
+	roster.fork_factions = fork_factions
+	roster.fork_budget = total_spent * clampf(total_fork_share, 0.0, 0.65)
+	if lane_count > 1 and roster.unspent_budget > 0.0:
+		# Route any unspent_budget into fork_budget tracking so fork lanes reflect overflow pressure
+		roster.fork_budget += roster.unspent_budget
 	roster.pick_rationales = pick_rationales
 	roster.fairness_swaps = fairness_swaps
 	roster.excess_level_upgrades = excess_upgrades
@@ -987,8 +1051,8 @@ func generate_wave(wave_number: int, inputs: Dictionary = {}) -> WaveRoster:
 			roster.boss_base_hp = boss_unit.base_hp
 			roster.boss_hp = compute_boss_hp(boss_unit.base_hp, b_idx)
 
-	# 10. Build ordered spawn_schedule per SPAWN ORDER spec
-	roster.spawn_schedule = _build_spawn_schedule(roster, boss_unit, wave_time_window)
+	# 10. Build ordered spawn_schedule per SPAWN ORDER spec (and assign lane_id across active lanes)
+	roster.spawn_schedule = _build_spawn_schedule(roster, boss_unit, wave_time_window, fork_shares)
 
 	# 11. Compute per-tag exposure & Intel telegraph payload
 	roster.per_tag_exposure = _compute_per_tag_exposure(roster, coverage_profile)
@@ -1499,7 +1563,8 @@ func _run_fairness_check(
 func _build_spawn_schedule(
 	roster: WaveRoster,
 	boss_unit: UnitData,
-	wave_time_window: float
+	wave_time_window: float,
+	fork_shares: Dictionary = {}
 ) -> Array[Dictionary]:
 	var front_units: Array[Dictionary] = []
 	var middle_pack_units: Array[Dictionary] = []
@@ -1603,14 +1668,49 @@ func _build_spawn_schedule(
 
 	var schedule: Array[Dictionary] = []
 	var fast_indices: Array[int] = []
+	var lane_counts: Dictionary = {0: 0}
+	for lid in range(1, roster.lane_count):
+		lane_counts[lid] = 0
+
+	# Compute target unit counts per fork lane when lane_count > 1
+	var fork_quotas: Dictionary = {}
+	if roster.lane_count > 1 and reg_count > 0:
+		for lid in range(1, roster.lane_count):
+			var sh: float = float(fork_shares.get(lid, 0.25))
+			fork_quotas[lid] = maxi(1, roundi(float(reg_count) * sh))
+
 	for idx in range(reg_count):
 		var item: Dictionary = ordered_regulars[idx]
 		item["spawn_index"] = idx
 		item["spawn_time"] = float(idx) * interval
+		var assigned_lane: int = 0
+		if roster.lane_count > 1:
+			var u_id: String = String(item["unit_id"])
+			var u_def: UnitData = unit_map.get(u_id, null) as UnitData
+			var u_fac: String = u_def.faction if u_def != null else ""
+			# First check if this unit belongs to a secondary fork faction with remaining quota
+			for lid in range(1, roster.lane_count):
+				var rem_q: int = int(fork_quotas.get(lid, 0))
+				if rem_q > 0 and String(roster.fork_factions.get(lid, "")) == u_fac and u_fac != roster.active_faction:
+					assigned_lane = lid
+					fork_quotas[lid] = rem_q - 1
+					break
+			# Otherwise interleave evenly across fork lanes that still have quota
+			if assigned_lane == 0:
+				for lid in range(1, roster.lane_count):
+					var rem_q: int = int(fork_quotas.get(lid, 0))
+					var stride: int = maxi(2, floori(1.0 / maxf(0.10, float(fork_shares.get(lid, 0.25)))))
+					if rem_q > 0 and ((idx + lid) % stride == 0 or (reg_count - idx) <= rem_q):
+						assigned_lane = lid
+						fork_quotas[lid] = rem_q - 1
+						break
+		item["lane_id"] = assigned_lane
+		lane_counts[assigned_lane] = int(lane_counts.get(assigned_lane, 0)) + 1
 		var tags: Array = item["tags"]
 		if tags.has(_C.UnitTag.FAST):
 			fast_indices.append(idx)
 		schedule.append(item)
+	roster.lane_unit_counts = lane_counts
 
 	# Verify Fast unit first-second rule: never release all Fast units in t <= 1.0 s
 	if not fast_indices.is_empty():
@@ -1645,6 +1745,7 @@ func _build_spawn_schedule(
 			"effective_cost": 0.0,
 			"boss_index": roster.boss_index,
 			"boss_hp": roster.boss_hp,
+			"lane_id": 0,
 		})
 
 	return schedule
@@ -1759,6 +1860,9 @@ func _build_intel_payload(roster: WaveRoster) -> Dictionary:
 		"is_stars_are_right": roster.is_stars_are_right,
 		"next_faction_after_boss": roster.next_faction_after_boss,
 		"next_faction_logo": next_logo,
+		"lane_count": roster.lane_count,
+		"fork_factions": roster.fork_factions.duplicate(),
+		"fork_budget": roster.fork_budget,
 	}
 
 

@@ -29,6 +29,9 @@ var _reason_label: Label3D
 
 var _range_multimesh: MultiMeshInstance3D
 var _ghost_path_multimesh: MultiMeshInstance3D
+var _unselected_fork_multimesh: MultiMeshInstance3D
+var _condemned_tower_multimesh: MultiMeshInstance3D
+var _fork_candidate_labels: Array[Label3D] = []
 var _preview_overlap_multimesh: MultiMeshInstance3D
 var _persistent_overlap_multimesh: MultiMeshInstance3D
 var _objective_unclaimed_multimesh: MultiMeshInstance3D
@@ -153,6 +156,8 @@ func _build_hover_nodes() -> void:
 func _build_multimesh_layers() -> void:
 	_range_multimesh = _create_layer("RangeRingLayer")
 	_ghost_path_multimesh = _create_layer("GhostPathLayer")
+	_unselected_fork_multimesh = _create_layer("UnselectedForkLayer")
+	_condemned_tower_multimesh = _create_layer("CondemnedTowerLayer")
 	_preview_overlap_multimesh = _create_layer("PreviewOverlapLayer")
 	_persistent_overlap_multimesh = _create_layer("PersistentOverlapLayer")
 	_reserved_multimesh = _create_layer("ReservedHexLayer")
@@ -341,14 +346,115 @@ func refresh_path_overlays(pgen: PathGenerator) -> void:
 			var gh: Vector2i = pgen.ghost_path_hexes[i]
 			var wp: Vector3 = _HexMath.hex_to_world(gh, 0.08)
 			var prev_h: Vector2i = pgen.path_hexes[pgen.path_hexes.size() - 1] if i == 0 and not pgen.path_hexes.is_empty() else (pgen.ghost_path_hexes[i - 1] if i > 0 else gh)
+			if pgen.preview_is_fork and i == 0 and pgen.selected_fork_candidate_index < pgen.fork_candidates.size():
+				var sel_cand: Dictionary = pgen.fork_candidates[pgen.selected_fork_candidate_index]
+				var j_idx: int = clampi(int(sel_cand.get("join_index", 0)), 0, maxi(0, pgen.path_hexes.size() - 1))
+				if not pgen.path_hexes.is_empty():
+					prev_h = pgen.path_hexes[j_idx]
 			var prev_wp: Vector3 = _HexMath.hex_to_world(prev_h, 0.08)
 			var dir: Vector3 = wp - prev_wp
 			var dash_basis := Basis.IDENTITY
 			if dir.length_squared() > 0.001:
 				dash_basis = Basis.looking_at(dir.normalized(), Vector3.UP)
 			mm.set_instance_transform(i, Transform3D(dash_basis, wp))
-			mm.set_instance_color(i, theme_data.ghost_path_color)
+			var sel_col: Color = Color(1.0, 0.52, 0.18, 0.92) if pgen.preview_is_fork else theme_data.ghost_path_color
+			mm.set_instance_color(i, sel_col)
 		_ghost_path_multimesh.multimesh = mm
+
+	# 5. Unselected fork candidate ribbons, condemned tower hazard rings, and route labels
+	_refresh_fork_candidate_overlays(pgen)
+
+
+func _refresh_fork_candidate_overlays(pgen: PathGenerator) -> void:
+	for lbl: Label3D in _fork_candidate_labels:
+		if is_instance_valid(lbl):
+			lbl.visible = false
+
+	if pgen == null or not pgen.preview_is_fork or pgen.fork_candidates.is_empty():
+		if _unselected_fork_multimesh != null:
+			_unselected_fork_multimesh.multimesh = null
+		if _condemned_tower_multimesh != null:
+			_condemned_tower_multimesh.multimesh = null
+		return
+
+	# Condemned tower hazard rings on the currently selected candidate route
+	var condemned: Array[Vector2i] = pgen.get_condemned_tower_hexes()
+	_populate_ring_multimesh(
+		_condemned_tower_multimesh,
+		condemned,
+		Color(1.0, 0.16, 0.16, 0.96),
+		0.088
+	)
+
+	# Unselected fork candidate ribbons
+	var unsel_transforms: Array[Transform3D] = []
+	var unsel_colors: Array[Color] = []
+	var alt_palette: Array[Color] = [
+		Color(0.25, 0.88, 1.0, 0.52),
+		Color(0.95, 0.82, 0.25, 0.52),
+		Color(0.65, 0.45, 1.0, 0.52),
+	]
+
+	for c_idx in range(pgen.fork_candidates.size()):
+		var cand: Dictionary = pgen.fork_candidates[c_idx]
+		var nh: Array[Vector2i] = cand.get("new_hexes", []) as Array[Vector2i]
+		if nh.is_empty():
+			continue
+
+		# Spawn/End label for each candidate
+		while _fork_candidate_labels.size() <= c_idx:
+			var nl := Label3D.new()
+			nl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+			nl.font_size = 26
+			nl.pixel_size = 0.008
+			nl.no_depth_test = true
+			nl.render_priority = 6
+			add_child(nl)
+			_fork_candidate_labels.append(nl)
+
+		var lbl_node: Label3D = _fork_candidate_labels[c_idx]
+		var c_label: String = String(cand.get("label", "Route %d" % (c_idx + 1)))
+		var c_condemned: int = (cand.get("condemned_hexes", []) as Array).size()
+		var is_sel: bool = (c_idx == pgen.selected_fork_candidate_index)
+		lbl_node.text = "%s%s (%d hex, %d Crushed)" % [
+			"[SELECTED] " if is_sel else "",
+			c_label.to_upper(),
+			nh.size(),
+			c_condemned
+		]
+		lbl_node.modulate = Color(1.0, 0.62, 0.20, 1.0) if is_sel else alt_palette[c_idx % alt_palette.size()].lightened(0.35)
+		lbl_node.global_position = _HexMath.hex_to_world(nh[nh.size() - 1], 1.65)
+		lbl_node.visible = true
+
+		if is_sel:
+			continue
+
+		var j_idx: int = clampi(int(cand.get("join_index", 0)), 0, maxi(0, pgen.path_hexes.size() - 1))
+		var col: Color = alt_palette[c_idx % alt_palette.size()]
+		for i in range(nh.size()):
+			var gh: Vector2i = nh[i]
+			var wp: Vector3 = _HexMath.hex_to_world(gh, 0.068)
+			var prev_h: Vector2i = pgen.path_hexes[j_idx] if (i == 0 and not pgen.path_hexes.is_empty()) else (nh[i - 1] if i > 0 else gh)
+			var prev_wp: Vector3 = _HexMath.hex_to_world(prev_h, 0.068)
+			var dir: Vector3 = wp - prev_wp
+			var dash_basis := Basis.IDENTITY
+			if dir.length_squared() > 0.001:
+				dash_basis = Basis.looking_at(dir.normalized(), Vector3.UP)
+			unsel_transforms.append(Transform3D(dash_basis, wp))
+			unsel_colors.append(col)
+
+	if unsel_transforms.is_empty():
+		_unselected_fork_multimesh.multimesh = null
+	else:
+		var u_mm := MultiMesh.new()
+		u_mm.transform_format = MultiMesh.TRANSFORM_3D
+		u_mm.use_colors = true
+		u_mm.mesh = _dash_mesh
+		u_mm.instance_count = unsel_transforms.size()
+		for i in range(unsel_transforms.size()):
+			u_mm.set_instance_transform(i, unsel_transforms[i])
+			u_mm.set_instance_color(i, unsel_colors[i])
+		_unselected_fork_multimesh.multimesh = u_mm
 
 
 func _populate_ring_multimesh(target: MultiMeshInstance3D, hexes: Array[Vector2i], color: Color, y_offset: float, custom_mesh: ArrayMesh = null) -> void:

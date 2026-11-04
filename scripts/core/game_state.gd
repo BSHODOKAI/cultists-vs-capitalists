@@ -59,6 +59,10 @@ signal boss_killed(wave_number: int)
 signal boss_leaked(wave_number: int)
 signal path_extended(growth_result: Dictionary)
 signal path_preview_ready(preview_result: Dictionary)
+signal fork_preview_ready(candidates: Array, selected_index: int)
+signal fork_candidate_selected(selected_index: int, candidate: Dictionary)
+signal towers_crushed_by_fork(lane_id: int, crushed_towers: Array, bounty_offerings: int, bounty_scrap: int)
+signal lane_bounty_claimed(lane_id: int, unit_id: int, offerings_paid: int, scrap_paid: int)
 signal tower_damaged_enemy(tower_id: int, tower_type: String, unit_id: int, unit_tags: Array, amount: float, damage_tag: int)
 
 # --- Economy & UI signals ----------------------------------------------------
@@ -358,6 +362,7 @@ func _wire_system_signals() -> void:
 	tower_system.boss_leaked.connect(_on_tower_system_boss_leaked)
 	tower_system.ability_telegraphed.connect(_on_tower_system_ability_telegraphed)
 	tower_system.loss_report_generated.connect(_on_tower_system_loss_report)
+	tower_system.lane_bounty_paid.connect(_on_tower_system_lane_bounty_paid)
 
 
 # --- INTERMISSION, WAVE_ACTIVE, POST_BOSS, GAME_OVER -------------------------
@@ -373,13 +378,18 @@ func _enter_intermission() -> void:
 
 	# At the intermission before wave 8 of each interval (8, 18, 28...), request path preview
 	if path_generator.is_preview_wave(next_wave):
-		var preview_res: Dictionary = path_generator.preview_next_extension()
+		var upcoming_boss_wave: int = next_wave + path_generator.preview_lead_waves
+		var preview_res: Dictionary = path_generator.preview_next_extension(upcoming_boss_wave)
 		_log_event("path_preview_generated", {
 			"wave": next_wave,
+			"is_fork": path_generator.preview_is_fork,
+			"candidate_count": path_generator.fork_candidates.size(),
 			"ghost_len": path_generator.ghost_path_hexes.size(),
 			"preview_overlaps": path_generator.preview_overlap_hexes.size(),
 		})
 		path_preview_ready.emit(preview_res)
+		if path_generator.preview_is_fork:
+			fork_preview_ready.emit(path_generator.fork_candidates, path_generator.selected_fork_candidate_index)
 
 	# Director builds and LOCKS the next wave's roster
 	var branch_mix: Dictionary = _compute_tower_branch_mix()
@@ -525,7 +535,7 @@ func _on_sim_tick(dt: float, _tick_index: int) -> void:
 	if tower_system.offerings != pre_off or tower_system.scrap != pre_scrap:
 		currencies_changed.emit(tower_system.offerings, tower_system.scrap)
 
-	spatial_index.rebuild(tower_system.units, path_generator.path_hexes)
+	spatial_index.rebuild(tower_system.units, path_generator.path_hexes, path_generator.lanes)
 	_note_objective_contest()
 
 	# Check wave completion
@@ -604,12 +614,14 @@ func _spawn_scheduled_item(item: Dictionary) -> CombatUnit:
 	var uid: String = String(item.get("unit_id", ""))
 	var is_boss: bool = bool(item.get("is_boss", false))
 	var b_idx: int = maxi(1, int(item.get("boss_index", 1)))
+	var lid: int = 0 if is_boss else int(item.get("lane_id", 0))
 	var unit: CombatUnit = tower_system.spawn_unit_from_data(
 		uid,
 		-1.0,
 		b_idx,
 		_combat_rng,
-		locked_roster.completed_cycles if locked_roster != null else -1
+		locked_roster.completed_cycles if locked_roster != null else -1,
+		lid
 	)
 	if unit == null:
 		return null
@@ -690,11 +702,13 @@ func _enter_post_boss() -> void:
 		_boss_died_this_wave = true
 		boss_killed.emit(current_wave)
 
-	# 2. Commit the previewed growth exactly as previewed
-	var growth_res: Dictionary = path_generator.commit_extension()
-	tower_system.set_path(path_generator.path_hexes)
+	# 2. Commit the previewed growth (extension or fork) exactly as previewed
+	var growth_res: Dictionary = _commit_growth_and_crush()
 	_log_event("path_extended", {
 		"wave": current_wave,
+		"is_fork": bool(growth_res.get("is_fork", false)),
+		"lane_id": int(growth_res.get("lane_id", 0)),
+		"lane_count": path_generator.get_lane_count(),
 		"added_hexes": (growth_res.get("new_hexes", []) as Array).size(),
 		"total_path_length": path_generator.path_hexes.size(),
 	})
@@ -714,8 +728,13 @@ func _enter_post_boss() -> void:
 	})
 	next_faction_announced.emit(next_fac, next_logo)
 
-	# 4. Move the camera to the new path section
-	if not path_generator.path_hexes.is_empty():
+	# 4. Move the camera to the new path section (or new fork drop spawn)
+	var new_hexes_committed: Array = growth_res.get("new_hexes", []) as Array
+	if not new_hexes_committed.is_empty():
+		var spawn_hex: Vector2i = new_hexes_committed[new_hexes_committed.size() - 1] as Vector2i
+		var focus_label: String = "Company Drop Spawn" if bool(growth_res.get("is_fork", false)) else "New Path Section"
+		camera_focus_requested.emit(_HexMath.hex_to_world(spawn_hex), focus_label)
+	elif not path_generator.path_hexes.is_empty():
 		var spawn_hex: Vector2i = path_generator.path_hexes[path_generator.path_hexes.size() - 1]
 		camera_focus_requested.emit(_HexMath.hex_to_world(spawn_hex), "New Path Section")
 
@@ -1143,6 +1162,91 @@ func _on_tower_system_ability_telegraphed(ev: Dictionary) -> void:
 	ability_telegraphed.emit(ev)
 
 
+## Player command: select which fork candidate (0..count-1) will commit after the boss wave.
+func request_select_fork_candidate(candidate_index: int) -> bool:
+	if path_generator == null or not path_generator.preview_is_fork:
+		return false
+	if not path_generator.select_fork_candidate(candidate_index):
+		return false
+	_log_command("select_fork_candidate", {"index": candidate_index})
+	var cand: Dictionary = path_generator.fork_candidates[path_generator.selected_fork_candidate_index]
+	_log_event("fork_candidate_selected", {
+		"index": path_generator.selected_fork_candidate_index,
+		"label": String(cand.get("label", "")),
+		"condemned_count": (cand.get("condemned_hexes", []) as Array).size(),
+	})
+	fork_candidate_selected.emit(path_generator.selected_fork_candidate_index, cand)
+	path_preview_ready.emit(cand)
+	return true
+
+
+## Commits path growth (extension or fork), crushes any towers on the committed fork hexes
+## into that lane's 100% Kill Bounty Pool, and syncs all lanes to TowerSystem.
+func _commit_growth_and_crush() -> Dictionary:
+	var growth_res: Dictionary = path_generator.commit_extension()
+	var is_fork: bool = bool(growth_res.get("is_fork", false))
+	var lid: int = int(growth_res.get("lane_id", 0))
+	var new_hexes: Array[Vector2i] = []
+	for h_var: Variant in (growth_res.get("new_hexes", []) as Array):
+		new_hexes.append(h_var as Vector2i)
+
+	if is_fork and tower_system != null and not new_hexes.is_empty():
+		var crush_res: Dictionary = tower_system.crush_towers_on_hexes(new_hexes, lid)
+		var crushed_list: Array = crush_res.get("crushed", []) as Array
+		var bounty_off: int = int(crush_res.get("bounty_offerings_added", 0))
+		var bounty_scr: int = int(crush_res.get("bounty_scrap_added", 0))
+		growth_res["crushed_towers"] = crushed_list
+		growth_res["bounty_offerings_added"] = bounty_off
+		growth_res["bounty_scrap_added"] = bounty_scr
+		for c_var: Variant in crushed_list:
+			var c_info: Dictionary = c_var as Dictionary
+			var c_tid: int = int(c_info.get("tower_id", -1))
+			var c_hex: Vector2i = c_info.get("hex", Vector2i.ZERO) as Vector2i
+			path_generator.remove_tower(c_hex)
+			if selected_placed_tower != null and selected_placed_tower.tower_id == c_tid:
+				select_placed_tower(null)
+			tower_sold_from_hex.emit(c_tid, c_hex, {
+				"sold": true,
+				"crushed": true,
+				"offerings_refund": 0,
+				"scrap_refund": 0,
+			})
+		if not crushed_list.is_empty():
+			_log_event("towers_crushed_by_fork", {
+				"wave": current_wave,
+				"lane_id": lid,
+				"crushed_count": crushed_list.size(),
+				"bounty_offerings": bounty_off,
+				"bounty_scrap": bounty_scr,
+			})
+			towers_crushed_by_fork.emit(lid, crushed_list, bounty_off, bounty_scr)
+
+	if tower_system != null:
+		tower_system.set_lanes(path_generator.lanes)
+	_refresh_objective_claims()
+	return growth_res
+
+
+func _on_tower_system_lane_bounty_paid(
+	lane_id: int,
+	unit_id: int,
+	offerings_paid: int,
+	scrap_paid: int,
+	offerings_remaining: int,
+	scrap_remaining: int
+) -> void:
+	_log_event("lane_bounty_claimed", {
+		"wave": current_wave,
+		"lane_id": lane_id,
+		"unit_id": unit_id,
+		"offerings_paid": offerings_paid,
+		"scrap_paid": scrap_paid,
+		"offerings_remaining": offerings_remaining,
+		"scrap_remaining": scrap_remaining,
+	})
+	lane_bounty_claimed.emit(lane_id, unit_id, offerings_paid, scrap_paid)
+
+
 func _on_tower_system_loss_report(report: LossReport) -> void:
 	if not god_mode and current_state != RunState.GAME_OVER:
 		_trigger_game_over("loss_report", report)
@@ -1227,9 +1331,7 @@ func _settle_objectives_on_growth(growth_res: Dictionary) -> void:
 func debug_force_growth() -> Dictionary:
 	if path_generator == null:
 		return {}
-	var growth_res: Dictionary = path_generator.commit_extension()
-	if tower_system != null:
-		tower_system.set_path(path_generator.path_hexes)
+	var growth_res: Dictionary = _commit_growth_and_crush()
 	path_extended.emit(growth_res)
 	_settle_objectives_on_growth(growth_res)
 	return growth_res
@@ -1313,8 +1415,15 @@ func _compute_path_layout_summary() -> Dictionary:
 		if tower_system == null or not tower_system.towers_by_hex.has(oh):
 			unclaimed_overlaps += 1
 
+	var lane_cnt: int = path_generator.get_lane_count()
+	var lane_ages: Array[int] = []
+	for lid in range(lane_cnt):
+		lane_ages.append(path_generator.get_lane_age_waves(lid, current_wave + 1))
+
 	return {
 		"path_length": path_length,
+		"lane_count": lane_cnt,
+		"lane_ages": lane_ages,
 		"overlap_count": path_generator.persistent_overlap_hexes.size(),
 		"dense_overlap_zones": unclaimed_overlaps,
 		"undefended_preview_hexes": undefended_preview,
@@ -1402,3 +1511,7 @@ func _execute_replayed_command(cmd: Dictionary) -> void:
 			request_maintenance(p.get("hex", Vector2i.ZERO) as Vector2i)
 		"cleanse_tower":
 			request_cleanse_tower(p.get("hex", Vector2i.ZERO) as Vector2i)
+		"select_fork_candidate":
+			request_select_fork_candidate(int(p.get("index", 0)))
+		"draw_rites":
+			request_draw_rites(int(p.get("count", 1)))

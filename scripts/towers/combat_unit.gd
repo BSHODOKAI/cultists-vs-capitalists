@@ -39,10 +39,12 @@ var boss_cycle: int = 0
 var boss_timing_mult: float = 1.0
 
 ## Continuous position in path index coordinates (spawns at path.size() - 1, walks toward 0.0).
+var lane_id: int = 0
 var path_position: float = 0.0
 var cached_hex: Vector2i = Vector2i.ZERO
 var cached_hex_path_pos: float = -999999.0
 var cached_hex_path_len: int = -1
+var cached_hex_lane_id: int = -1
 
 ## Budget cost used to compute default scrap_value = roundi(cost * 0.5).
 var cost: int = 10

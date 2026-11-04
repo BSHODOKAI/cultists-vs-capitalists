@@ -28,9 +28,31 @@ Workflow Improvements
 Gameplay milestones to add
 - Is the growing path really adding something to gameplay, or is it just causing the player to rebuild tower strongholds as it grows to prevent boredome. we need to noodle on this.
 
-sell tower needs confirm
-not show rites as upgrade options until the player has received their first one
-keep an eye as rites as a trap
+
+
+
+
+Objectives to get by settling newly opened areas
+- Ley Lines (unique style of buff for revealed)
+- converted data center (unique style of buff for jank)
+- Something that increases total allowed corruption (linked to a third type maybe? 100 cap is easy to hit, and making it)
+- Negative effects if not controlled (corporations taking cool things and buffing their units)
+
+
+
+FOrks!!!
+- chance for growth to be a fork, instead of extension
+- Forks should be dangerous, but not game ending
+    - Not forking in a place with no towers, and the player has no resources to guard it
+    - Forks 'may' need the ability to destroy towers, lone towers definitely, strongholds... we need to determine whats best here.
+        - If towers destroyed, bounty when killing mobs along that path to regain the lost resources (same amount as if player sold the tower)
+    - Forks may need the player choice vs director choice. PLayer choice prevents something the player truly can't handle, but means a strong player can trivialize the mechanic potentially.
+        - Director/AI selects 2-3 candidates (only 3 at much later stages of the game), player selects which one (communicate to player so they understand what is happening)
+    - Forks are 'new company drops' should alert to player  (SoundFX etc making it clear something interesting is ahppening)
+    - Budget -> new fork may need its own budget
+        - Late game (after first coalition boss) forks can be different faction?
+
+
 
 - Veticality?
 - TOWER STATS!
