@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "communion_of_the_maw"
+display_name = "Communion of the Maw"
+description = "+40% pulse damage, +1 hex radius, and +0.6% per point of Corruption. THE MAW TITHES: every enemy the pulse catches pays 1 Offering. Every kill feeds 2 Corruption into the meter."
+tower_id = "gutter_ritual_circle"
+tier = 4
+branch = 3
+currency = 2
+cost = 2
+prerequisite_id = "the_circle_is_paid"
+corruption_delta = 0
+jank_set = 0
+damage_mult = 0.4
+range_add = 1
+corruption_scaled_damage = 0.006
+behaviors = Array[String](["communion_of_the_maw"])
+behavior_params = {
+"offerings_per_hit": 1,
+"corruption_per_kill": 2
+}

@@ -19,6 +19,8 @@ const _Balance = preload("res://scripts/director/director_balance_data.gd")
 const _CoverageTracker = preload("res://scripts/director/coverage_tracker.gd")
 const _WaveRoster = preload("res://scripts/director/wave_roster.gd")
 const _WaveDirector = preload("res://scripts/director/wave_director.gd")
+const _EventLibrary = preload("res://scripts/events/event_library.gd")
+const _RunEventSystem = preload("res://scripts/events/run_event_system.gd")
 
 const PROFILE_ALL_NAIL_GUN: String = "all_nail_gun"
 const PROFILE_BALANCED: String = "balanced"
@@ -159,6 +161,12 @@ func run_profile_simulation(
 	run_seed: int = 1337
 ) -> Dictionary:
 	var director := _WaveDirector.new(run_seed)
+	# Run the same pseudo-random Event deck the live game uses so budgets reflect it.
+	var events := _RunEventSystem.new(
+		_RunEventSystem.compute_event_seed(run_seed),
+		_EventLibrary.load_events(),
+		_EventLibrary.load_balance()
+	)
 	var wave_rows: Array[Dictionary] = []
 	var total_leaks: int = 0
 	var waves_with_leaks: int = 0
@@ -172,6 +180,7 @@ func run_profile_simulation(
 		var prof: Dictionary = get_profile_config(profile_id, w)
 		var branch_mix: Dictionary = prof["tower_branch_mix"]
 		var tag_eff: Dictionary = prof["tag_efficiency"]
+		var ev: EventData = events.get_event_for_wave(w)
 
 		var path_summary: Dictionary = {
 			"wave_time_window": 36.0,
@@ -183,7 +192,11 @@ func run_profile_simulation(
 		var roster: WaveRoster = director.generate_wave(w, {
 			"tower_branch_mix": branch_mix,
 			"path_layout_summary": path_summary,
+			"event_budget_mult": ev.budget_mult if ev != null else 1.0,
+			"event_id": ev.id if ev != null else "",
 		})
+		if ev != null:
+			events.on_event_fired(w)
 
 		# Simulate combat damage events into director.coverage_tracker for wave w
 		var wave_duration: float = 30.0

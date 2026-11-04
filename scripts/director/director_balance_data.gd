@@ -57,6 +57,11 @@ const FIRST_SECOND_THRESHOLD: float = 1.0
 # --- Unit Cost & Boss Scaling Constants --------------------------------------
 ## effective_cost = cost * (1 + 0.03 * level)
 const UNIT_LEVEL_COST_MULTIPLIER: float = 0.03
+## Maximum +bonus spawn levels the excess-budget phase may add to a SINGLE unit type.
+## Bounds late-game level escalation: with no cap, leftover budget pumped units to
+## +86..+152 spawn levels (an HP multiplier in the thousands), which is not a
+## difficulty curve so much as a wall.
+const MAX_BONUS_LEVELS_PER_UNIT: int = 5
 ## Boss HP = base_hp * (1 + 0.55 * (n - 1) + 0.15 * (n - 1)^2)
 const BOSS_HP_SCALING_PER_INDEX: float = 0.55
 const BOSS_HP_QUADRATIC_PER_INDEX: float = 0.15
@@ -146,6 +151,7 @@ const DENSE_OVERLAP_ZONES_THRESHOLD: int = 3
 @export var first_second_threshold: float = FIRST_SECOND_THRESHOLD
 
 @export var unit_level_cost_multiplier: float = UNIT_LEVEL_COST_MULTIPLIER
+@export var max_bonus_levels_per_unit: int = MAX_BONUS_LEVELS_PER_UNIT
 @export var boss_hp_scaling_per_index: float = BOSS_HP_SCALING_PER_INDEX
 @export var boss_hp_quadratic_per_index: float = BOSS_HP_QUADRATIC_PER_INDEX
 

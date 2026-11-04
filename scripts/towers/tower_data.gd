@@ -101,10 +101,13 @@ enum TargetingMode {
 @export var revealed_t4_upgrade: UpgradeNode
 @export var rigged_t3_upgrade: UpgradeNode
 @export var rigged_t4_upgrade: UpgradeNode
+## Rite branch (paid in Rites). Only some towers have one -- the fork is optional.
+@export var rite_t3_upgrade: UpgradeNode
+@export var rite_t4_upgrade: UpgradeNode
 
 
-## Returns all 5 upgrade nodes belonging to this tower in canonical order:
-## [t2, revealed_t3, revealed_t4, rigged_t3, rigged_t4].
+## Returns all upgrade nodes belonging to this tower in canonical order:
+## [t2, revealed_t3, revealed_t4, rigged_t3, rigged_t4, rite_t3, rite_t4].
 func get_all_upgrade_nodes() -> Array[UpgradeNode]:
 	var out: Array[UpgradeNode] = []
 	if t2_upgrade != null:
@@ -117,6 +120,10 @@ func get_all_upgrade_nodes() -> Array[UpgradeNode]:
 		out.append(rigged_t3_upgrade)
 	if rigged_t4_upgrade != null:
 		out.append(rigged_t4_upgrade)
+	if rite_t3_upgrade != null:
+		out.append(rite_t3_upgrade)
+	if rite_t4_upgrade != null:
+		out.append(rite_t4_upgrade)
 	return out
 
 
@@ -238,7 +245,12 @@ func get_stats_summary(effective_cost: int = -1, currency_label: String = "Offer
 
 ## Returns a compact summary of the tower's upgrade branches when defined.
 func get_upgrade_preview_summary() -> String:
-	if t2_upgrade == null and revealed_t3_upgrade == null and rigged_t3_upgrade == null:
+	if (
+		t2_upgrade == null
+		and revealed_t3_upgrade == null
+		and rigged_t3_upgrade == null
+		and rite_t3_upgrade == null
+	):
 		return ""
 	var lines: PackedStringArray = PackedStringArray()
 	if t2_upgrade != null:
@@ -249,4 +261,7 @@ func get_upgrade_preview_summary() -> String:
 	if rigged_t3_upgrade != null:
 		var rig4_name: String = (" -> " + rigged_t4_upgrade.display_name) if rigged_t4_upgrade != null else ""
 		lines.append("Rigged (Scrap): %s%s" % [rigged_t3_upgrade.display_name, rig4_name])
+	if rite_t3_upgrade != null:
+		var rite4_name: String = (" -> " + rite_t4_upgrade.display_name) if rite_t4_upgrade != null else ""
+		lines.append("Rite (Draw on Corruption): %s%s" % [rite_t3_upgrade.display_name, rite4_name])
 	return "\n".join(lines)

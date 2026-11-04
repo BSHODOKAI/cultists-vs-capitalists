@@ -38,8 +38,9 @@ func _connect_signals() -> void:
 	var gs: Node = get_node_or_null("/root/GameState")
 	if gs == null:
 		return
-	gs.connect("stars_are_right_triggered", func(w: int) -> void:
-		show_banner("WAVE %d: THE STARS ARE RIGHT (+20%% Revealed Tower Damage)!" % w, 4.0, Color(0.85, 0.45, 1.0))
+	gs.connect("event_triggered", func(_event_id: String, _display_name: String, category: int, banner_text: String, banner_color: Color) -> void:
+		var tag: String = "BUFF" if category == 0 else "DEBUFF"
+		show_banner("WAVE %d EVENT [%s]: %s" % [int(gs.get("current_wave")), tag, banner_text], 4.5, banner_color)
 	)
 	gs.connect("next_faction_announced", func(fac: String, _logo: String) -> void:
 		show_banner("PATH EXTENDED! Next Corporate Faction: %s" % fac.replace("_", " ").to_upper(), 4.5, Color(0.45, 0.95, 1.0))

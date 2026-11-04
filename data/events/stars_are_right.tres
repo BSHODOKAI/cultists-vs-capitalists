@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="EventData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/events/event_data.gd" id="1_ev"]
+
+[resource]
+script = ExtResource("1_ev")
+id = "stars_are_right"
+display_name = "The Stars Are Right"
+description = "+20% Revealed tower damage; the wave budget grows by 10%."
+category = 0
+banner_color = Color(0.85, 0.45, 1, 1)
+allow_on_boss_wave = false
+revealed_damage_bonus = 0.2
+budget_mult = 1.1

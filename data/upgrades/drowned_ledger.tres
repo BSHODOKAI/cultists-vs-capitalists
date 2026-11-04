@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "drowned_ledger"
+display_name = "Drowned Ledger"
+description = "+30% damage, a stronger 45% slow aura, and +0.5% damage per point of Corruption. THE DROWNED LEDGER: every kill is written down under water and feeds 1 Corruption into the meter, so the current pulls harder the deeper the cult sinks."
+tower_id = "tentacle_storm_drain"
+tier = 3
+branch = 3
+currency = 2
+cost = 1
+prerequisite_id = "more_grates"
+corruption_delta = 0
+jank_set = 0
+damage_mult = 0.3
+slow_aura_override = 0.45
+corruption_scaled_damage = 0.005
+behaviors = Array[String](["drowned_ledger"])
+behavior_params = {
+"corruption_per_kill": 1
+}

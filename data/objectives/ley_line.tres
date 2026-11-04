@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="ObjectiveData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/objectives/objective_data.gd" id="1_objective"]
+
+[resource]
+script = ExtResource("1_objective")
+id = "ley_line"
+display_name = "Ley Line"
+description = "A raw fault of psychic pressure under the street. Revealed towers built on the ground around it bite harder; leave it and the corporations tap it, and their units crossing the fault shrug off damage."
+kind = 0
+color = Color(0.62, 0.34, 0.95, 0.85)
+claim_radius_hexes = 2
+revealed_damage_bonus = 0.08
+corruption_cap_bonus = 0
+jam_duration_mult = 1.0
+capture_enemy_speed_bonus = 0.0
+capture_enemy_damage_reduction = 0.15
+capture_banner_text = "CORPORATE SEIZURE: the Ley Line shields them (-15% damage taken on corporate ground)!"

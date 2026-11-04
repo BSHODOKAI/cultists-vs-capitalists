@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "the_song_is_billed"
+display_name = "The Song Is Billed"
+description = "+25% damage and +1 choir member, plus +0.4% damage per point of Corruption. THE BILLED HYMN: every kill the choir makes feeds 1 Corruption into the meter, so the song grows louder the more of it is sung -- and so does whatever answers."
+tower_id = "chanting_choir"
+tier = 3
+branch = 3
+currency = 2
+cost = 1
+prerequisite_id = "deeper_harmony"
+corruption_delta = 0
+jank_set = 0
+damage_mult = 0.25
+members_add = 1
+corruption_scaled_damage = 0.004
+behaviors = Array[String](["the_song_is_billed"])
+behavior_params = {
+"corruption_per_kill": 1
+}

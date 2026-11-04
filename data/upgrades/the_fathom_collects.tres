@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "the_fathom_collects"
+display_name = "The Fathom Collects"
+description = "+50% damage, a 55% slow aura, one additional simultaneous target, and +0.8% damage per point of Corruption. THE FATHOM COLLECTS: each kill feeds 2 Corruption into the meter and drags 1 Scrap back up with it."
+tower_id = "tentacle_storm_drain"
+tier = 4
+branch = 3
+currency = 2
+cost = 2
+prerequisite_id = "drowned_ledger"
+corruption_delta = 0
+jank_set = 0
+damage_mult = 0.5
+slow_aura_override = 0.55
+targets_add = 1
+corruption_scaled_damage = 0.008
+behaviors = Array[String](["the_fathom_collects"])
+behavior_params = {
+"corruption_per_kill": 2,
+"rite_scrap_per_kill": 1
+}

@@ -121,6 +121,17 @@ func get_behavior_param(behavior_id: String, key: String, default_value: Variant
 	return default_value
 
 
+## Sums [param key] across every unlocked node that declares it. Rite kill effects are read
+## this way so a new Rite node needs no hardcoded behaviour-id branch in the combat code:
+## the node's own params are the whole specification.
+func get_behavior_param_sum(key: String) -> float:
+	var total: float = 0.0
+	for node: UpgradeNode in unlocked_nodes:
+		if node != null and node.behavior_params.has(key):
+			total += float(node.behavior_params[key])
+	return total
+
+
 ## True when the tower can currently act (not misfired, jammed, scrap-starved, disabled, or converted).
 func is_operational() -> bool:
 	if misfired_this_wave or disabled_for_wave_no_scrap:
@@ -190,11 +201,50 @@ func get_upgrade_damage_multiplier() -> float:
 	return 1.0 + add_mult
 
 
+## Rite branch (hexed_nail_gun): the "ledger" of consecutive shots signed against
+## the same target. Resets when the tower switches target.
+var ledger_target_id: int = -1
+var ledger_stacks: int = 0
+
+
 func get_upgrade_fire_rate_multiplier() -> float:
 	var add_mult: float = 0.0
 	for node: UpgradeNode in unlocked_nodes:
 		add_mult += node.fire_rate_mult
 	return 1.0 + add_mult
+
+
+## Rite branch signature: additive damage per point of Corruption, summed across
+## unlocked nodes. 0.0 when the tower has no Rite node (the common case).
+func get_corruption_scaled_damage() -> float:
+	var per_point: float = 0.0
+	for node: UpgradeNode in unlocked_nodes:
+		per_point += node.corruption_scaled_damage
+	return per_point
+
+
+## Rite: additive per-point-Corruption bonus for [param key], summed across unlocked nodes.
+## The `"damage"` key folds in the original [member UpgradeNode.corruption_scaled_damage]
+## field so both spellings agree. Returns 0.0 when the tower has no Rite node (the common case).
+func get_corruption_scaled_stat(key: String) -> float:
+	var per_point: float = 0.0
+	for node: UpgradeNode in unlocked_nodes:
+		if node == null:
+			continue
+		if key == "damage":
+			per_point += node.corruption_scaled_damage
+		if node.corruption_scaled_stat.has(key):
+			per_point += float(node.corruption_scaled_stat[key])
+	return per_point
+
+
+## True when this tower draws ANY Corruption-scaled power. Used by the data test to enforce
+## that every Rite node is genuinely the Corruption-scaling branch, whatever stat it scales.
+func has_corruption_scaling() -> bool:
+	for key: String in ["damage", "aura_fire_rate", "income", "summon_hp"]:
+		if get_corruption_scaled_stat(key) > 0.0:
+			return true
+	return false
 
 
 func get_member_count() -> int:

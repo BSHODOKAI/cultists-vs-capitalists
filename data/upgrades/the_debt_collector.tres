@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "the_debt_collector"
+display_name = "The Debt Collector"
+description = "+70% damage, +1 hex range, and +1.0% per point of Corruption. THE SETTLEMENT: each kill pays Offerings equal to 5% of the target's max HP, so big accounts pay big. Every kill feeds 2 Corruption into the meter."
+tower_id = "watcher_in_the_billboard"
+tier = 4
+branch = 3
+currency = 2
+cost = 2
+prerequisite_id = "covetous_gaze"
+corruption_delta = 0
+jank_set = 0
+damage_mult = 0.7
+range_add = 1
+corruption_scaled_damage = 0.01
+behaviors = Array[String](["the_debt_collector"])
+behavior_params = {
+"offerings_per_max_hp": 0.05,
+"corruption_per_kill": 2
+}

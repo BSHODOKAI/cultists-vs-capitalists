@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="ObjectiveData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/objectives/objective_data.gd" id="1_objective"]
+
+[resource]
+script = ExtResource("1_objective")
+id = "corruption_reservoir"
+display_name = "Corruption Reservoir"
+description = "A sink of accumulated rot beneath the block. Holding it raises how much Corruption the cult can bear before the Rogue Entities wake, and it is what lets the cult draw Rites at all; if the corporations take it they pump the filth out and their units crossing it are faster and tougher."
+kind = 2
+color = Color(0.35, 0.85, 0.42, 0.85)
+claim_radius_hexes = 2
+revealed_damage_bonus = 0.0
+corruption_cap_bonus = 25
+jam_duration_mult = 1.0
+capture_enemy_speed_bonus = 0.15
+capture_enemy_damage_reduction = 0.1
+capture_banner_text = "CORPORATE SEIZURE: the Reservoir feeds their ranks (+15% speed, -10% damage taken on corporate ground)!"

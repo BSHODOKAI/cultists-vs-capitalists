@@ -10,6 +10,7 @@ const _PlaceholderModels = preload("res://scripts/world/placeholder_models.gd")
 const _PlaceholderIcons = preload("res://scripts/ui/placeholder_icons.gd")
 const _BiomeLibrary = preload("res://scripts/world/biome_library.gd")
 const _BiomeTileModels = preload("res://scripts/world/biome_tile_models.gd")
+const _UpgradeNode = preload("res://scripts/towers/upgrade_node.gd")
 
 
 func _get_game_state() -> GameStateNode:
@@ -289,6 +290,170 @@ func test_03_urban_center_biome_skyscrapers_districts_and_cleared_street_under_t
 	var linger_aabb: AABB = linger_node.mesh.get_aabb()
 	assert(linger_aabb.end.x > 5.5, "A dead anchor must keep the bolt lingering at its captured hit position (not the origin)")
 	assert(linger_aabb.position.x > -0.5, "A dead anchor must never snap the bolt to the world origin")
+
+	main_inst.queue_free()
+	clock.manual_mode = false
+
+
+## The T2 fork is where the upgrade descriptions are on screen all at once, and it used to push
+## the panel thousands of pixels wide: a Button's minimum width is the full UNWRAPPED width of its
+## longest line and autowrap_mode does not reduce it, so two ~1398 px fork buttons side by side in
+## an HBox forced the panel off the screen. Descriptions now live in wrapping Labels instead.
+func test_04_tower_panel_upgrade_fork_stays_on_screen() -> void:
+	var view := Vector2(1152.0, 648.0)
+
+	# 1. The pure layout rule must never place the panel partly off the screen.
+	var huge: Rect2 = TowerPanel.compute_panel_rect(view, Vector2(1398.0, 900.0), 226.0)
+	assert(huge.position.x >= 0.0 and huge.position.y >= 0.0, "Panel must never start off screen")
+	assert(
+		huge.position.x + huge.size.x <= view.x and huge.position.y + huge.size.y <= view.y,
+		"Panel must never extend past the screen edge"
+	)
+	var small: Rect2 = TowerPanel.compute_panel_rect(view, Vector2(318.0, 200.0), 226.0)
+	assert(is_equal_approx(small.position.y, 226.0), "A panel that fits keeps its top under the IntelPanel")
+	assert(
+		is_equal_approx(small.position.x + small.size.x, view.x - TowerPanel.PANEL_MARGIN),
+		"Panel must stay right-justified"
+	)
+
+	# 2. The real panel in its T2 fork state, measured with real text metrics.
+	var gs: GameStateNode = _get_game_state()
+	var clock: SimClockNode = _get_sim_clock()
+	clock.manual_mode = true
+
+	var main_packed := load("res://scenes/main.tscn") as PackedScene
+	var main_inst: Node = main_packed.instantiate()
+	add_child(main_inst)
+	var tower_panel: TowerPanel = main_inst.get_node("HUD/TowerPanel") as TowerPanel
+
+	var placed: TowerInstance = null
+	for h: Vector2i in gs.path_generator.get_buildable_hexes():
+		placed = gs.request_place_tower(h, "gutter_ritual_circle")
+		if placed != null:
+			break
+	assert(placed != null, "Must place a tower for the fork UI")
+	gs.add_currency(0, 10000, "test")
+	assert(gs.request_upgrade_tower(placed, placed.def.t2_upgrade.id), "T2 must purchase")
+	gs.select_placed_tower(placed)
+
+	var fork_boxes: Array[HBoxContainer] = []
+	for c: Node in tower_panel._tier_container.get_children():
+		if c is HBoxContainer:
+			fork_boxes.append(c)
+	assert(fork_boxes.size() == 1, "T2 must show exactly one fork row")
+	assert(fork_boxes[0].get_child_count() == 2, "The fork row must offer Revealed and Rigged side by side")
+	assert(
+		tower_panel._tier_container.get_child_count() == 3,
+		"T2 must show the locking warning, the fork pair and the Rite row"
+	)
+
+	# The descriptions must still be READABLE, just no longer inside the buttons.
+	var rev_card: Control = fork_boxes[0].get_child(0) as Control
+	var rev_desc: Label = rev_card.get_child(1) as Label
+	assert(rev_desc != null and rev_desc is Label, "A fork option must still show its description")
+	assert(
+		rev_desc.text == placed.def.revealed_t3_upgrade.description,
+		"The fork description label must carry the upgrade's own description"
+	)
+	assert(
+		rev_desc.autowrap_mode != TextServer.AUTOWRAP_OFF,
+		"The description label must wrap, or it stretches the panel off the screen"
+	)
+	assert(rev_desc.text.length() > 40, "This tower's description is long: it is the case that broke the layout")
+
+	# 3. Measured content on a real screen: the panel must fit on both axes.
+	#
+	# Only the WIDTH is meaningful here. A wrapped Label reports its real width at any layout
+	# state (a Label collapses to its longest word, a Button does not collapse at all), which is
+	# exactly how the original bug showed up. Its HEIGHT is not meaningful in a single-pass test:
+	# nothing lays the containers out without a frame, so wrapped heights come back garbage.
+	var min_sz: Vector2 = tower_panel.get_combined_minimum_size()
+	assert(min_sz.x < view.x * 0.6, "T2 fork content must not demand most of the screen width (got %.0f)" % min_sz.x)
+	var rect: Rect2 = TowerPanel.compute_panel_rect(view, min_sz, TowerPanel.PANEL_PREFERRED_TOP)
+	assert(rect.position.x >= 0.0, "T2 fork panel must not run off the left edge")
+	assert(rect.position.x + rect.size.x <= view.x, "T2 fork panel must not run off the right edge")
+
+	# The root cause of the stretched panel: long descriptions inside BUTTON text. Button minimum
+	# width is the full unwrapped width of its longest line and autowrap_mode does not reduce it,
+	# so no button may ever carry a description again -- the cards put them in wrapping labels.
+	for card: Node in tower_panel._tier_container.get_children():
+		for sub: Node in card.get_children():
+			if sub is Button:
+				var b: Button = sub
+				assert(
+					b.text.length() < 80,
+					"An upgrade button must stay a short header, not carry a description (got %d chars)" % b.text.length()
+				)
+				for u: UpgradeNode in [
+					placed.def.revealed_t3_upgrade, placed.def.rigged_t3_upgrade, placed.def.rite_t3_upgrade
+				]:
+					if u != null:
+						assert(not b.text.contains(u.description), "A description must not be inside a button's text")
+
+	# The top bar must stay readable while choosing a branch: the rule may never place the panel
+	# into it, whatever the content height turns out to be. (The panel's real T2 height is
+	# measured in a live run, because that is the only place a layout actually happens.)
+	assert(
+		TowerPanel.compute_panel_rect(view, Vector2(406.0, 625.0), TowerPanel.PANEL_PREFERRED_TOP).position.y
+		>= TowerPanel.PANEL_SAFE_TOP - 0.5,
+		"Even at its tallest measured height the panel must stay below the top bar"
+	)
+	for content_h: float in [120.0, 400.0, 625.0, 900.0]:
+		var r: Rect2 = TowerPanel.compute_panel_rect(view, Vector2(406.0, content_h), TowerPanel.PANEL_PREFERRED_TOP)
+		assert(
+			r.position.y >= TowerPanel.PANEL_SAFE_TOP - 0.5,
+			"Panel must never rise into the top bar (content %.0f put it at %.0f)" % [content_h, r.position.y]
+		)
+		assert(r.position.x >= 0.0 and r.position.x + r.size.x <= view.x, "Panel must stay within the screen width")
+
+	main_inst.queue_free()
+	clock.manual_mode = false
+
+
+## The player-facing purchase path must charge a Rite node in RITES. It used to charge Scrap and
+## never decrement the bank at all, because every non-Offering currency was mapped to Scrap before
+## calling upgrade_tower with ignore_cost = true.
+func test_05_player_path_charges_rite_nodes_from_the_rites_bank_not_scrap() -> void:
+	var gs: GameStateNode = _get_game_state()
+	var clock: SimClockNode = _get_sim_clock()
+	clock.manual_mode = true
+
+	var main_packed := load("res://scenes/main.tscn") as PackedScene
+	var main_inst: Node = main_packed.instantiate()
+	add_child(main_inst)
+
+	var placed: TowerInstance = null
+	for h: Vector2i in gs.path_generator.get_buildable_hexes():
+		placed = gs.request_place_tower(h, "hexed_nail_gun")
+		if placed != null:
+			break
+	assert(placed != null, "Must place a tower")
+
+	# Scrap is deliberately left at ZERO, so a Scrap charge fails loudly instead of being
+	# absorbed by a large balance.
+	gs.tower_system.scrap = 0
+	assert(gs.request_upgrade_tower(placed, placed.def.t2_upgrade.id), "T2 must purchase")
+
+	var rite_node: UpgradeNode = placed.def.rite_t3_upgrade
+	assert(rite_node != null, "hexed_nail_gun must offer a Rite T3 node")
+	assert(
+		rite_node.currency == _UpgradeNode.Currency.RITES,
+		"A Rite node must be priced in Rites, not Scrap or Offerings"
+	)
+
+	# No Rite drawn yet -> unaffordable.
+	gs.tower_system.rites = 0
+	assert(not gs.request_upgrade_tower(placed, rite_node.id), "A Rite node must not be affordable with no Rites")
+
+	gs.tower_system.rites = 1
+	assert(gs.request_upgrade_tower(placed, rite_node.id), "A Rite node must be purchasable with a drawn Rite")
+	assert(gs.tower_system.rites == 0, "Buying a Rite node must spend the Rite from the bank")
+	assert(gs.tower_system.scrap == 0, "A Rite node must NOT be charged in Scrap")
+	assert(placed.branch == _UpgradeNode.Branch.RITE, "The purchase must lock in the Rite branch")
+
+	# And the bank must not be refillable by selling the tower (Rites are never refunded).
+	gs.request_sell_tower(placed)
+	assert(gs.tower_system.rites == 0, "Selling a Rite tower must not refund the Rite")
 
 	main_inst.queue_free()
 	clock.manual_mode = false

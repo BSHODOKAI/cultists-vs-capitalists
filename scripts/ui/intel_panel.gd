@@ -186,7 +186,9 @@ func refresh() -> void:
 	else:
 		_boss_label.visible = false
 
-	_stars_banner.visible = roster.is_stars_are_right
+	# Events are never advertised before they happen: the Stars/event banner stays hidden.
+	if _stars_banner != null:
+		_stars_banner.visible = false
 
 	if pgen != null and not pgen.ghost_path_hexes.is_empty():
 		_view_preview_button.visible = true

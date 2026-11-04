@@ -60,9 +60,9 @@ Before creating or changing a tower, verify it satisfies these design rules:
 
 ## 3. Step-by-Step Guide to Adding a New Tower
 
-### Step 1: Author the 5 `UpgradeNode` Resources (`res://data/upgrades/*.tres`)
+### Step 1: Author the `UpgradeNode` Resources (`res://data/upgrades/*.tres`)
 
-Every tower **must** have exactly 5 upgrade nodes following the canonical tree and cost/side-effect formulas from `TowerBalanceData`:
+Every tower **must** have the 5 canonical nodes following the cost/side-effect formulas from `TowerBalanceData`, and **may** additionally have an optional 2-node **Rite** branch:
 
 | Slot | `tier` | `branch` | `currency` | `cost` Formula | `prerequisite_id` | `corruption_delta` | `jank_set` |
 |---|---|---|---|---|---|---|---|
@@ -71,6 +71,10 @@ Every tower **must** have exactly 5 upgrade nodes following the canonical tree a
 | `revealed_t4_upgrade` | `4` | `1` (`REVEALED`) | `0` (`OFFERINGS`) | `roundi(base_cost * 1.8)` | `<rev_t3_id>` | `8` | `0` |
 | `rigged_t3_upgrade` | `3` | `2` (`RIGGED`) | `1` (`SCRAP`) | `roundi(base_cost * 1.0)` | `<t2_id>` | `0` | `10` |
 | `rigged_t4_upgrade` | `4` | `2` (`RIGGED`) | `1` (`SCRAP`) | `roundi(base_cost * 1.8)` | `<rig_t3_id>` | `0` | `25` |
+| `rite_t3_upgrade` | `3` | `3` (`RITE`) | `2` (`RITES`) | **flat `1`** | `<t2_id>` | `0` | `0` |
+| `rite_t4_upgrade` | `4` | `3` (`RITE`) | `2` (`RITES`) | **flat `2`** | `<rite_t3_id>` | `0` | `0` |
+
+**The Rite branch (optional — and why its formulas differ):** Rites are Corruption spent as a resource; drawing one costs Corruption and leaves permanent Corporate Attention behind (see §5 of `AGENTS.md`). So Rite nodes add **no** Corruption and **no** Jank — that price was already paid upstream when the Rites were drawn. Because Rites are scarce and Corruption-derived, their cost is a **flat 1 / 2**, never a base-cost multiple. Their signature modifier is `corruption_scaled_damage` (additive damage per point of current Corruption), which makes the branch scale with the meter the cult is already managing. **Seven** towers carry the branch — `hexed_nail_gun`, `chanting_choir`, `gutter_ritual_circle`, `tentacle_storm_drain`, `watcher_in_the_billboard`, `rust_censer`, `substation_effigy`; a tower without one must leave both `rite_*` slots null, and the data test asserts this in **both** directions. The three that do **not** (`fever_shrine`, `the_congregation`, `tithe_box`) are exactly the three with **no attack of their own**, for which a damage-scaling branch would be inert — extending the branch there needs a Corruption-scaled stat that is *not* damage. Rite nodes also commonly add `corruption_per_kill` to `behavior_params`, read generically by `TowerInstance.get_behavior_param_sum()` so no per-node branch is needed in the kill code; that is how the branch feeds the meter it draws on (and the Reckoning that punishes it).
 
 Each `.tres` file uses `script = ExtResource("1_up")` (`res://scripts/towers/upgrade_node.gd`), sets `tower_id = "<tower_id>"`, lists its own ID in `behaviors = Array[String](["<upgrade_id>"])`, and puts custom numbers in `behavior_params` (never hardcode magic numbers in `TowerSystem`).
 
@@ -90,20 +94,23 @@ Create `res://data/towers/<tower_id>.tres` with `script_class="TowerData"`:
   - `detects_cloaked`, `pulse_reveal_duration`, `starting_members`, `max_targets`
   - `base_behaviors = Array[String](["<tower_id>"])`
   - `t2_upgrade`, `revealed_t3_upgrade`, `revealed_t4_upgrade`, `rigged_t3_upgrade`, `rigged_t4_upgrade`
+  - `rite_t3_upgrade`, `rite_t4_upgrade` — **only if** the tower is meant to carry the optional Rite branch; otherwise leave both null. Every TowerData must have all 7 fields resolvable by `get_all_upgrade_nodes()` (5 nodes, or 7 with a Rite branch).
 
 ### Step 3: Register in `TowerBehaviorRegistry` and `TowerLibrary`
 
 1. In `res://scripts/towers/tower_behavior_registry.gd` (`_ensure_initialized()`):
    - Register the base behavior: `_register("<tower_id>", {"type": "base_tower", "tower_id": "<tower_id>"})`
-   - Register all 5 upgrade behaviors with `"type": "upgrade"`, `"tower_id": "<tower_id>"`, and `"tier": 2/3/4`.
+   - Register all 5 upgrade behaviors with `"type": "upgrade"`, `"tower_id": "<tower_id>"`, and `"tier": 2/3/4`. If the tower carries a Rite branch, register its 2 nodes with `"tier": 3/4` and `"branch": "rite"`.
 2. In `res://scripts/towers/tower_library.gd`:
    - Append `"res://data/towers/<tower_id>.tres"` to `TOWER_PATHS`.
-   - Append the 5 `"res://data/upgrades/<upgrade_id>.tres"` paths to `UPGRADE_PATHS`.
+   - Append the `"res://data/upgrades/<upgrade_id>.tres"` paths to `UPGRADE_PATHS` (5, or 7 with a Rite branch).
 
 ### Step 4: Wire Combat Logic in `TowerSystem` (Without Breaking Existing Towers)
 
 In `res://scripts/towers/tower_system.gd`:
 - **Reuse or add `TargetingMode`:** If the tower uses a new combat pattern, add an enum entry to `TowerData.TargetingMode` and a branch in `TowerSystem._step_tower(tower, delta, rng)`.
+- **Branch locking is a 3-way exclusive fork.** `can_upgrade_tower` locks a tower to whichever non-`SHARED` branch it first takes, and rejects the other two with `branch_locked_to_<revealed|rigged|rite>`. That check runs **before** the tier-order guards on purpose — order it after them and a locked branch reports the misleading `requires_t2_first`. If you add a fourth branch, `_branch_reason_key()` must learn its slug.
+- **New currencies must be spendable.** Adding a value to `UpgradeNode.Currency` requires a matching case in both `can_upgrade_tower` (affordability) and `upgrade_tower` (the spend), and a label in `TowerPanel._currency_label()`. Decide explicitly whether `sell` refunds it — Rites are deliberately **not** refunded.
 - **Determinism:** Always use the passed-in `rng: RandomNumberGenerator` (or `_sim_rng`), never global `randf()` or `randi()`.
 - **Damage Routing:** Route all tower damage through `calculate_hit_damage(tower, target, base_dmg, damage_tag, ...)` and `deal_damage_from_tower(tower, target, dmg, damage_tag)` so Corruption bonuses, Stars Are Right (`+20%`), Variety Bonus (`+3%` per distinct neighbor type), Armor Shred, Entangled, resistances, and `tower_damaged_enemy` signals work automatically.
 - **Crowd Control:** Route hard CC through `CombatUnit` methods (`apply_flee`, `apply_confusion`, `apply_root`, `apply_stun`, `apply_displacement`) so Boss immunities and 4-category CC diminishing returns (`100% -> 50% -> 25% -> immune`) are enforced.
@@ -129,6 +136,8 @@ Every tower requires a distinct 3D model, a badge letter, and combat VFX:
    - Add `"<tower_id>": "<Letter>"` to `TOWER_LETTERS` in `res://scripts/world/tower_view.gd`.
 5. **Range Ring Color (`OverlayView`):**
    - Friendly buff/support towers (`fever_shrine`, `chop_shop`, etc.) use `theme_data.buff_range_ring_color` (gold); offensive towers use `theme_data.range_ring_color` (cyan). Check `OverlayView` if adding a new buff-only tower.
+6. **Branch Tint (`VisualThemeData` + `TowerView`):**
+   - A branched tower is tinted and given emission by `TowerView` from `theme_data.branch_revealed_color` / `branch_rigged_color` / `branch_rite_color`. If you add a branch, add its colour to `VisualThemeData` **and** an `elif` in `TowerView`, or the tower will render as an unbranched T1 (`visual_theme.tres` stores no branch colours, so the `@export` default is what ships).
 
 ### Step 6: Add 2D Icon in `PlaceholderIcons`
 
@@ -155,10 +164,15 @@ Every tower needs audio feedback for construction, upgrading, attacking, and coo
 
 Whenever you add or modify a tower, run the headless test suites via `run_tests` to confirm nothing broke:
 
-1. **Update Roster Expectations (if tower count changed):**
-   - Update `EXPECTED_TOWERS` and catalog count assertions in `res://tests/test_tower_system.gd` and `res://tests/test_build_menu_ui.gd`.
+1. **Update Roster Expectations (if tower or node count changed):**
+   - Update `EXPECTED_TOWERS` and the catalog count assertions in `res://tests/test_tower_system.gd` and `res://tests/test_build_menu_ui.gd`. Current truth: **10 towers, 56 upgrade nodes** (`test_01_data_validation_10_towers_56_nodes_references_and_costs`). Node count per tower is **5, or 7 when the tower carries a Rite branch** — `RITE_TOWERS` in that test lists which three do.
 2. **Run Core Test Suites:**
    - `run_tests` on `res://tests/test_tower_system.gd` (validates all `.tres` references, upgrade costs/currencies, Corruption/Jank math, branch locking, targeting, and deterministic combat sim for every tower).
+   - **Gotchas when writing a new headless behaviour test** (each of these makes a working mechanic look dead):
+     - `spawn_unit(max_hp, tags, SPEED, START_PATH_POS, ...)` — the **third** arg is speed and the **fourth** is the path position. Swapping them spawns at position `0.0` (the base), where the unit leaks on tick 1 and is never in range. Park a target with `spawn_unit(hp, tags, 0.1, 2.0)`.
+     - Measure a damage boost against a target that **survives** the hit, or `current_hp - hp` just reads back the HP it had left.
+     - `print()` from the test-runner subprocess does **not** reach `get_godot_errors()`; instrument via assertions or a returned Dictionary.
+     - Call `start_wave(1, rng)` first, and step enough ticks for a shot (a 2/s tower fires every 0.5 s, so one `step(tick)` usually fires nothing).
    - `run_tests` on `res://tests/test_build_menu_ui.gd` (validates icons, meshes, projectile visuals, and `BuildPalette` UI).
    - `run_tests` on `res://tests/test_audio_system.gd` (validates all audio cues and streams exist and rate-limit properly).
    - `run_tests` on `res://tests/test_integration.gd` (validates full placement, economy, replay determinism, and wave loop).

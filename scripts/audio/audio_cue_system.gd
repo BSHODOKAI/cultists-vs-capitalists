@@ -27,6 +27,7 @@ const HIGH_PRIORITY_CUES: Array[String] = [
 	_AudioBalance.CUE_WAVE_STARTED,
 	_AudioBalance.CUE_WAVE_ENDED,
 	_AudioBalance.CUE_STARS_ARE_RIGHT,
+	_AudioBalance.CUE_RUN_EVENT,
 	_AudioBalance.CUE_PATH_EXTENDED,
 	_AudioBalance.CUE_TOWER_CONSTRUCT,
 	_AudioBalance.CUE_TOWER_UPGRADE,
@@ -432,6 +433,12 @@ func on_wave_ended(wave_number: int) -> Dictionary:
 
 func on_stars_are_right(wave_number: int) -> Dictionary:
 	return request_cue(_AudioBalance.CUE_STARS_ARE_RIGHT, {"wave_number": wave_number})
+
+
+## Cue for a generic run Event. Stars Are Right keeps its dedicated cue.
+func on_run_event(event_id: String) -> Dictionary:
+	var cue_id: String = _AudioBalance.CUE_STARS_ARE_RIGHT if event_id == "stars_are_right" else _AudioBalance.CUE_RUN_EVENT
+	return request_cue(cue_id, {"event_id": event_id})
 
 
 func on_path_extended(growth_result: Dictionary = {}) -> Dictionary:

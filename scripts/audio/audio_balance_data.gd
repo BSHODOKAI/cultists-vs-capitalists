@@ -34,6 +34,7 @@ const CUE_ENVIRONMENT_URBAN: String = "environment_urban"
 const CUE_WAVE_STARTED: String = "wave_started"
 const CUE_WAVE_ENDED: String = "wave_ended"
 const CUE_STARS_ARE_RIGHT: String = "stars_are_right"
+const CUE_RUN_EVENT: String = "run_event"
 const CUE_PATH_EXTENDED: String = "path_extended"
 const CUE_ENEMY_LEAKED: String = "enemy_leaked"
 const CUE_GAME_OVER: String = "game_over"
@@ -351,6 +352,16 @@ static func build_default_cues() -> Dictionary:
 			"pitch_min": 1.0,
 			"pitch_max": 1.0,
 			"active_duration": 3.65,
+			"loop": false,
+		},
+		CUE_RUN_EVENT: {
+			"path": "res://Sound FX Starter Pack Vol. 1/Motions and Impacts/Impact Metal Hatch.wav",
+			"volume_db": -5.0,
+			"min_interval": 0.50,
+			"max_voices": 1,
+			"pitch_min": 1.0,
+			"pitch_max": 1.0,
+			"active_duration": 1.70,
 			"loop": false,
 		},
 		CUE_PATH_EXTENDED: {

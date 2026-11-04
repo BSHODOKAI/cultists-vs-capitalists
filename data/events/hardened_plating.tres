@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="EventData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/events/event_data.gd" id="1_ev"]
+
+[resource]
+script = ExtResource("1_ev")
+id = "hardened_plating"
+display_name = "Hardened Plating"
+description = "Enemies spawn with 15% more HP this wave."
+category = 1
+banner_color = Color(0.95, 0.45, 0.45, 1)
+enemy_hp_mult = 1.15

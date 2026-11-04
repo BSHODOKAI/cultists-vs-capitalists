@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "metered_current"
+display_name = "Metered Current"
+description = "+30% electric damage and +0.5% damage per point of Corruption. METERED CURRENT: each kill feeds 1 Corruption into the meter, and the effigy bills the city for what it takes off the grid."
+tower_id = "substation_effigy"
+tier = 3
+branch = 3
+currency = 2
+cost = 1
+prerequisite_id = "copper_thieves"
+corruption_delta = 0
+jank_set = 0
+damage_mult = 0.3
+corruption_scaled_damage = 0.005
+behaviors = Array[String](["metered_current"])
+behavior_params = {
+"corruption_per_kill": 1
+}

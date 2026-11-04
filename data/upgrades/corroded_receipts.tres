@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "corroded_receipts"
+display_name = "Corroded Receipts"
+description = "+30% corrosion damage, a 6.0s DoT duration, and +0.5% damage per point of Corruption. THE CORRODED RECEIPTS: each kill feeds 1 Corruption into the meter, and the paper rots as faithfully as the incense burns."
+tower_id = "rust_censer"
+tier = 3
+branch = 3
+currency = 2
+cost = 1
+prerequisite_id = "heavier_incense"
+corruption_delta = 0
+jank_set = 0
+damage_mult = 0.3
+dot_duration_override = 6.0
+corruption_scaled_damage = 0.005
+behaviors = Array[String](["corroded_receipts"])
+behavior_params = {
+"corruption_per_kill": 1
+}

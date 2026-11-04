@@ -27,6 +27,8 @@ var next_faction_after_boss: String = ""
 var is_mixed_interval: bool = false
 var is_boss_wave: bool = false
 var is_stars_are_right: bool = false
+## Run-Event id active for this wave ("" = none). Not advertised to the player.
+var event_id: String = ""
 
 var rubber_factor: float = 1.0
 var effective_rubber_factor: float = 1.0
@@ -35,6 +37,9 @@ var budget: float = 0.0
 var escort_budget: float = 0.0
 var withheld_budget: float = 0.0
 var total_cost: float = 0.0
+## Budget the director could not spend this wave (unit cap AND per-type bonus-level cap
+## both reached). Reserved for future fork/objective budgets; never silently discarded.
+var unspent_budget: float = 0.0
 var wave_time_window: float = 36.0
 var max_deliverable_units: int = 60
 
@@ -196,6 +201,7 @@ func to_dict() -> Dictionary:
 		"is_mixed_interval": is_mixed_interval,
 		"is_boss_wave": is_boss_wave,
 		"is_stars_are_right": is_stars_are_right,
+		"event_id": event_id,
 		"rubber_factor": rubber_factor,
 		"effective_rubber_factor": effective_rubber_factor,
 		"full_budget": full_budget,
@@ -203,6 +209,7 @@ func to_dict() -> Dictionary:
 		"escort_budget": escort_budget,
 		"withheld_budget": withheld_budget,
 		"total_cost": total_cost,
+		"unspent_budget": unspent_budget,
 		"wave_time_window": wave_time_window,
 		"max_deliverable_units": max_deliverable_units,
 		"entries": entries.duplicate(true),

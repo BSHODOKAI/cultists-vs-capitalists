@@ -115,6 +115,62 @@ const EXPECTED_TOWERS: Dictionary = {
 }
 
 
+## Total Corruption-scaled power a node declares, across every stat it scales. The Rite branch
+## scales whatever stat a tower actually HAS (damage, aura fire rate, income, summon HP), so
+## comparing T4 against T3 has to total them rather than read a single field.
+func _corruption_scaling_total(node: UpgradeNode) -> float:
+	var total: float = node.corruption_scaled_damage
+	for key: String in node.corruption_scaled_stat.keys():
+		total += float(node.corruption_scaled_stat[key])
+	return total
+
+
+# --- Test 13: the panel's RITE readout ----------------------------------------
+
+func test_13_rite_panel_readout_shows_what_corruption_is_worth() -> void:
+	# This line is how a player sees what the meter is worth right now, so the numbers a
+	# support-curve judgement rests on must come from the simulation, not from a hand-typed
+	# string. Checked against the real TowerSystem.
+	var sys := _make_test_system()
+	sys.rites = 5
+	var choir: TowerInstance = sys.place_tower(Vector2i(1, 1), "chanting_choir")
+	assert(sys.upgrade_tower(choir, "deeper_harmony"), "Choir T2 must be buyable")
+
+	# No Rite node yet: show nothing rather than a misleading "x1.00".
+	assert(
+		_TowerPanel.rite_readout(choir, sys, 40).is_empty(),
+		"A tower with no Rite node must produce no Rite line"
+	)
+
+	assert(sys.upgrade_tower(choir, "the_song_is_billed"), "Choir Rite T3 must be buyable")
+	sys.corruption = 40
+	var line: String = _TowerPanel.rite_readout(choir, sys, 40)
+	# the_song_is_billed scales damage at 0.4%/pt, so 40 Corruption = +16%.
+	assert(line.contains("+16% damage"), "Rite line must show the scaled damage, got '%s'" % line)
+	assert(line.contains("at 40 Corruption"), "Rite line must name the Corruption level, got '%s'" % line)
+
+	# A support tower shows its OWN stat, in plain words rather than the raw data key.
+	var box: TowerInstance = sys.place_tower(Vector2i(3, 1), "tithe_box")
+	assert(sys.upgrade_tower(box, "bigger_plate"), "Tithe T2 must be buyable")
+	assert(
+		sys.upgrade_tower(box, "the_plate_never_empties"),
+		"Tithe Rite T3 must be buyable"
+	)
+	var box_line: String = _TowerPanel.rite_readout(box, sys, 40)
+	# Income scales at 0.4%/pt, so 40 Corruption = x1.16.
+	assert(
+		box_line.contains("income x1.16"),
+		"A tithe box must show its Corruption-scaled income, got '%s'" % box_line
+	)
+	assert(
+		not box_line.contains("damage"),
+		"A tithe box has no attack, so its Rite line must not claim damage scaling: '%s'" % box_line
+	)
+
+
+const _TowerPanel = preload("res://scripts/ui/tower_panel.gd")
+
+
 static func _make_test_system() -> TowerSystem:
 	var grid := _HexGrid.new(42, _C.CHUNK_RADIUS, 0.0) # 0% blocked terrain for clean test layouts
 	var path: Array[Vector2i] = []
@@ -126,16 +182,38 @@ static func _make_test_system() -> TowerSystem:
 	return sys
 
 
-# --- Test 1: Data validation: 9 towers, 45 nodes, all references valid, costs correct
+## Towers that additionally carry the optional Rite branch (paid in Rites, exclusive
+## with Revealed and Rigged). Every other tower must have NO Rite nodes.
+const RITE_TOWERS: Dictionary = {
+	"hexed_nail_gun": {"rite_t3": "nail_of_accounting", "rite_t4": "the_audit_comes_due"},
+	"chanting_choir": {"rite_t3": "the_song_is_billed", "rite_t4": "unspoken_receipts"},
+	"gutter_ritual_circle": {"rite_t3": "the_circle_is_paid", "rite_t4": "communion_of_the_maw"},
+	"tentacle_storm_drain": {"rite_t3": "drowned_ledger", "rite_t4": "the_fathom_collects"},
+	"watcher_in_the_billboard": {"rite_t3": "covetous_gaze", "rite_t4": "the_debt_collector"},
+	"rust_censer": {"rite_t3": "corroded_receipts", "rite_t4": "the_rust_audits"},
+	"fever_shrine": {"rite_t3": "candles_for_the_ledger", "rite_t4": "the_vigil_pays_interest"},
+	"the_congregation": {"rite_t3": "paid_in_flesh", "rite_t4": "audit_of_the_flock"},
+	"tithe_box": {"rite_t3": "the_plate_never_empties", "rite_t4": "the_till_audits_itself"},
+	"substation_effigy": {"rite_t3": "metered_current", "rite_t4": "the_grid_forecloses"},
+}
+## Rite costs are flat (1 then 2), NOT base-cost multiples: Rites are a scarce
+## Corruption-derived currency, so scaling them by a Tower's Offering cost is meaningless.
+const RITE_T3_COST: int = 1
+const RITE_T4_COST: int = 2
 
-func test_01_data_validation_9_towers_45_nodes_references_and_costs() -> void:
+# --- Test 1: Data validation: 10 towers, 56 nodes, all references valid, costs correct
+
+func test_01_data_validation_10_towers_70_nodes_references_and_costs() -> void:
 	var balance: TowerBalanceData = _Library.load_balance()
 	assert(balance != null, "TowerBalanceData must load from res://data/tower_balance.tres")
 
 	var towers: Array[TowerData] = _Library.load_towers()
 	var upgrades: Array[UpgradeNode] = _Library.load_upgrades()
 	assert(towers.size() == 10, "Must have exactly 10 TowerData resources, got %d" % towers.size())
-	assert(upgrades.size() == 50, "Must have exactly 50 UpgradeNode resources, got %d" % upgrades.size())
+	assert(
+		upgrades.size() == 70,
+		"Must have exactly 70 UpgradeNode resources (50 + 10 towers x 2 Rite nodes), got %d" % upgrades.size()
+	)
 
 	var seen_node_ids: Dictionary = {}
 	for td: TowerData in towers:
@@ -149,7 +227,11 @@ func test_01_data_validation_9_towers_45_nodes_references_and_costs() -> void:
 			assert(_Registry.has_behavior(b_id), "Base behavior '%s' on %s must be registered" % [b_id, td.id])
 
 		var all_nodes: Array[UpgradeNode] = td.get_all_upgrade_nodes()
-		assert(all_nodes.size() == 5, "%s must reference all 5 upgrade nodes, got %d" % [td.id, all_nodes.size()])
+		var expected_node_count: int = 7 if RITE_TOWERS.has(td.id) else 5
+		assert(
+			all_nodes.size() == expected_node_count,
+			"%s must reference %d upgrade nodes, got %d" % [td.id, expected_node_count, all_nodes.size()]
+		)
 
 		# T2 shared
 		var t2: UpgradeNode = td.t2_upgrade
@@ -199,6 +281,61 @@ func test_01_data_validation_9_towers_45_nodes_references_and_costs() -> void:
 		assert(rig4.prerequisite_id == rig3.id, "%s Rigged T4 prerequisite must be %s" % [td.id, rig3.id])
 		assert(rig4.corruption_delta == 0 and rig4.jank_set == 25, "%s Rigged T4 must set Jank to 25" % td.id)
 
+		# Rite T3/T4 (optional branch, paid in Rites, exclusive with the other two)
+		var rite_spec: Variant = RITE_TOWERS.get(td.id)
+		if rite_spec == null:
+			assert(
+				td.rite_t3_upgrade == null and td.rite_t4_upgrade == null,
+				"%s must NOT carry a Rite branch" % td.id
+			)
+		else:
+			var rite_spec_d: Dictionary = rite_spec
+			var rite3: UpgradeNode = td.rite_t3_upgrade
+			assert(
+				rite3 != null and rite3.id == String(rite_spec_d["rite_t3"]),
+				"%s Rite T3 id mismatch" % td.id
+			)
+			assert(
+				rite3.tower_id == td.id and rite3.tier == 3 and rite3.branch == _UpgradeNode.Branch.RITE,
+				"%s Rite T3 metadata mismatch" % td.id
+			)
+			assert(rite3.currency == _UpgradeNode.Currency.RITES, "%s Rite T3 must cost Rites" % td.id)
+			assert(
+				rite3.cost == RITE_T3_COST,
+				"%s Rite T3 must cost exactly %d Rite(s), got %d" % [td.id, RITE_T3_COST, rite3.cost]
+			)
+			assert(rite3.prerequisite_id == t2.id, "%s Rite T3 prerequisite must be %s" % [td.id, t2.id])
+			assert(
+				rite3.corruption_delta == 0,
+				"%s Rite T3 must add no Corruption -- Rites already carry Attention" % td.id
+			)
+			assert(rite3.jank_set == 0, "%s Rite T3 must set no Jank" % td.id)
+			assert(
+				rite3.corruption_scaled_damage > 0.0
+					or not rite3.corruption_scaled_stat.is_empty(),
+				"%s Rite T3 must be the Corruption-scaling branch" % td.id
+			)
+
+			var rite4: UpgradeNode = td.rite_t4_upgrade
+			assert(
+				rite4 != null and rite4.id == String(rite_spec_d["rite_t4"]),
+				"%s Rite T4 id mismatch" % td.id
+			)
+			assert(
+				rite4.tower_id == td.id and rite4.tier == 4 and rite4.branch == _UpgradeNode.Branch.RITE,
+				"%s Rite T4 metadata mismatch" % td.id
+			)
+			assert(rite4.currency == _UpgradeNode.Currency.RITES, "%s Rite T4 must cost Rites" % td.id)
+			assert(
+				rite4.cost == RITE_T4_COST,
+				"%s Rite T4 must cost exactly %d Rites, got %d" % [td.id, RITE_T4_COST, rite4.cost]
+			)
+			assert(rite4.prerequisite_id == rite3.id, "%s Rite T4 prerequisite must be %s" % [td.id, rite3.id])
+			assert(
+				_corruption_scaling_total(rite4) > _corruption_scaling_total(rite3),
+				"%s Rite T4 must scale harder with Corruption than T3" % td.id
+			)
+
 		for node: UpgradeNode in all_nodes:
 			assert(not seen_node_ids.has(node.id), "Duplicate upgrade node id: %s" % node.id)
 			seen_node_ids[node.id] = true
@@ -206,7 +343,328 @@ func test_01_data_validation_9_towers_45_nodes_references_and_costs() -> void:
 			for b_id: String in node.behaviors:
 				assert(_Registry.has_behavior(b_id), "Upgrade behavior '%s' on %s must exist in TowerBehaviorRegistry" % [b_id, node.id])
 
-	assert(seen_node_ids.size() == 50, "All 50 unique upgrade node IDs must be validated")
+	assert(seen_node_ids.size() == 70, "All 70 unique upgrade node IDs must be validated")
+
+
+# --- Test 10: Rite branch: spends Rites, locks both other branches, scales with Corruption
+
+func test_10_rite_branch_spends_rites_and_locks_both_other_branches() -> void:
+	var sys := _make_test_system()
+	sys.rites = 0
+
+	var tower: TowerInstance = sys.place_tower(Vector2i(1, 1), "hexed_nail_gun")
+	assert(tower != null, "Tower placement must succeed")
+	assert(sys.upgrade_tower(tower, "rapid_cycling"), "Buying T2 must succeed")
+
+	# With no Rites banked the branch is unbuyable, and for the RIGHT reason.
+	var check_no_rites: Dictionary = sys.can_upgrade_tower(tower, "nail_of_accounting")
+	assert(not bool(check_no_rites["ok"]), "Rite T3 must be unbuyable with 0 Rites")
+	assert(
+		String(check_no_rites["reason"]) == "insufficient_rites",
+		"Rejection must cite insufficient_rites, got '%s'" % String(check_no_rites["reason"])
+	)
+	assert(not sys.upgrade_tower(tower, "nail_of_accounting"), "upgrade_tower must reject an unaffordable Rite T3")
+
+	# Bank Rites and buy the branch.
+	sys.rites = 3
+	assert(sys.upgrade_tower(tower, "nail_of_accounting"), "Rite T3 must be buyable once Rites are banked")
+	assert(
+		sys.rites == 3 - RITE_T3_COST,
+		"Buying Rite T3 must spend %d Rite(s); %d left" % [RITE_T3_COST, sys.rites]
+	)
+	assert(tower.branch == _UpgradeNode.Branch.RITE, "Tower branch must lock to RITE")
+
+	# The fork is EXCLUSIVE: choosing Rite locks BOTH other branches.
+	var check_rev: Dictionary = sys.can_upgrade_tower(tower, "whispering_nails")
+	assert(not bool(check_rev["ok"]), "Revealed T3 must be locked after choosing Rite")
+	assert(
+		String(check_rev["reason"]) == "branch_locked_to_rite",
+		"Rejection must name the rite lock, got '%s'" % String(check_rev["reason"])
+	)
+	var check_rig: Dictionary = sys.can_upgrade_tower(tower, "drone_feeder")
+	assert(not bool(check_rig["ok"]), "Rigged T3 must be locked after choosing Rite")
+	assert(not sys.upgrade_tower(tower, "whispering_nails"), "upgrade_tower must reject Revealed T3")
+	assert(not sys.upgrade_tower(tower, "drone_feeder"), "upgrade_tower must reject Rigged T3")
+
+	# Rite T4 is the capstone.
+	assert(sys.upgrade_tower(tower, "the_audit_comes_due"), "Rite T4 must be buyable")
+	assert(sys.rites == 0, "Rite T4 must spend %d Rites; %d left" % [RITE_T4_COST, sys.rites])
+	assert(tower.tier == 4, "Tower must reach tier 4")
+
+	# Signature: damage scales with CURRENT Corruption.
+	var per_point: float = tower.get_corruption_scaled_damage()
+	assert(per_point > 0.0, "Unlocking Rite nodes must grant corruption-scaled damage")
+	sys.set_corruption(0)
+	assert(
+		is_equal_approx(sys.get_rite_corruption_multiplier(tower), 1.0),
+		"At 0 Corruption the Rite branch must be neutral"
+	)
+	sys.set_corruption(50)
+	assert(
+		is_equal_approx(sys.get_rite_corruption_multiplier(tower), 1.0 + 50.0 * per_point),
+		"Rite damage multiplier must scale linearly with Corruption"
+	)
+	var at_50: float = sys.get_rite_corruption_multiplier(tower)
+	sys.set_corruption(100)
+	assert(
+		sys.get_rite_corruption_multiplier(tower) > at_50,
+		"More Corruption must mean more Rite damage"
+	)
+
+	# A tower with no Rite nodes must be untouched by the Corruption scaling.
+	var plain: TowerInstance = sys.place_tower(Vector2i(2, 1), "chanting_choir")
+	assert(plain != null, "Second tower placement must succeed")
+	assert(
+		is_equal_approx(sys.get_rite_corruption_multiplier(plain), 1.0),
+		"A tower without Rite nodes must ignore the Rite Corruption multiplier"
+	)
+
+	# ...and the lock works in the other direction too.
+	var rev_tower: TowerInstance = sys.place_tower(Vector2i(3, 1), "hexed_nail_gun")
+	assert(rev_tower != null, "Third tower placement must succeed")
+	assert(sys.upgrade_tower(rev_tower, "rapid_cycling"), "Buying T2 on the third tower must succeed")
+	assert(sys.upgrade_tower(rev_tower, "whispering_nails"), "Buying Revealed T3 must succeed")
+	assert(
+		String((sys.can_upgrade_tower(rev_tower, "nail_of_accounting") as Dictionary)["reason"])
+			== "branch_locked_to_revealed",
+		"Choosing Revealed must lock the Rite branch"
+	)
+	assert(
+		not sys.upgrade_tower(rev_tower, "nail_of_accounting"),
+		"upgrade_tower must reject Rite T3 once Revealed is chosen"
+	)
+
+
+## Offerings gained from killing one 1-HP unit with a hexed_nail_gun, optionally
+## carrying the Rite T4. The two runs are identical apart from the Rite branch, so
+## the difference IS the kill bounty -- no need to assume the baseline reward.
+func _kill_gain_with_nail_gun(with_rite_t4: bool) -> int:
+	var sys := _make_test_system()
+	var nail: TowerInstance = sys.place_tower(Vector2i(1, 1), "hexed_nail_gun")
+	assert(nail != null, "Nail gun must place for the kill-gain measurement")
+	sys.upgrade_tower(nail, "rapid_cycling")
+	if with_rite_t4:
+		sys.rites = 9
+		assert(sys.upgrade_tower(nail, "nail_of_accounting"), "Buy nail Rite T3")
+		assert(sys.upgrade_tower(nail, "the_audit_comes_due"), "Buy nail Rite T4")
+
+	var before: int = sys.offerings
+	# spawn_unit(max_hp, tags, SPEED, START_PATH_POS): speed 0.1, parked at hex (2,0).
+	var victim: CombatUnit = sys.spawn_unit(1.0, [_C.UnitTag.GROUND], 0.1, 2.0)
+	assert(victim != null, "Victim must spawn")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 99
+	sys.start_wave(1, rng)
+	var guard: int = 0
+	while victim.is_alive() and guard < 900:
+		sys.step(1.0 / 30.0, rng)
+		guard += 1
+	assert(not victim.is_alive(), "The victim must die for the kill-gain measurement")
+	return sys.offerings - before
+
+
+## Damage a single watcher shot deals to a target sitting at [param current_hp]
+## (out of [param max_hp]), measured as the HP drop from its first landed shot.
+func _watcher_shot_damage(max_hp: float, current_hp: float) -> float:
+	var sys := _make_test_system()
+	var w: TowerInstance = sys.place_tower(Vector2i(1, 1), "watcher_in_the_billboard")
+	assert(w != null, "Watcher must place for the shot measurement")
+	sys.upgrade_tower(w, "dilated_pupil")
+	sys.rites = 9
+	assert(sys.upgrade_tower(w, "covetous_gaze"), "Buy watcher Rite T3")
+
+	var victim: CombatUnit = sys.spawn_unit(max_hp, [_C.UnitTag.GROUND], 0.1, 2.0)
+	assert(victim != null, "Watcher victim must spawn")
+	victim.hp = current_hp
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	sys.start_wave(1, rng)
+	var guard: int = 0
+	while is_equal_approx(victim.hp, current_hp) and guard < 900:
+		sys.step(1.0 / 30.0, rng)
+		guard += 1
+	return current_hp - victim.hp
+
+
+## Offerings gained from a kill by a watcher with/without the Rite T4. The victim is
+## given 1 HP to die at once, but its max_hp stays large so the settlement is large.
+func _kill_gain_with_watcher(with_rite_t4: bool) -> int:
+	var sys := _make_test_system()
+	var w: TowerInstance = sys.place_tower(Vector2i(1, 1), "watcher_in_the_billboard")
+	assert(w != null, "Watcher must place for the settlement measurement")
+	sys.upgrade_tower(w, "dilated_pupil")
+	if with_rite_t4:
+		sys.rites = 9
+		assert(sys.upgrade_tower(w, "covetous_gaze"), "Buy watcher Rite T3")
+		assert(sys.upgrade_tower(w, "the_debt_collector"), "Buy watcher Rite T4")
+
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 31
+	sys.start_wave(1, rng)
+	var before: int = sys.offerings
+	var victim: CombatUnit = sys.spawn_unit(2000.0, [_C.UnitTag.GROUND], 0.1, 2.0)
+	assert(victim != null, "Watcher victim must spawn")
+	victim.hp = 1.0
+	var guard: int = 0
+	while victim.is_alive() and guard < 900:
+		sys.step(1.0 / 30.0, rng)
+		guard += 1
+	assert(not victim.is_alive(), "Watcher victim must die for the settlement measurement")
+	return sys.offerings - before
+
+
+## Damage a pulse deals to one specific unit over a fixed window, with
+## [param crowd_size] units packed onto the same hex. Isolates the per-head bonus.
+func _pulse_damage_to_one(crowd_size: int) -> float:
+	var sys := _make_test_system()
+	sys.rites = 9
+	var circ: TowerInstance = sys.place_tower(Vector2i(4, 1), "gutter_ritual_circle")
+	assert(circ != null, "Circle must place for the crowd measurement")
+	sys.upgrade_tower(circ, "wider_circle")
+	assert(sys.upgrade_tower(circ, "the_circle_is_paid"), "Buy circle Rite T3")
+
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5
+	sys.start_wave(1, rng)
+	var center: CombatUnit = sys.spawn_unit(1000000.0, [_C.UnitTag.GROUND], 0.1, 4.0)
+	assert(center != null, "Centre unit must spawn")
+	for _k in range(maxi(0, crowd_size - 1)):
+		sys.spawn_unit(1000000.0, [_C.UnitTag.GROUND], 0.1, 4.0)
+
+	var before: float = center.hp
+	for _i in range(150):
+		sys.step(1.0 / 30.0, rng)
+	return before - center.hp
+
+
+# --- Test 11: Rite branch marquee behaviours (one per tower) ------------------
+#
+# NOTE on spawn_unit's signature: it is
+#   spawn_unit(max_hp, tags, SPEED, START_PATH_POS, cost, offerings_reward)
+# The third argument is SPEED and the fourth is the path position. Getting these
+# backwards spawns the unit at the BASE (position 0.0) where it leaks on the first
+# tick and is never in any tower's range -- which silently makes a tower look dead.
+
+func test_11_rite_marquee_behaviours() -> void:
+	var sys := _make_test_system()
+	sys.rites = 99
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 4242
+	var tick: float = 1.0 / 30.0
+	sys.start_wave(1, rng)
+
+	# --- hexed_nail_gun: THE LEDGER ramps on one target, resets on a switch ----
+	var nail: TowerInstance = sys.place_tower(Vector2i(1, 1), "hexed_nail_gun")
+	assert(nail != null, "Nail gun must place")
+	assert(sys.upgrade_tower(nail, "rapid_cycling"), "Buy nail T2")
+	assert(sys.upgrade_tower(nail, "nail_of_accounting"), "Buy nail Rite T3")
+	assert(nail.has_behavior("nail_of_accounting"), "Ledger behaviour must be registered")
+	assert(nail.ledger_target_id == -1 and nail.ledger_stacks == 0, "A fresh tower has no ledger")
+
+	# A slow victim parked at path hex (2,0), 2 hexes from the tower at (1,1).
+	var victim: CombatUnit = sys.spawn_unit(100000.0, [_C.UnitTag.GROUND], 0.1, 2.0)
+	assert(victim != null, "Ledger victim must spawn")
+	assert(
+		_HexGrid.hex_distance(nail.hex, sys.get_unit_hex(victim)) <= 3,
+		"Ledger victim must START inside the nail gun's range, got %s" % str(sys.get_unit_hex(victim))
+	)
+	for _i in range(90):
+		sys.step(tick, rng)
+	assert(nail.ledger_stacks > 0, "Repeated shots on one target must build ledger stacks")
+	assert(
+		nail.ledger_target_id == victim.unit_id,
+		"The ledger must be signed against the target it is shooting"
+	)
+	var max_stacks: int = int(nail.get_behavior_param("nail_of_accounting", "max_stacks", 12))
+	assert(nail.ledger_stacks <= max_stacks, "Ledger stacks must be capped at %d" % max_stacks)
+	var built: int = nail.ledger_stacks
+
+	# A different target must open a fresh account. Step long enough for the dead
+	# unit to be pruned and for at least one shot at the new target (the nail gun
+	# fires every 0.5 s, so a single tick usually produces no shot at all).
+	victim.hp = 0.0
+	var fresh: CombatUnit = sys.spawn_unit(100000.0, [_C.UnitTag.GROUND], 0.1, 2.0)
+	assert(fresh != null, "Second ledger victim must spawn")
+	for _i in range(30):
+		sys.step(tick, rng)
+	assert(
+		nail.ledger_target_id != victim.unit_id,
+		"The ledger must move on once its target is gone"
+	)
+	assert(
+		nail.ledger_target_id == fresh.unit_id,
+		"The ledger must be signed against the surviving target"
+	)
+	assert(
+		nail.ledger_stacks < built,
+		"A new target must reset the ledger (%d stacks, was %d)" % [nail.ledger_stacks, built]
+	)
+
+	# --- nail gun T4: the audit collects, measured against a control ----------
+	var control_gain: int = _kill_gain_with_nail_gun(false)
+	var audit_gain: int = _kill_gain_with_nail_gun(true)
+	var expected_bounty: int = 2
+	assert(
+		audit_gain == control_gain + expected_bounty,
+		"the_audit_comes_due must add %d Offerings per kill (got %d, control %d)"
+			% [expected_bounty, audit_gain, control_gain]
+	)
+
+	# --- gutter_ritual_circle: pays by the head, and tithes each one ----------
+	var circ: TowerInstance = sys.place_tower(Vector2i(4, 1), "gutter_ritual_circle")
+	assert(circ != null, "Circle must place")
+	assert(sys.upgrade_tower(circ, "wider_circle"), "Buy circle T2")
+	assert(sys.upgrade_tower(circ, "the_circle_is_paid"), "Buy circle Rite T3")
+	assert(sys.upgrade_tower(circ, "communion_of_the_maw"), "Buy circle Rite T4")
+	assert(circ.has_behavior("the_circle_is_paid"), "Crowd behaviour must be registered")
+	assert(circ.has_behavior("communion_of_the_maw"), "Tithe behaviour must be registered")
+
+	# A crowd parked at path hex (4,0), one hex from the circle at (4,1).
+	for _k in range(4):
+		assert(
+			sys.spawn_unit(100000.0, [_C.UnitTag.GROUND], 0.1, 4.0) != null,
+			"Crowd member must spawn"
+		)
+	var before_tithe: int = sys.offerings
+	for _i in range(150):
+		sys.step(tick, rng)
+	assert(
+		sys.offerings > before_tithe,
+		"communion_of_the_maw must tithe Offerings per enemy the pulse catches"
+	)
+
+	# --- watcher_in_the_billboard: THE GAZE grinds the wounded ---------------
+	# The wounded target must SURVIVE the measured shot, or `current_hp - hp` just
+	# reads back the little HP it had left instead of the damage dealt.
+	var full_hp_dmg: float = _watcher_shot_damage(100000.0, 100000.0)
+	var wounded_dmg: float = _watcher_shot_damage(100000.0, 20000.0)
+	assert(full_hp_dmg > 0.0 and wounded_dmg > 0.0, "Both watcher shots must land and deal damage")
+	assert(
+		wounded_dmg > full_hp_dmg,
+		"covetous_gaze must hit a wounded target harder (%.1f vs %.1f)"
+			% [wounded_dmg, full_hp_dmg]
+	)
+
+	# --- watcher T4: the settlement scales with the target's max HP ----------
+	var plain_settlement: int = _kill_gain_with_watcher(false)
+	var rite_settlement: int = _kill_gain_with_watcher(true)
+	# spawn_unit gave the victim 2000 max HP, so the settlement is floor(2000 * 0.05).
+	var expected_settlement: int = int(floor(2000.0 * 0.05))
+	assert(
+		rite_settlement == plain_settlement + expected_settlement,
+		"the_debt_collector must pay %d Offerings on a 2000-HP kill (got %d, control %d)"
+			% [expected_settlement, rite_settlement, plain_settlement]
+	)
+
+	# --- the circle T3: damage really does scale with the crowd size ---------
+	var lone_damage: float = _pulse_damage_to_one(1)
+	var crowd_damage: float = _pulse_damage_to_one(5)
+	assert(lone_damage > 0.0, "A lone unit must still take pulse damage")
+	assert(
+		crowd_damage > lone_damage,
+		"the_circle_is_paid must hit each unit harder in a crowd (%.1f vs %.1f)"
+			% [crowd_damage, lone_damage]
+	)
 
 
 # --- Test 2: Branch lock: choosing a T3 locks the other branch ----------------
@@ -533,6 +991,53 @@ func test_05_cost_escalation_variety_bonus_entangled_and_armor_shred_math() -> v
 
 # --- Test 6: Deterministic headless combat sim for each tower vs a dummy enemy
 
+# --- Test 12: Rite kill effects are declared and reach the tower --------------
+
+func test_12_rite_kill_effects_are_declared_and_reach_the_tower() -> void:
+	# Every Rite tower converts its kills into Corruption, so the branch's price and its power
+	# are the same currency: a Rite tower accelerates its own damage AND the Reckoning that
+	# punishes it. This checks the data and the accessor the kill code reads.
+	# EVERY Rite tower converts its kills into Corruption, so the branch feeds the meter it draws
+	# on -- and each T4 feeds it faster than its own T3. This is uniform across all 10, since a
+	# Rite tower that fed nothing would be drawing power without paying the price.
+	var rite_towers: int = 0
+	for td: TowerData in _Library.load_towers():
+		if td.rite_t3_upgrade == null and td.rite_t4_upgrade == null:
+			continue
+		rite_towers += 1
+		var rate3: int = int(td.rite_t3_upgrade.behavior_params.get("corruption_per_kill", 0))
+		var rate4: int = int(td.rite_t4_upgrade.behavior_params.get("corruption_per_kill", 0))
+		assert(rate3 > 0, "%s Rite T3 must feed the meter on kills" % td.id)
+		assert(
+			rate4 > rate3,
+			"%s Rite T4 must feed the meter faster than its T3 (%d vs %d)" % [td.id, rate4, rate3]
+		)
+	assert(rite_towers == 10, "Expected all 10 towers carrying a Rite branch, got %d" % rite_towers)
+
+	# The accessor the kill code reads must surface each node's rate and sum across them.
+	var sys := _make_test_system()
+	sys.rites = 5
+	var tower: TowerInstance = sys.place_tower(Vector2i(1, 1), "chanting_choir")
+	assert(tower != null, "Choir must place")
+	assert(sys.upgrade_tower(tower, "deeper_harmony"), "Choir T2 must be buyable")
+	assert(
+		is_zero_approx(tower.get_behavior_param_sum("corruption_per_kill")),
+		"A tower with no Rite node must feed the meter nothing"
+	)
+	assert(sys.upgrade_tower(tower, "the_song_is_billed"), "Choir Rite T3 must be buyable")
+	assert(
+		is_equal_approx(tower.get_behavior_param_sum("corruption_per_kill"), 1.0),
+		"Rite T3 must surface 1 Corruption per kill, got %f"
+			% tower.get_behavior_param_sum("corruption_per_kill")
+	)
+	assert(sys.upgrade_tower(tower, "unspoken_receipts"), "Choir Rite T4 must be buyable")
+	assert(
+		is_equal_approx(tower.get_behavior_param_sum("corruption_per_kill"), 3.0),
+		"Rite T3+T4 must sum to 3 Corruption per kill, got %f"
+			% tower.get_behavior_param_sum("corruption_per_kill")
+	)
+
+
 func test_06_deterministic_headless_combat_sim_for_each_tower() -> void:
 	var all_tower_ids: Array[String] = [
 		"hexed_nail_gun",
@@ -685,13 +1190,6 @@ func test_07_stars_are_right_and_corruption_stack_additively() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 2026
 
-	# Wave 5, 15, 25 are Stars Are Right waves; Wave 10, 20 are Boss waves (NOT Stars Are Right)
-	assert(sys.is_stars_are_right_wave(5), "Wave 5 must be Stars Are Right")
-	assert(not sys.is_stars_are_right_wave(10), "Wave 10 is a Boss wave, NOT Stars Are Right")
-	assert(sys.is_stars_are_right_wave(15), "Wave 15 must be Stars Are Right")
-	assert(not sys.is_stars_are_right_wave(20), "Wave 20 is a Boss wave, NOT Stars Are Right")
-	assert(sys.is_stars_are_right_wave(25), "Wave 25 must be Stars Are Right")
-
 	var tower: TowerInstance = sys.place_tower(Vector2i(3, 1), "hexed_nail_gun")
 	sys.upgrade_tower(tower, "rapid_cycling")
 	sys.upgrade_tower(tower, "whispering_nails") # Revealed T3
@@ -700,30 +1198,28 @@ func test_07_stars_are_right_and_corruption_stack_additively() -> void:
 	# Set Corruption to 100 -> +25% (0.25) Corruption bonus
 	sys.set_corruption(100)
 
-	# Wave 4 (normal wave): only Corruption bonus (+25% -> 1.25x)
+	# No event this wave: only Corruption bonus (+25% -> 1.25x)
 	sys.start_wave(4, rng)
 	tower.misfired_this_wave = false
-	assert(not sys.stars_are_right_active, "Wave 4 is not Stars Are Right")
-	var mult_wave_4: float = sys.get_revealed_damage_multiplier(tower)
-	assert(is_equal_approx(mult_wave_4, 1.25), "At 100 Corruption on normal wave, mult must be 1.25, got %.4f" % mult_wave_4)
+	assert(not sys.stars_are_right_active, "No event is active on wave 4")
+	var mult_no_event: float = sys.get_revealed_damage_multiplier(tower)
+	assert(is_equal_approx(mult_no_event, 1.25), "At 100 Corruption with no event, mult must be 1.25, got %.4f" % mult_no_event)
 
-	# Wave 5 (Stars Are Right): +20% (0.20) + +25% (0.25) = +45% (1.45x ADDITIVE, NOT 1.25 * 1.20 = 1.50x)
-	sys.start_wave(5, rng)
+	# Stars Are Right event: +20% (0.20) + +25% (0.25) = +45% (1.45x ADDITIVE, NOT 1.25 * 1.20)
+	sys.start_wave(5, rng, 20.0, {"event_id": "stars_are_right", "revealed_damage_bonus": 0.20})
 	tower.misfired_this_wave = false
-	assert(sys.stars_are_right_active, "Wave 5 must activate Stars Are Right")
-	var mult_wave_5: float = sys.get_revealed_damage_multiplier(tower)
-	var expected_additive: float = 1.0 + 0.25 + 0.20 # 1.45
-	var wrong_multiplicative: float = 1.25 * 1.20    # 1.50
+	assert(sys.stars_are_right_active, "Stars Are Right event must activate")
+	var mult_stars: float = sys.get_revealed_damage_multiplier(tower)
 	assert(
-		is_equal_approx(mult_wave_5, expected_additive),
-		"Stars Are Right + Corruption must stack additively to 1.45, got %.4f" % mult_wave_5
+		is_equal_approx(mult_stars, 1.45),
+		"Stars Are Right + Corruption must stack additively to 1.45, got %.4f" % mult_stars
 	)
 	assert(
-		not is_equal_approx(mult_wave_5, wrong_multiplicative),
+		not is_equal_approx(mult_stars, 1.50),
 		"Stars Are Right + Corruption must NOT stack multiplicatively (1.50)"
 	)
 
-	# Verify actual hit damage against a dummy enemy on Wave 5 is 8.0 * 1.45 = 11.6
+	# Verify actual hit damage against a dummy enemy on the Stars wave is 8.0 * 1.45 = 11.6
 	var dummy := _CombatUnit.new(999, 500.0, [_C.UnitTag.GROUND], 3.0, 0.0)
 	var hit_dmg: float = sys.calculate_hit_damage(tower, dummy, tower.def.damage, _C.DamageTag.KINETIC)
 	assert(
@@ -731,7 +1227,25 @@ func test_07_stars_are_right_and_corruption_stack_additively() -> void:
 		"Hit damage must reflect additive 1.45x multiplier (11.6), got %.4f" % hit_dmg
 	)
 
-	# Also verify Rigged towers do NOT receive Corruption or Stars Are Right bonuses
+	# the_veil_thins event applies a 1.20x all-tower damage multiplier on top of Revealed.
+	sys.start_wave(6, rng, 20.0, {"event_id": "the_veil_thins", "revealed_damage_bonus": 0.20, "tower_damage_mult": 1.20})
+	tower.misfired_this_wave = false
+	var revealed_mult: float = sys.get_revealed_damage_multiplier(tower)
+	var hit_veil: float = sys.calculate_hit_damage(tower, dummy, tower.def.damage, _C.DamageTag.KINETIC)
+	assert(
+		is_equal_approx(hit_veil, 8.0 * revealed_mult * 1.20),
+		"the_veil_thins must apply a 1.20x tower damage multiplier"
+	)
+
+	# corporate_audit event suppresses Corruption + Revealed bonuses for the wave.
+	sys.start_wave(7, rng, 20.0, {"event_id": "corporate_audit", "suppress_revealed": true})
+	tower.misfired_this_wave = false
+	assert(
+		is_equal_approx(sys.get_revealed_damage_multiplier(tower), 1.0),
+		"corporate_audit must suppress Revealed bonuses to 1.0"
+	)
+
+	# Also verify Rigged towers do NOT receive Corruption or Revealed bonuses
 	var rig_tower: TowerInstance = sys.place_tower(Vector2i(8, 1), "hexed_nail_gun")
 	sys.upgrade_tower(rig_tower, "rapid_cycling")
 	sys.upgrade_tower(rig_tower, "drone_feeder")

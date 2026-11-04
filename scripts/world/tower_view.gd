@@ -124,6 +124,11 @@ func refresh_from_instance() -> void:
 		_top_mat.emission_enabled = true
 		_top_mat.emission = theme_data.branch_rigged_color * 0.65
 		_icon_label.modulate = Color(1.0, 0.78, 0.45, 1.0)
+	elif tower_instance.branch == _UpgradeNode.Branch.RITE:
+		_top_mat.albedo_color = theme_data.branch_rite_color
+		_top_mat.emission_enabled = true
+		_top_mat.emission = theme_data.branch_rite_color * 0.65
+		_icon_label.modulate = Color(1.0, 0.62, 0.68, 1.0)
 	else:
 		var sig_col: Color = _PlaceholderModels.get_tower_signature_color(tid)
 		_top_mat.albedo_color = sig_col

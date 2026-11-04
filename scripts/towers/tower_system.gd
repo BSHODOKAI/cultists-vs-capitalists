@@ -64,10 +64,49 @@ var offerings: int = _Balance.DEFAULT_STARTING_OFFERINGS
 var scrap: int = _Balance.DEFAULT_STARTING_SCRAP
 var lives: int = _Balance.DEFAULT_STARTING_LIVES
 var corruption: int = 0
+## Rites: Corruption spent as a resource. Spendable on run-wide boons.
+var rites: int = 0
+## Corporate Attention accrued by drawing Rites. Accrues SINCE the last reckoning:
+## it scales how bad the next Rogue wave is and resets when that wave arrives.
+var rite_debt: int = 0
+## How many times Rogue Entities have woken from Corruption. Reporting only.
+var rogue_reckonings: int = 0
 var current_wave: int = 0
 var wave_elapsed_time: float = 0.0
 var stars_are_right_active: bool = false
 var game_over: bool = false
+
+# --- Active Run-Event wave modifiers (set at wave start, cleared at wave end) --
+## id of the event active this wave ("" = none).
+var active_event_id: String = ""
+## Additive Revealed-tower damage bonus from the active event.
+var event_revealed_damage_bonus: float = 0.0
+## Multiplier on all tower damage from the active event (1.0 = neutral).
+var event_tower_damage_mult: float = 1.0
+## Multiplier on all tower fire rate from the active event (1.0 = neutral).
+var event_fire_rate_mult: float = 1.0
+## Multiplier on enemy movement speed from the active event (1.0 = neutral).
+var event_enemy_speed_mult: float = 1.0
+## Multiplier on spawned enemy max HP from the active event (1.0 = neutral).
+var event_enemy_hp_mult: float = 1.0
+## Multiplier on Scrap gained from kills from the active event (1.0 = neutral).
+var event_scrap_income_mult: float = 1.0
+## When true, the active event negates Corruption + Revealed damage bonuses.
+var event_suppress_revealed: bool = false
+
+# --- Objective contributions -------------------------------------------------
+## The ObjectiveSystem backing the objective effects. When attached, objective
+## effects are evaluated as REGION AURAS at the queried hex; when null, the
+## wave-pushed aggregates below are used instead so headless tests can drive the
+## system without one.
+var objective_system: ObjectiveSystem = null
+## Fallback additive Revealed-tower damage (used only when objective_system is null).
+var objective_revealed_damage_bonus: float = 0.0
+## Extra Corruption headroom granted by held Corruption Reservoir sites. Global by
+## nature: a Corruption ceiling is a meter-wide number and cannot be made local.
+var corruption_cap_bonus: int = 0
+## Fallback jam-duration mult (used only when objective_system is null).
+var jank_jam_duration_mult: float = 1.0
 
 # --- Active entities ---------------------------------------------------------
 var _next_tower_id: int = 1
@@ -138,6 +177,170 @@ func is_stars_are_right_wave(wave_number: int) -> bool:
 		and (wave_number % balance.stars_are_right_wave_interval) == 0
 		and not is_boss_wave(wave_number)
 	)
+
+
+## Applies the active Run-Event's wave-duration modifiers. Called at wave start.
+func apply_event_modifiers(mods: Dictionary) -> void:
+	active_event_id = String(mods.get("event_id", ""))
+	event_revealed_damage_bonus = float(mods.get("revealed_damage_bonus", 0.0))
+	event_tower_damage_mult = float(mods.get("tower_damage_mult", 1.0))
+	event_fire_rate_mult = float(mods.get("fire_rate_mult", 1.0))
+	event_enemy_speed_mult = float(mods.get("enemy_speed_mult", 1.0))
+	event_enemy_hp_mult = float(mods.get("enemy_hp_mult", 1.0))
+	event_scrap_income_mult = float(mods.get("scrap_income_mult", 1.0))
+	event_suppress_revealed = bool(mods.get("suppress_revealed", false))
+	stars_are_right_active = active_event_id == "stars_are_right"
+
+
+## Resets all Run-Event wave-duration modifiers to neutral.
+func clear_event_modifiers() -> void:
+	active_event_id = ""
+	event_revealed_damage_bonus = 0.0
+	event_tower_damage_mult = 1.0
+	event_fire_rate_mult = 1.0
+	event_enemy_speed_mult = 1.0
+	event_enemy_hp_mult = 1.0
+	event_scrap_income_mult = 1.0
+	event_suppress_revealed = false
+	stars_are_right_active = false
+
+
+## Applies the current Objective aggregate to the tower system. Called once per wave
+## by GameState. Only the Corruption ceiling is genuinely global; the Ley Line and
+## Data Center effects are region auras queried per hex via [member objective_system],
+## so the two location-dependent aggregates are pushed as a null-system fallback only.
+func apply_objective_effects(
+	revealed_bonus: float,
+	cap_bonus: int,
+	jam_mult: float
+) -> void:
+	objective_revealed_damage_bonus = maxf(0.0, revealed_bonus)
+	corruption_cap_bonus = maxi(0, cap_bonus)
+	jank_jam_duration_mult = maxf(0.0, jam_mult)
+
+
+## Effective Corruption ceiling including held Reservoir sites.
+func get_corruption_cap() -> int:
+	return balance.corruption_max + maxi(0, corruption_cap_bonus)
+
+
+# --- Region-aura queries -----------------------------------------------------
+# Each helper prefers the attached ObjectiveSystem (true locality) and falls back to
+# the wave-pushed aggregate, so the system stays testable without one.
+
+## Additive Revealed-tower damage from held Ley Line sites covering [param hex].
+func get_objective_revealed_bonus_at(hex: Vector2i) -> float:
+	if objective_system != null:
+		return objective_system.get_revealed_damage_bonus_at(hex)
+	return objective_revealed_damage_bonus
+
+
+## Jam-duration multiplier from held Data Center sites covering [param hex].
+func get_objective_jam_mult_at(hex: Vector2i) -> float:
+	if objective_system != null:
+		return objective_system.get_jam_duration_mult_at(hex)
+	return jank_jam_duration_mult
+
+
+## Enemy speed multiplier at [param hex] from CORPORATE-CAPTURED sites.
+func get_objective_capture_speed_mult_at(hex: Vector2i) -> float:
+	if objective_system != null:
+		return objective_system.get_capture_speed_mult_at(hex)
+	return 1.0
+
+
+## Enemy damage-taken multiplier at [param hex] from CORPORATE-CAPTURED sites.
+func get_objective_capture_damage_taken_mult_at(hex: Vector2i) -> float:
+	if objective_system != null:
+		return objective_system.get_capture_damage_taken_mult_at(hex)
+	return 1.0
+
+
+# --- Rites & Corporate Attention ---------------------------------------------
+## Rites are Corruption spent as a resource: drawing them lowers the danger meter
+## (misfire risk, damage bonus) and buys Rite-branch upgrades, at the cost of Rite
+## debt that makes the NEXT reckoning worse.
+
+## THE RECKONING, in three parts:
+##   1. Rogues wake from Corruption held RIGHT NOW, so spending Corruption to draw
+##      Rites genuinely backs you off the brink.
+##   2. Rite debt accrued since they last woke decides how BAD they are (severity).
+##   3. Debt RESETS when they come, so one spending spree cannot snowball into a
+##      permanent spiral -- the reckoning happens, and then it is over.
+
+## Corruption paid per Rite drawn.
+func get_rite_cost() -> int:
+	return maxi(1, balance.rite_corruption_cost)
+
+
+## Extra Rogue severity earned by the debt accrued since the last reckoning.
+func get_rite_debt_severity() -> int:
+	return floori(
+		float(maxi(0, rite_debt)) / float(maxi(1, balance.rite_debt_per_rogue_level))
+	)
+
+
+## Corruption at which Rogues wake. A held Reservoir raises this alongside the
+## Corruption cap, so "more rot before it wakes" is what the site actually buys --
+## without that, a Reservoir would only let you climb past your own danger line.
+func get_rogue_entity_threshold() -> int:
+	return balance.corruption_rogue_entity_threshold + maxi(0, corruption_cap_bonus)
+
+
+func can_draw_rites(count: int = 1) -> bool:
+	var n: int = maxi(1, count)
+	return corruption >= get_rite_cost() * n
+
+
+## Draws [param count] Rites: pays Corruption, banks the Rites, accrues Attention.
+func draw_rites(count: int = 1) -> bool:
+	var n: int = maxi(1, count)
+	if not can_draw_rites(n):
+		return false
+	var corruption_paid: int = get_rite_cost() * n
+	corruption = maxi(balance.corruption_min, corruption - corruption_paid)
+	rites += n
+	rite_debt += maxi(0, balance.rite_debt_per_rite) * n
+	return true
+
+
+## Total Corporate Attention: current Corruption plus outstanding Rite debt.
+## Reporting only -- it no longer gates anything. See get_rite_debt_severity().
+func get_rogue_attention() -> int:
+	return corruption + maxi(0, rite_debt)
+
+
+func spend_rites(count: int = 1) -> bool:
+	var n: int = maxi(1, count)
+	if rites < n:
+		return false
+	rites -= n
+	return true
+
+
+## Effective Rigged-tower jam duration, shortened by held Data Center sites. The
+## Data Center's benefit is a region aura, so the tower's own hex decides; passing
+## null (or having no Data Center nearby) yields the unmodified duration.
+func get_effective_jam_duration(tower: TowerInstance = null) -> float:
+	var mult: float = jank_jam_duration_mult
+	if tower != null:
+		mult = get_objective_jam_mult_at(tower.hex)
+	return maxf(0.0, balance.jank_disable_duration * mult)
+
+
+## Applies the active event's enemy HP/speed multipliers to a freshly spawned unit.
+## Captured-site penalties are deliberately NOT applied here: they are region auras
+## evaluated as the enemy moves, so per-unit stats stay snapshot at spawn time.
+func _apply_event_enemy_scaling(unit: CombatUnit) -> void:
+	if unit == null:
+		return
+	var hp_mult: float = event_enemy_hp_mult
+	var speed_mult: float = event_enemy_speed_mult
+	if not is_equal_approx(hp_mult, 1.0):
+		unit.max_hp *= hp_mult
+		unit.hp = unit.max_hp
+	if not is_equal_approx(speed_mult, 1.0):
+		unit.speed *= speed_mult
 
 
 # --- Placement, Cost Escalation & Selling ------------------------------------
@@ -317,6 +520,24 @@ func can_upgrade_tower(tower: TowerInstance, node_id: String, ignore_cost: bool 
 	# Prerequisite check
 	if not node.prerequisite_id.is_empty() and not tower.has_upgrade(node.prerequisite_id):
 		return {"ok": false, "reason": "missing_prerequisite", "node": node}
+
+	# Branch lock check: the T3 fork is EXCLUSIVE. Choosing any one branch
+	# permanently locks the other two for this tower (Revealed / Rigged / Rite).
+	# Deliberately checked BEFORE the tier-order guards: once the tower has reached
+	# T3, a locked branch would otherwise be reported as "requires_t2_first", telling
+	# the player to buy a T2 they already own instead of naming the real reason.
+	if node.branch != _UpgradeNode.Branch.SHARED:
+		if (
+			tower.branch != _UpgradeNode.Branch.SHARED
+			and node.branch != tower.branch
+		):
+			return {
+				"ok": false,
+				"reason": "branch_locked_to_%s" % _branch_reason_key(tower.branch),
+				"node": node,
+			}
+
+	# Tier-order guards
 	if node.tier == 2 and tower.tier != 1:
 		return {"ok": false, "reason": "invalid_tier_state", "node": node}
 	if node.tier == 3 and tower.tier != 2:
@@ -324,20 +545,28 @@ func can_upgrade_tower(tower: TowerInstance, node_id: String, ignore_cost: bool 
 	if node.tier == 4 and tower.tier != 3:
 		return {"ok": false, "reason": "requires_t3_first", "node": node}
 
-	# Branch lock check: once a T3 branch is chosen, the opposite branch is permanently locked
-	if node.branch == _UpgradeNode.Branch.REVEALED and tower.branch == _UpgradeNode.Branch.RIGGED:
-		return {"ok": false, "reason": "branch_locked_to_rigged", "node": node}
-	if node.branch == _UpgradeNode.Branch.RIGGED and tower.branch == _UpgradeNode.Branch.REVEALED:
-		return {"ok": false, "reason": "branch_locked_to_revealed", "node": node}
-
 	# Currency check
 	if not ignore_cost:
 		if node.currency == _UpgradeNode.Currency.OFFERINGS and offerings < node.cost:
 			return {"ok": false, "reason": "insufficient_offerings", "node": node}
 		if node.currency == _UpgradeNode.Currency.SCRAP and scrap < node.cost:
 			return {"ok": false, "reason": "insufficient_scrap", "node": node}
+		if node.currency == _UpgradeNode.Currency.RITES and rites < node.cost:
+			return {"ok": false, "reason": "insufficient_rites", "node": node}
 
 	return {"ok": true, "reason": "", "node": node}
+
+
+## Stable slug for a branch, used in rejection reasons.
+func _branch_reason_key(branch: int) -> String:
+	match branch:
+		_UpgradeNode.Branch.REVEALED:
+			return "revealed"
+		_UpgradeNode.Branch.RIGGED:
+			return "rigged"
+		_UpgradeNode.Branch.RITE:
+			return "rite"
+	return "unknown"
 
 
 ## Purchases and applies [param node_id] on [param tower]. Returns true on success.
@@ -351,20 +580,25 @@ func upgrade_tower(tower: TowerInstance, node_id: String, ignore_cost: bool = fa
 		if node.currency == _UpgradeNode.Currency.OFFERINGS:
 			offerings -= node.cost
 			tower.total_offerings_spent += node.cost
-		else:
+		elif node.currency == _UpgradeNode.Currency.SCRAP:
 			scrap -= node.cost
 			tower.total_scrap_spent += node.cost
+		else:
+			# Rites are deliberately NOT tracked for refunds: they are Corruption
+			# spent with permanent Attention attached, so selling must not launder
+			# them back (see TowerInstance sell refund, which refunds Offering/Scrap only).
+			rites -= node.cost
 	else:
 		if node.currency == _UpgradeNode.Currency.OFFERINGS:
 			tower.total_offerings_spent += node.cost
-		else:
+		elif node.currency == _UpgradeNode.Currency.SCRAP:
 			tower.total_scrap_spent += node.cost
 
 	tower.unlocked_upgrade_ids.append(node.id)
 	tower.unlocked_nodes.append(node)
 	tower.tier = maxi(tower.tier, node.tier)
 
-	if node.branch == _UpgradeNode.Branch.REVEALED or node.branch == _UpgradeNode.Branch.RIGGED:
+	if node.branch != _UpgradeNode.Branch.SHARED:
 		tower.branch = node.branch
 
 	# Revealed upgrades add global Corruption (T3 +4, T4 +8)
@@ -383,12 +617,12 @@ func upgrade_tower(tower: TowerInstance, node_id: String, ignore_cost: bool = fa
 # --- Corruption & Penance ----------------------------------------------------
 
 func add_corruption(delta: int) -> int:
-	corruption = clampi(corruption + delta, balance.corruption_min, balance.corruption_max)
+	corruption = clampi(corruption + delta, balance.corruption_min, get_corruption_cap())
 	return corruption
 
 
 func set_corruption(value: int) -> void:
-	corruption = clampi(value, balance.corruption_min, balance.corruption_max)
+	corruption = clampi(value, balance.corruption_min, get_corruption_cap())
 
 
 ## Penance: pay 40 Offerings to remove 5 Corruption.
@@ -489,11 +723,16 @@ func refresh_compliance_suppression() -> void:
 func get_revealed_additive_bonus(tower: TowerInstance) -> float:
 	if tower == null or not tower.is_revealed():
 		return 0.0
+	if event_suppress_revealed:
+		return 0.0
 	var corr_bonus: float = 0.0
 	if not tower.compliance_suppressed:
 		corr_bonus = float(corruption) * balance.corruption_damage_bonus_per_point
-	var stars_bonus: float = balance.stars_are_right_revealed_bonus if stars_are_right_active else 0.0
-	return corr_bonus + stars_bonus
+	return (
+		corr_bonus
+		+ event_revealed_damage_bonus
+		+ get_objective_revealed_bonus_at(tower.hex)
+	)
 
 
 func get_revealed_damage_multiplier(tower: TowerInstance) -> float:
@@ -521,7 +760,10 @@ func get_unit_damage_taken_multiplier(unit: CombatUnit, is_gutter_pulse: bool = 
 	var mark_mult: float = (1.0 + unit.mark_damage_bonus) if unit.mark_timer > 0.0 else 1.0
 	var entangled_mult: float = (1.0 + balance.entangled_gutter_pulse_bonus) if (is_gutter_pulse and unit.is_entangled()) else 1.0
 	var network_mult: float = clampf(1.0 - unit.network_damage_reduction, 0.0, 1.0)
-	return shred_mult * fear_mult * mark_mult * entangled_mult * network_mult
+	# Corporate-held ground is a fortified corridor: enemies inside a captured
+	# site's aura take less damage. Evaluated here, per hit, as the enemy moves.
+	var captured_mult: float = get_objective_capture_damage_taken_mult_at(get_unit_hex(unit))
+	return shred_mult * fear_mult * mark_mult * entangled_mult * network_mult * captured_mult
 
 
 ## Computes the effective resistance multiplier for [param unit] against [param damage_tag],
@@ -544,6 +786,32 @@ func get_effective_resistance_multiplier(
 	return res
 
 
+## Rite branch signature: damage scales with the cult's CURRENT Corruption, turning
+## the danger meter into a damage stat -- which is what the cult paid Attention for.
+## Additive per point, so it stacks with the Revealed bonus (which also reads
+## Corruption) instead of compounding with it.
+func get_rite_corruption_multiplier(tower: TowerInstance) -> float:
+	if tower == null:
+		return 1.0
+	var per_point: float = tower.get_corruption_scaled_damage()
+	if is_zero_approx(per_point):
+		return 1.0
+	return 1.0 + float(corruption) * per_point
+
+
+## Rite: multiplier for a Corruption-scaled stat that is NOT damage (see
+## [member UpgradeNode.corruption_scaled_stat]). A support tower has no attack to scale, so the
+## branch scales whatever it actually does -- aura fire rate, income, or summoned HP. Returns
+## 1.0 when the tower carries no such scaling, so call sites can multiply unconditionally.
+func get_rite_stat_multiplier(tower: TowerInstance, key: String) -> float:
+	if tower == null:
+		return 1.0
+	var per_point: float = tower.get_corruption_scaled_stat(key)
+	if is_zero_approx(per_point):
+		return 1.0
+	return 1.0 + float(corruption) * per_point
+
+
 ## Full hit damage calculation combining tower upgrade damage mult, variety bonus,
 ## additive Revealed (Corruption + Stars Are Right) bonus, target resistances,
 ## and target debuff multipliers (Armor Shred, Fear, Mark, Entangled).
@@ -564,7 +832,14 @@ func calculate_hit_damage(
 		variety_mult = 1.0 + get_variety_bonus(tower)
 		revealed_mult = get_revealed_damage_multiplier(tower)
 
-	var outgoing: float = raw_base_damage * tower_mult * variety_mult * revealed_mult
+	var outgoing: float = (
+		raw_base_damage
+		* tower_mult
+		* variety_mult
+		* revealed_mult
+		* event_tower_damage_mult
+		* get_rite_corruption_multiplier(tower)
+	)
 	var res_mult: float = get_effective_resistance_multiplier(
 		unit, damage_tag, ignore_resistance_fraction, ignore_armor_fraction
 	)
@@ -596,7 +871,11 @@ func get_shrine_buffs_for_tower(tower: TowerInstance) -> Dictionary:
 		if _HexGrid.hex_distance(shrine.hex, tower.hex) > radius:
 			continue
 
-		var shrine_rate: float = shrine.get_aura_fire_rate_bonus()
+		# Rite: a support tower scales the stat it actually has. The shrine's aura is its whole
+		# contribution, so this is where Corruption turns into power for it.
+		var shrine_rate: float = (
+			shrine.get_aura_fire_rate_bonus() * get_rite_stat_multiplier(shrine, "aura_fire_rate")
+		)
 		if shrine.has_behavior("mesh_network"):
 			var distinct_types: Dictionary = {}
 			for other: TowerInstance in towers.values():
@@ -636,7 +915,7 @@ func get_effective_tower_fire_rate(tower: TowerInstance) -> float:
 	var buffs: Dictionary = get_shrine_buffs_for_tower(tower)
 	var base_rate: float = tower.def.fire_rate * tower.get_upgrade_fire_rate_multiplier()
 	var suppress_mult: float = 1.0 if bool(buffs["protected"]) else clampf(1.0 - tower.ranged_suppress_penalty, 0.10, 1.0)
-	return base_rate * (1.0 + float(buffs["fire_rate_bonus"])) * float(buffs["ecstatic_multiplier"]) * suppress_mult
+	return base_rate * (1.0 + float(buffs["fire_rate_bonus"])) * float(buffs["ecstatic_multiplier"]) * suppress_mult * event_fire_rate_mult
 
 
 func get_effective_tower_range_hexes(tower: TowerInstance) -> int:
@@ -664,11 +943,12 @@ func get_effective_tower_range_hexes(tower: TowerInstance) -> int:
 func start_wave(
 	wave_number: int,
 	rng: RandomNumberGenerator,
-	wave_duration_window: float = 20.0
+	wave_duration_window: float = 20.0,
+	event_modifiers: Dictionary = {}
 ) -> Dictionary:
 	current_wave = wave_number
 	wave_elapsed_time = 0.0
-	stars_are_right_active = is_stars_are_right_wave(wave_number)
+	apply_event_modifiers(event_modifiers)
 
 	# Reset per-wave disable flags
 	for t: TowerInstance in towers.values():
@@ -728,19 +1008,32 @@ func start_wave(
 			picked.misfired_this_wave = true
 			misfired_tower_id = picked.tower_id
 
-	# 6. Corruption 100: spawn hostile Rogue Entity (or multiples as Rogue level/wave rises) on the path
+	# 6. THE RECKONING: Rogues wake from the Corruption held RIGHT NOW, and the Rite
+	#    debt accrued since they last woke decides how BAD they are. So spending
+	#    Corruption on Rites genuinely backs you off the brink, while debt makes the
+	#    reckoning harder rather than permanent -- and the debt RESETS when they
+	#    come, which is what stops a single spending spree snowballing forever.
 	var rogue_entity: CombatUnit = null
 	var rogue_entities: Array[CombatUnit] = []
-	if corruption >= balance.corruption_rogue_entity_threshold:
-		var rogue_count: int = compute_rogue_entity_spawn_count()
+	# Severity the NEXT reckoning would send. Computed even when Corruption is under
+	# the threshold, so the HUD can warn the player before it happens.
+	var severity: int = get_rite_debt_severity()
+	if corruption >= get_rogue_entity_threshold():
+		var rogue_count: int = compute_rogue_entity_spawn_count(severity)
 		var base_spawn_idx: float = get_spawn_path_index()
 		for r_i in range(rogue_count):
 			var r_pos: float = maxf(1.0, base_spawn_idx - float(r_i) * 0.75)
-			var spawned_r: CombatUnit = spawn_rogue_entity(r_pos)
+			var spawned_r: CombatUnit = spawn_rogue_entity(r_pos, severity)
 			if spawned_r != null:
 				rogue_entities.append(spawned_r)
 				if rogue_entity == null:
 					rogue_entity = spawned_r
+		# The reckoning has happened. Severity resets until new debt is accrued, so
+		# the punishment cannot compound; the player only has to get Corruption back
+		# under the threshold to stop the next one entirely.
+		if not rogue_entities.is_empty():
+			rite_debt = 0
+			rogue_reckonings += 1
 
 	# 7. Jank jam roll for each Rigged tower
 	var jammed_tower_ids: Array[int] = []
@@ -752,7 +1045,7 @@ func start_wave(
 			var trigger_t: float = rng.randf_range(0.0, maxf(0.0, wave_duration_window))
 			t.pending_jam_at_wave_time = trigger_t
 			if trigger_t <= 0.0:
-				t.jam_timer = balance.jank_disable_duration
+				t.jam_timer = get_effective_jam_duration(t)
 				t.pending_jam_at_wave_time = -1.0
 			jammed_tower_ids.append(t.tower_id)
 
@@ -763,6 +1056,8 @@ func start_wave(
 		"misfired_tower_id": misfired_tower_id,
 		"rogue_entity": rogue_entity,
 		"rogue_entities": rogue_entities,
+		"rogue_severity": severity,
+		"rogue_reckonings": rogue_reckonings,
 		"jammed_tower_ids": jammed_tower_ids,
 		"chop_shop_reductions": chop_shop_reductions,
 	}
@@ -770,7 +1065,7 @@ func start_wave(
 
 func end_wave(wave_number: int = -1) -> void:
 	var w: int = current_wave if wave_number < 0 else wave_number
-	stars_are_right_active = false
+	clear_event_modifiers()
 	for t: TowerInstance in towers.values():
 		t.misfired_this_wave = false
 		t.disabled_for_wave_no_scrap = false
@@ -800,33 +1095,39 @@ func spawn_unit(
 	_next_unit_id += 1
 	unit.cost = cost
 	unit.offerings_reward = offerings_reward
+	_apply_event_enemy_scaling(unit)
 	units.append(unit)
 	return unit
 
 
-func compute_rogue_entity_spawn_count() -> int:
+func compute_rogue_entity_spawn_count(severity: int = 0) -> int:
 	var r_lvl: int = leveling.get_rogue_entity_level() if leveling != null else 0
 	var wave_extra: int = floori(float(maxi(0, current_wave - 10)) / 15.0)
-	return clampi(1 + floori(float(r_lvl) / 2.0) + wave_extra, 1, 5)
+	var cap: int = maxi(1, balance.max_rogue_entity_spawn_count)
+	return clampi(1 + floori(float(r_lvl) / 2.0) + wave_extra + maxi(0, severity), 1, cap)
 
 
-func spawn_rogue_entity(start_path_pos: float = -1.0) -> CombatUnit:
+## Spawns a Rogue Entity. [param severity] adds Rite-debt levels on top of the
+## per-kill Rogue level, so a run that drew heavily since the last reckoning faces
+## a harder one -- without that debt ever becoming permanent.
+func spawn_rogue_entity(start_path_pos: float = -1.0, severity: int = 0) -> CombatUnit:
 	var r_lvl: int = leveling.get_rogue_entity_level() if leveling != null else 0
+	var eff_lvl: int = maxi(0, r_lvl + maxi(0, severity))
 	var wave_mult: float = 1.0 + 0.08 * float(maxi(0, current_wave - 1))
-	var hp_val: float = _Balance.ROGUE_ENTITY_BASE_HP * pow(_Balance.ROGUE_ENTITY_HP_SCALE_PER_KILL, float(r_lvl)) * wave_mult
-	var spd_val: float = minf(_Balance.ROGUE_ENTITY_BASE_SPEED * (1.0 + 0.04 * float(r_lvl)), 1.85)
+	var hp_val: float = _Balance.ROGUE_ENTITY_BASE_HP * pow(_Balance.ROGUE_ENTITY_HP_SCALE_PER_KILL, float(eff_lvl)) * wave_mult
+	var spd_val: float = minf(_Balance.ROGUE_ENTITY_BASE_SPEED * (1.0 + 0.04 * float(eff_lvl)), 1.85)
 	var pos: float = start_path_pos if start_path_pos >= 0.0 else get_spawn_path_index()
-	var kill_off: int = balance.rogue_entity_kill_offerings + r_lvl * 5
+	var kill_off: int = balance.rogue_entity_kill_offerings + eff_lvl * 5
 	var rogue := spawn_unit(hp_val, [_C.UnitTag.GROUND], spd_val, pos, 0, kill_off)
 	rogue.unit_name = "Rogue Entity"
 	rogue.unit_type_id = "rogue_entity"
 	rogue.is_rogue_entity = true
-	rogue.spawn_level = r_lvl
-	rogue.leak_cost = balance.rogue_entity_leak_lives + floori(float(r_lvl) / 3.0)
+	rogue.spawn_level = eff_lvl
+	rogue.leak_cost = balance.rogue_entity_leak_lives + floori(float(eff_lvl) / 3.0)
 	rogue.scrap_override = 0
 	rogue.has_breakthrough = true
 
-	var res_mult: float = clampf(0.75 - 0.02 * float(r_lvl), 0.50, 0.75)
+	var res_mult: float = clampf(0.75 - 0.02 * float(eff_lvl), 0.50, 0.75)
 	for dt in range(5):
 		rogue.resistances[dt] = res_mult
 
@@ -929,6 +1230,7 @@ func spawn_unit_from_data(
 				unit.holding_effect_scale = ab.pct if ab.pct > 0.0 else _UnitBalance.HOLDING_COMPANY_EFFECT_SCALE
 				_init_holding_company_mechanics(unit, rng)
 
+	_apply_event_enemy_scaling(unit)
 	units.append(unit)
 	return unit
 
@@ -1158,6 +1460,28 @@ func _handle_unit_death(unit: CombatUnit, killer_tower: TowerInstance, from_gutt
 		enemy_died.emit(unit.unit_id)
 		return
 
+	# Rite: the ledger collects on kills. The nail gun takes small change from every
+	# kill; the watcher takes a SETTLEMENT scaled by what the target was worth --
+	# two different appetites for the same hook, and neither pays for aux objects.
+	if killer_tower != null and unit.offerings_reward > 0:
+		if killer_tower.has_behavior("the_audit_comes_due"):
+			var bounty: int = int(killer_tower.get_behavior_param("the_audit_comes_due", "offerings_per_kill", 2))
+			offerings += maxi(0, bounty)
+		elif killer_tower.has_behavior("the_debt_collector"):
+			var frac: float = float(killer_tower.get_behavior_param("the_debt_collector", "offerings_per_max_hp", 0.05))
+			offerings += maxi(0, int(floor(unit.max_hp * frac)))
+
+	# Rite branch: the ledger feeds the meter it profits from. Every Rite tower converts its own
+	# kills into Corruption, so the branch accelerates BOTH its damage and the Reckoning that
+	# punishes it -- the price is paid in the same currency the power is drawn from. Read
+	# generically from node params, so a new Rite node needs no branch added here.
+	if killer_tower != null:
+		var corruption_gain: int = int(killer_tower.get_behavior_param_sum("corruption_per_kill"))
+		if corruption_gain > 0:
+			add_corruption(corruption_gain)
+		offerings += maxi(0, int(killer_tower.get_behavior_param_sum("rite_offerings_per_kill")))
+		scrap += maxi(0, int(killer_tower.get_behavior_param_sum("rite_scrap_per_kill")))
+
 	# Cleanse any tower converted or being channeled by this unit (e.g. killing Acquisitions Rep or Raider)
 	for t: TowerInstance in towers.values():
 		if t.converter_unit_id == unit.unit_id or t.being_channeled_by_unit_id == unit.unit_id:
@@ -1184,7 +1508,7 @@ func _handle_unit_death(unit: CombatUnit, killer_tower: TowerInstance, from_gutt
 
 	var off_gain: int = roundi(float(unit.offerings_reward) * (1.0 + 0.10 * float(dark_patron_boxes)))
 	var base_scrap: int = unit.get_scrap_value()
-	var scrap_gain: int = roundi(float(base_scrap) * (1.0 + 0.25 * float(scrap_collector_boxes)))
+	var scrap_gain: int = roundi(float(base_scrap) * (1.0 + 0.25 * float(scrap_collector_boxes)) * event_scrap_income_mult)
 	offerings += off_gain
 	scrap += scrap_gain
 
@@ -1245,7 +1569,9 @@ func _sync_congregation_blockers(tower: TowerInstance) -> void:
 	if tower == null or tower.get_type_id() != "the_congregation":
 		return
 	var max_b: int = tower.get_summon_max_count()
-	var max_hp: float = tower.get_summon_max_hp()
+	# Rite: a congregation blocker's whole value is its HP pool, so its Corruption scaling lands
+	# here -- "paid in flesh" means more flesh the deeper the meter runs.
+	var max_hp: float = tower.get_summon_max_hp() * get_rite_stat_multiplier(tower, "summon_hp")
 	var dps: float = (tower.def.summon_dps if tower.def != null else 2.0) * tower.get_upgrade_damage_multiplier()
 	var dmg_red: float = 0.30 if tower.has_behavior("picket_line") else 0.0
 
@@ -1335,7 +1661,7 @@ func step(delta: float, rng: RandomNumberGenerator) -> void:
 		t.ranged_suppress_penalty = 0.0
 		if t.pending_jam_at_wave_time >= 0.0 and wave_elapsed_time >= t.pending_jam_at_wave_time:
 			t.pending_jam_at_wave_time = -1.0
-			t.jam_timer = balance.jank_disable_duration
+			t.jam_timer = get_effective_jam_duration(t)
 		if t.jam_timer > 0.0:
 			t.jam_timer = maxf(0.0, t.jam_timer - delta)
 		if t.enemy_disable_timer > 0.0:
@@ -1450,6 +1776,19 @@ func _step_single_target_tower(tower: TowerInstance, delta: float, _rng: RandomN
 			var arm_bonus: float = float(tower.get_behavior_param("pneumatic_belt_rig", "armored_damage_bonus", 0.50))
 			base_dmg *= (1.0 + arm_bonus)
 
+		# Rite: nail_of_accounting -- the ledger ramps while the SAME target keeps
+		# being signed for, and resets when the account changes hands. This is the
+		# fast single-target tower's payoff for staying on one mark.
+		if tower.has_behavior("nail_of_accounting"):
+			var max_stacks: int = int(tower.get_behavior_param("nail_of_accounting", "max_stacks", 12))
+			var per_stack: float = float(tower.get_behavior_param("nail_of_accounting", "damage_per_stack", 0.08))
+			if target.unit_id == tower.ledger_target_id:
+				tower.ledger_stacks = mini(tower.ledger_stacks + 1, max_stacks)
+			else:
+				tower.ledger_target_id = target.unit_id
+				tower.ledger_stacks = 0
+			base_dmg *= 1.0 + per_stack * float(tower.ledger_stacks)
+
 		var primary_dmg: float = calculate_hit_damage(tower, target, base_dmg, tower.def.damage_tag, false, ignore_res)
 		deal_damage_from_tower(tower, target, primary_dmg, tower.def.damage_tag)
 
@@ -1553,6 +1892,23 @@ func _step_gutter_circle_tower(tower: TowerInstance, delta: float) -> void:
 	var has_wider: bool = tower.has_behavior("wider_circle")
 	var ring_2_ratio: float = float(tower.get_behavior_param("wider_circle", "ring_2_damage_ratio", 0.50))
 
+	# Rite: the_circle_is_paid -- the ritual pays by the head. Count who the ring
+	# will actually catch BEFORE dealing damage, so the pulse's damage can scale
+	# with the size of the crowd it is about to hit (a swarm payoff).
+	var crowd_mult: float = 1.0
+	if tower.has_behavior("the_circle_is_paid"):
+		var per_head: float = float(tower.get_behavior_param("the_circle_is_paid", "damage_per_extra_target", 0.15))
+		var max_heads: int = int(tower.get_behavior_param("the_circle_is_paid", "max_extra_targets", 6))
+		var ring_cap: int = 2 if has_wider else 1
+		var heads: int = 0
+		for c_u: CombatUnit in units:
+			if not c_u.is_alive() or not c_u.is_ground():
+				continue
+			var c_hex: Vector2i = get_unit_hex(c_u)
+			if mini(_HexGrid.hex_distance(center_hex, c_hex), _HexGrid.hex_distance(tower.hex, c_hex)) <= ring_cap:
+				heads += 1
+		crowd_mult = 1.0 + per_head * float(mini(maxi(0, heads - 1), max_heads))
+
 	for u: CombatUnit in units.duplicate():
 		if not u.is_alive() or not u.is_ground():
 			continue
@@ -1577,9 +1933,15 @@ func _step_gutter_circle_tower(tower: TowerInstance, delta: float) -> void:
 			u.displace_along_path(kb, get_spawn_path_index())
 
 		var hit_dmg: float = calculate_hit_damage(
-			tower, u, tower.def.damage * ring_mult, tower.def.damage_tag, true
+			tower, u, tower.def.damage * ring_mult * crowd_mult, tower.def.damage_tag, true
 		)
 		deal_damage_from_tower(tower, u, hit_dmg, tower.def.damage_tag, false, true)
+
+		# Rite: communion_of_the_maw -- every soul the circle catches is tithed.
+		# A swarm-driven economy: the more the ring swallows, the more it pays.
+		if tower.has_behavior("communion_of_the_maw"):
+			var tithe: int = int(tower.get_behavior_param("communion_of_the_maw", "offerings_per_hit", 1))
+			offerings += maxi(0, tithe)
 
 	# ichor_bloom: each pulse leaves a 4 s puddle dealing 8 Void/s
 	if tower.has_behavior("ichor_bloom"):
@@ -1710,6 +2072,14 @@ func _step_watcher_tower(tower: TowerInstance, delta: float, rng: RandomNumberGe
 		if rng.randf() < crit_chance:
 			raw_dmg *= crit_mult
 
+	# Rite: covetous_gaze -- the gaze grinds the wounded. Damage rises as the
+	# target's remaining HP falls, the inverse of the nail gun's per-shot ramp:
+	# where the ledger builds on repetition, the gaze builds on the target's ruin.
+	if tower.has_behavior("covetous_gaze"):
+		var weak_factor: float = float(tower.get_behavior_param("covetous_gaze", "damage_per_missing_hp", 0.60))
+		var missing_frac: float = clampf(1.0 - (target.hp / maxf(1.0, target.max_hp)), 0.0, 1.0)
+		raw_dmg *= 1.0 + weak_factor * missing_frac
+
 	var hit_dmg: float = calculate_hit_damage(
 		tower, target, raw_dmg, tower.def.damage_tag, false, 0.0, ignore_armor_frac
 	)
@@ -1783,7 +2153,7 @@ func _step_congregation_tower(tower: TowerInstance, delta: float) -> void:
 	_sync_congregation_blockers(tower)
 
 	# Tick resummon timers (10 s after death)
-	var max_hp: float = tower.get_summon_max_hp()
+	var max_hp: float = tower.get_summon_max_hp() * get_rite_stat_multiplier(tower, "summon_hp")
 	var dps: float = (tower.def.summon_dps if tower.def != null else 2.0) * tower.get_upgrade_damage_multiplier()
 	var dmg_red: float = 0.30 if tower.has_behavior("picket_line") else 0.0
 	var default_idx: int = _get_default_congregation_path_idx(tower.hex)
@@ -1948,7 +2318,11 @@ func _step_tithe_box_tower(tower: TowerInstance, delta: float) -> void:
 	tower.income_timer += delta
 	while tower.income_timer >= tower.def.income_interval:
 		tower.income_timer -= tower.def.income_interval
-		offerings += tower.get_income_offerings()
+		# Rite: Corruption-scaled income. For the tithe box the branch's power IS the yield, so
+		# this is where its Corruption scaling lands.
+		offerings += roundi(
+			float(tower.get_income_offerings()) * get_rite_stat_multiplier(tower, "income")
+		)
 
 
 ## 10. substation_effigy (CHAIN_ARC)
@@ -2680,8 +3054,13 @@ func _step_units(delta: float) -> void:
 			if not blocker_still_valid:
 				u.engaged_blocker_id = -1
 
-		# Move along path toward index 0
-		var speed_mult: float = u.get_effective_speed_multiplier()
+		# Move along path toward index 0. Captured-site speed is a region aura, so it
+		# is applied per tick from the enemy's current hex (enemies crossing corporate
+		# ground speed up while inside it, and slow back down on leaving).
+		var speed_mult: float = (
+			u.get_effective_speed_multiplier()
+			* get_objective_capture_speed_mult_at(get_unit_hex(u))
+		)
 		u.path_position = clampf(u.path_position - u.speed * speed_mult * delta, 0.0, max_idx)
 		if u.path_position <= 0.0 and speed_mult > 0.0:
 			_handle_unit_leak(u)

@@ -35,12 +35,21 @@ static func _ensure_initialized() -> void:
 	_register("drone_feeder", {"type": "upgrade", "tower_id": "hexed_nail_gun", "tier": 3, "never_reloads": true})
 	_register("pneumatic_belt_rig", {"type": "upgrade", "tower_id": "hexed_nail_gun", "tier": 4, "burst_shots": 5, "armored_bonus": 0.50})
 
+	# Rite branch (paid in Rites; exclusive with Revealed and Rigged). The tier's
+	# effect is declarative (UpgradeNode.corruption_scaled_damage), so these entries
+	# only need to exist for registry validation.
+	_register("nail_of_accounting", {"type": "upgrade", "tower_id": "hexed_nail_gun", "tier": 3, "branch": "rite"})
+	_register("the_audit_comes_due", {"type": "upgrade", "tower_id": "hexed_nail_gun", "tier": 4, "branch": "rite"})
+
 	# --- 2. chanting_choir upgrades ------------------------------------------
 	_register("deeper_harmony", {"type": "upgrade", "tower_id": "chanting_choir", "tier": 2})
 	_register("dissonant_hymn", {"type": "upgrade", "tower_id": "chanting_choir", "tier": 3, "fear_max_stacks": 5})
 	_register("the_unspoken_verse", {"type": "upgrade", "tower_id": "chanting_choir", "tier": 4, "flee_duration": 2.0, "flee_cooldown": 10.0})
 	_register("bullhorn_array", {"type": "upgrade", "tower_id": "chanting_choir", "tier": 3})
 	_register("jammer_choir", {"type": "upgrade", "tower_id": "chanting_choir", "tier": 4, "stun_duration": 1.5, "stun_interval": 8.0})
+
+	_register("the_song_is_billed", {"type": "upgrade", "tower_id": "chanting_choir", "tier": 3, "branch": "rite"})
+	_register("unspoken_receipts", {"type": "upgrade", "tower_id": "chanting_choir", "tier": 4, "branch": "rite"})
 
 	# --- 3. gutter_ritual_circle upgrades ------------------------------------
 	_register("wider_circle", {"type": "upgrade", "tower_id": "gutter_ritual_circle", "tier": 2, "ring_2_damage_ratio": 0.50})
@@ -49,12 +58,18 @@ static func _ensure_initialized() -> void:
 	_register("propane_pulse", {"type": "upgrade", "tower_id": "gutter_ritual_circle", "tier": 3, "knockback_hexes": 1})
 	_register("chain_detonator", {"type": "upgrade", "tower_id": "gutter_ritual_circle", "tier": 4, "explosion_ratio": 0.40, "explosion_radius": 1})
 
+	_register("the_circle_is_paid", {"type": "upgrade", "tower_id": "gutter_ritual_circle", "tier": 3, "branch": "rite"})
+	_register("communion_of_the_maw", {"type": "upgrade", "tower_id": "gutter_ritual_circle", "tier": 4, "branch": "rite"})
+
 	# --- 4. tentacle_storm_drain upgrades ------------------------------------
 	_register("more_grates", {"type": "upgrade", "tower_id": "tentacle_storm_drain", "tier": 2})
 	_register("deep_grasp", {"type": "upgrade", "tower_id": "tentacle_storm_drain", "tier": 3, "root_duration": 2.5, "drag_hexes": 1})
 	_register("leviathan_awakens", {"type": "upgrade", "tower_id": "tentacle_storm_drain", "tier": 4, "sweep_interval": 25.0, "sweep_damage": 120.0})
 	_register("flood_pump", {"type": "upgrade", "tower_id": "tentacle_storm_drain", "tier": 3, "flood_slow": 0.40})
 	_register("live_wire_flood", {"type": "upgrade", "tower_id": "tentacle_storm_drain", "tier": 4, "electric_dps": 12.0})
+
+	_register("drowned_ledger", {"type": "upgrade", "tower_id": "tentacle_storm_drain", "tier": 3, "branch": "rite"})
+	_register("the_fathom_collects", {"type": "upgrade", "tower_id": "tentacle_storm_drain", "tier": 4, "branch": "rite"})
 
 	# --- 5. watcher_in_the_billboard upgrades --------------------------------
 	_register("dilated_pupil", {"type": "upgrade", "tower_id": "watcher_in_the_billboard", "tier": 2})
@@ -63,12 +78,18 @@ static func _ensure_initialized() -> void:
 	_register("rooftop_scope_array", {"type": "upgrade", "tower_id": "watcher_in_the_billboard", "tier": 3, "crit_chance": 0.25, "crit_mult": 2.0})
 	_register("ad_hijack", {"type": "upgrade", "tower_id": "watcher_in_the_billboard", "tier": 4, "confuse_duration": 1.5, "confuse_radius": 1})
 
+	_register("covetous_gaze", {"type": "upgrade", "tower_id": "watcher_in_the_billboard", "tier": 3, "branch": "rite"})
+	_register("the_debt_collector", {"type": "upgrade", "tower_id": "watcher_in_the_billboard", "tier": 4, "branch": "rite"})
+
 	# --- 6. rust_censer upgrades ---------------------------------------------
 	_register("heavier_incense", {"type": "upgrade", "tower_id": "rust_censer", "tier": 2})
 	_register("plague_incense", {"type": "upgrade", "tower_id": "rust_censer", "tier": 3, "spread_radius": 1})
 	_register("rust_communion", {"type": "upgrade", "tower_id": "rust_censer", "tier": 4, "shred_cap": 8, "cybernetic_double": true})
 	_register("acid_sprayer", {"type": "upgrade", "tower_id": "rust_censer", "tier": 3})
 	_register("solvent_tank", {"type": "upgrade", "tower_id": "rust_censer", "tier": 4, "shred_cap": 10, "armored_dot_bonus": 1.0, "scrap_upkeep": 4})
+
+	_register("corroded_receipts", {"type": "upgrade", "tower_id": "rust_censer", "tier": 3, "branch": "rite"})
+	_register("the_rust_audits", {"type": "upgrade", "tower_id": "rust_censer", "tier": 4, "branch": "rite"})
 
 	# --- 7. fever_shrine upgrades --------------------------------------------
 	_register("more_candles", {"type": "upgrade", "tower_id": "fever_shrine", "tier": 2})
@@ -77,12 +98,18 @@ static func _ensure_initialized() -> void:
 	_register("server_rack_altar", {"type": "upgrade", "tower_id": "fever_shrine", "tier": 3})
 	_register("mesh_network", {"type": "upgrade", "tower_id": "fever_shrine", "tier": 4, "rate_per_type": 0.06, "max_bonus": 0.30})
 
+	_register("candles_for_the_ledger", {"type": "upgrade", "tower_id": "fever_shrine", "tier": 3, "branch": "rite"})
+	_register("the_vigil_pays_interest", {"type": "upgrade", "tower_id": "fever_shrine", "tier": 4, "branch": "rite"})
+
 	# --- 8. the_congregation upgrades ----------------------------------------
 	_register("bigger_flock", {"type": "upgrade", "tower_id": "the_congregation", "tier": 2})
 	_register("devoted", {"type": "upgrade", "tower_id": "the_congregation", "tier": 3, "explosion_damage": 40.0})
 	_register("martyrs_chorus", {"type": "upgrade", "tower_id": "the_congregation", "tier": 4, "ghost_duration": 8.0, "ghost_dps": 10.0})
 	_register("picket_line", {"type": "upgrade", "tower_id": "the_congregation", "tier": 3, "damage_reduction": 0.30})
 	_register("union_strike", {"type": "upgrade", "tower_id": "the_congregation", "tier": 4, "melee_slow": 0.30})
+
+	_register("paid_in_flesh", {"type": "upgrade", "tower_id": "the_congregation", "tier": 3, "branch": "rite"})
+	_register("audit_of_the_flock", {"type": "upgrade", "tower_id": "the_congregation", "tier": 4, "branch": "rite"})
 
 	# --- 9. tithe_box upgrades -----------------------------------------------
 	_register("bigger_plate", {"type": "upgrade", "tower_id": "tithe_box", "tier": 2})
@@ -91,12 +118,18 @@ static func _ensure_initialized() -> void:
 	_register("scrap_collector", {"type": "upgrade", "tower_id": "tithe_box", "tier": 3, "kill_scrap_bonus": 0.25, "max_boxes": 3})
 	_register("chop_shop", {"type": "upgrade", "tower_id": "tithe_box", "tier": 4, "jank_reduction": 10, "radius_hexes": 3})
 
+	_register("the_plate_never_empties", {"type": "upgrade", "tower_id": "tithe_box", "tier": 3, "branch": "rite"})
+	_register("the_till_audits_itself", {"type": "upgrade", "tower_id": "tithe_box", "tier": 4, "branch": "rite"})
+
 	# --- 10. substation_effigy upgrades --------------------------------------
 	_register("copper_thieves", {"type": "upgrade", "tower_id": "substation_effigy", "tier": 2})
 	_register("astral_conduction", {"type": "upgrade", "tower_id": "substation_effigy", "tier": 3, "bounce_decay": 1.0, "chain_hop_range": 3, "air_damage_bonus": 0.25})
 	_register("voice_in_the_static", {"type": "upgrade", "tower_id": "substation_effigy", "tier": 4, "storm_interval": 10.0, "storm_damage": 45.0, "storm_radius": 1, "storm_slow": 0.35, "storm_slow_duration": 3.0})
 	_register("substation_tap", {"type": "upgrade", "tower_id": "substation_effigy", "tier": 3})
 	_register("breaker_cascade", {"type": "upgrade", "tower_id": "substation_effigy", "tier": 4, "nth_shot": 5, "overload_damage_bonus": 0.50, "stun_duration": 0.8, "tag_damage_bonus": 0.35})
+
+	_register("metered_current", {"type": "upgrade", "tower_id": "substation_effigy", "tier": 3, "branch": "rite"})
+	_register("the_grid_forecloses", {"type": "upgrade", "tower_id": "substation_effigy", "tier": 4, "branch": "rite"})
 
 
 static func _register(behavior_id: String, descriptor: Dictionary) -> void:

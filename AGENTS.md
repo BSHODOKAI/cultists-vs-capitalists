@@ -22,9 +22,7 @@
 - A leaked **Boss** triggers an immediate `GAME_OVER`. Reaching `0` lives triggers `GAME_OVER` and emits a `LossReport`.
 - Every **10th wave** (`10, 20, 30...`) is a Boss wave. When the boss is slain and all wave enemies are cleared, the path extends in `POST_BOSS`.
 - **Towers have NO HP in v1.** Enemies interact with towers by disabling (`TowerDisable`), suppressing fire rate (`RangedSuppress`), negating Corruption bonuses (`AntiMagicAura`), or channeling to convert them (`TowerConvert`, `LeveragedBuyout`).
-- **Special Event — "Stars Are Right":**
-- Occurs every 5th wave that is not a boss wave (`5, 15, 25...`).
-- `REVEALED` branch towers deal **+20% additive damage** that wave (`STARS_ARE_RIGHT_REVEALED_BONUS = 0.20`), and the wave director's budget increases by **+10%**.
+- **Run Events (see §8):** pseudo-random events fire every `3..7` waves, drawn from a shuffled deck of Event cards (never advertised before they happen). They include buffs and debuffs. The classic "Stars Are Right" (+20% Revealed damage, +10% budget) is now one buff card among many rather than a fixed every-5th-wave event.
 
 ---
 
@@ -68,9 +66,9 @@ All player currency spending must route through the single choke point `GameStat
 - All gameplay logic uses axial hex coordinates and integer hex distances (`HexMath.distance`). Never use world or pixel distances in gameplay code.
 - Terrain is `BUILDABLE` or `BLOCKED` (~12% `BLOCKED_TERRAIN_FRACTION`), generated lazily in chunks (`CHUNK_RADIUS = 8`) deterministically from `run_seed + chunk_coord`, independent of chunk load order. Chunks containing path hexes, towers, or reserved preview hexes are pinned and cannot unload.
 - **Initial Path & Growth Lifecycle (`PathGenerator`):**
-- Initial path starts at the player's base (`Vector2i.ZERO`, path index `0`) and extends `INITIAL_PATH_LENGTH = 24` hexes to the initial spawn hex.
+- Initial path starts at the player's base (`Vector2i.ZERO`, path index `0`) and extends `INITIAL_PATH_LENGTH = 18` hexes to the initial spawn hex.
 - **Preview (`PREVIEW_LEAD_WAVES = 2`):** Generated at the intermission before wave `8, 18, 28...`. Immediately reserves `ghost_path_hexes` and any hex in the 2-hex build zone *only* of the previewed extension.
-- **Commit:** Happens once after each boss wave in `POST_BOSS` (only when the boss is dead and no enemies remain). Commits the *exact* previewed extension (`12..20` hexes, `MIN_EXT..MAX_EXT`) from the spawn end.
+- **Commit:** Happens once after each boss wave in `POST_BOSS` (only when the boss is dead and no enemies remain). Commits the *exact* previewed extension (`10..16` hexes, `MIN_EXT..MAX_EXT`) from the spawn end.
 - **Hard Constraints (H1–H5 — never relaxed):**
 - **H1:** Single non-branching chain; no hex visited twice.
 - **H2:** Corner spacing: at least `2` straight (non-corner) hexes between consecutive corners, including across the join with the existing path; allowed turns are `±60°` and `±120°`.
@@ -93,15 +91,28 @@ All 10 cult towers live in `res://data/towers/*.tres` and their 50 upgrades (`10
 - **Exception:** `the_congregation` (`range_hexes = 1`) **must be placed directly adjacent (`hex_distance == 1`)** to a committed path hex.
 - **Upgrade Tree & Branch Locking:**
 - `T1 (base) -> T2 (shared, 0.6x base cost) -> fork: REVEALED T3 (1.0x) -> T4 Capstone (1.8x) OR RIGGED T3 (1.0x) -> T4 Capstone (1.8x)`.
-- Choosing a T3 branch permanently locks the opposite branch for that tower.
+- **All 10** towers carry a **third, optional RITE branch** (`rite_t3_upgrade` / `rite_t4_upgrade`, `UpgradeNode.Branch.RITE = 3`) locked to the other two exactly the same way. Damage is meaningless on the three towers with no attack of their own (`fever_shrine`, `the_congregation`, `tithe_box`), so the branch scales whatever stat the tower actually has: `UpgradeNode.corruption_scaled_stat` is a dictionary of additive per-point-Corruption bonuses keyed by stat name (`"damage"` folds into the older `corruption_scaled_damage` field; `"aura_fire_rate"`, `"income"` and `"summon_hp"` cover the support towers). `TowerSystem.get_rite_stat_multiplier(tower, key)` returns `1.0` when a tower carries no such scaling, so every call site multiplies unconditionally.
+- The T3 fork is **exclusive**: choosing any one branch permanently locks the other **two** for that tower. The lock is checked **before** the tier-order guards so a locked branch reports `branch_locked_to_<branch>` rather than a misleading `requires_t2_first` (the player would otherwise be told to buy a T2 they already own).
 - **Revealed Upgrades:** Paid in **Offerings**; add global **Corruption** (`T3 +4`, `T4 +8`).
 - **Rigged Upgrades:** Paid in **Scrap**; set that tower's **Jank** (`T3 -> 10%`, `T4 -> 25%`).
+- **Rite Upgrades:** Paid in **Rites** (`Currency.RITES = 2`) at flat cost `T3 = 1`, `T4 = 2` — deliberately NOT base-cost multiples, since Rites are a scarce Corruption-derived currency and scaling them by an Offering cost is meaningless. They add **no Corruption and no Jank**: the price was already paid when the Rites were drawn (Corruption + permanent Attention). Their signature is `UpgradeNode.corruption_scaled_damage` (additive damage per point of current Corruption, consumed via `TowerSystem.get_rite_corruption_multiplier()`), i.e. the branch turns the danger meter into a damage stat. Rites are **never refunded** on sell (`sell` refunds Offerings and Scrap only), so drawing power and then liquidating cannot launder Attention away. Every Rite node also **feeds the meter on its kills** (`corruption_per_kill`, read generically through `TowerInstance.get_behavior_param_sum()`), so the branch's price and its power are the same currency: a Rite tower accelerates its own damage *and* the Reckoning that punishes it. Some nodes also pay a bounty on the kill (`rite_offerings_per_kill`, `rite_scrap_per_kill`). Because the params are read **by name rather than by behaviour id**, adding a new Rite node requires no new branch in the kill code.
 - **Corruption (Global `0..100`):**
 - Revealed towers deal `+0.25%` additive damage per point (stacks additively with Stars Are Right `+20%`; negated within 2 hexes of a `compliance_officer`).
 - At `50+`: `10%` chance at wave start one random Revealed tower misfires (disabled that wave). At `75+`: `20%`.
 - At `100`: Spawns hostile **Rogue Entities** (`res://data/units/rogue_entity.tres`: base 550 HP, speed 1.25, 25%–50% all-damage resistance, `Breakthrough`, `TowerDisable` every 5s, `leak_cost = 3+`).
 - Rogue Entities level up `+1` every time one is killed (`1.45^level` HP compounding + wave scaling) and spawn in multiples (`1..5`) as Rogue level and wave number rise.
 - **Penance:** Pay `40 Offerings` to reduce Corruption by `5`.
+- **Rites & the Reckoning (the price of power):**
+- **Rites** are Corruption *spent as a resource*. Drawing a Rite costs `10 Corruption` (`RITE_CORRUPTION_COST`) and banks `1 Rite`. The sink for Rites is the third tower branch.
+- Drawing Rites requires the cult to **hold a Corruption Reservoir** site — the Reservoir is what makes the rot drawable, and is the reason to fight for one.
+- Each Rite drawn adds `10` **Rite debt** (`RITE_DEBT_PER_RITE`). Debt accrues *since the last reckoning* and scales how bad that reckoning is (`RITE_DEBT_PER_ROGUE_LEVEL = 25` per extra level).
+- **THE RECKONING has three rules, and all three matter:**
+  1. **Rogues wake from the Corruption held RIGHT NOW** (`corruption >= get_rogue_entity_threshold()`), so spending Corruption on Rites is a genuine way to back off the brink.
+  2. **Debt decides how bad they are, not whether they come** — it adds levels (HP, speed, resistances, leak cost, kill reward) and spawn count, clamped to `MAX_ROGUE_ENTITY_SPAWN_COUNT = 8`.
+  3. **Debt RESETS to 0 when they come.** This is load-bearing: *without* it a single spending spree compounds into a permanent, unrecoverable Rogue spiral. The reckoning happens, and then it is over.
+- A held Reservoir raises `get_rogue_entity_threshold()` **alongside** the Corruption cap, so the site genuinely buys "more rot before it wakes" rather than letting the cult climb past its own danger line.
+- **Penance** (`40 Offerings -> -5 Corruption`) reduces the *gate*, so it still helps you duck the next reckoning even when debt is high.
+- The top bar shows `Rites: N` and `Reckoning: +N` (severity of the next wave), the latter hot once Corruption is at the line.
 - **Jank (Per Rigged Tower `0..60%`):**
 - At each wave start, each Rigged tower rolls `min(jank, 60)%` chance to jam at a seeded random moment during the wave, disabling it for `10s`.
 - **Maintenance:** Pay `15 Scrap` to lower one Rigged tower's Jank by `10`.
@@ -128,6 +139,23 @@ All 10 cult towers live in `res://data/towers/*.tres` and their 50 upgrades (`10
 | 10 | `substation_effigy` | 50 **Scrap** | 3 | 14 Electric, 0.85/s, Ground+Air (Air prio), chains 3 targets | `copper_thieves` -> `astral_conduction` -> `voice_in_the_static` | `substation_tap` -> `breaker_cascade` |
 
 ---
+
+### Rite Branch Roster (optional third branch, paid in Rites)
+
+All ten towers carry it. Each scales **the stat it actually has** — damage for attackers, aura fire rate / income / summoned HP for the three support towers — and every node also converts kills into Corruption to feed the meter it draws on:
+
+| Tower | Rite T3 (1 Rite) | Rite T4 (2 Rites) |
+|---|---|---|
+| `hexed_nail_gun` | `nail_of_accounting` (+30% dmg, +0.5%/Corruption) | `the_audit_comes_due` (+45% dmg, +30% rate, +0.8%/Corruption) |
+| `chanting_choir` | `the_song_is_billed` (+25% dmg, +1 member, +0.4%/Corruption, +1 Corruption/kill) | `unspoken_receipts` (+45% dmg, +1 member, +1 hex, +0.7%/Corruption, +2 Corruption and +1 Offering/kill) |
+| `gutter_ritual_circle` | `the_circle_is_paid` (+25% dmg, +1 hex, +0.3%/Corruption) | `communion_of_the_maw` (+40% dmg, +1 hex, +0.6%/Corruption) |
+| `tentacle_storm_drain` | `drowned_ledger` (+30% dmg, 45% slow aura, +0.5%/Corruption, +1 Corruption/kill) | `the_fathom_collects` (+50% dmg, 55% slow aura, +1 target, +0.8%/Corruption, +2 Corruption and +1 Scrap/kill) |
+| `watcher_in_the_billboard` | `covetous_gaze` (+40% dmg, +0.5%/Corruption) | `the_debt_collector` (+70% dmg, +1 hex, +1.0%/Corruption) |
+| `rust_censer` | `corroded_receipts` (+30% dmg, 6.0 s DoT, +0.5%/Corruption, +1 Corruption/kill) | `the_rust_audits` (+50% dmg, 8.0 s DoT, Shred cap 8, +0.8%/Corruption, +2 Corruption and +1 Offering/kill) |
+| `substation_effigy` | `metered_current` (+30% dmg, +0.5%/Corruption, +1 Corruption/kill) | `the_grid_forecloses` (+50% dmg, +25% rate, +0.8%/Corruption, +2 Corruption and +1 Scrap/kill) |
+| `fever_shrine` | `candles_for_the_ledger` (aura +35% rate, +0.4%/Corruption aura, +1 Corruption/kill) | `the_vigil_pays_interest` (aura +50% rate, +1 hex, +0.7%/Corruption aura, +2 Corruption/kill) |
+| `the_congregation` | `paid_in_flesh` (+1 blocker, +0.4%/Corruption blocker HP, +1 Corruption/kill) | `audit_of_the_flock` (+1 blocker, +60% blocker HP, +0.7%/Corruption blocker HP, +2 Corruption/kill) |
+| `tithe_box` | `the_plate_never_empties` (+40% income, +0.4%/Corruption income, +1 Corruption/kill) | `the_till_audits_itself` (+75% income, +0.7%/Corruption income, +2 Corruption and +1 Offering/kill) |
 
 ## 6. Factions, Enemy Units, Bosses & Leveling
 
@@ -180,10 +208,10 @@ Implemented in `WaveDirector`, `WaveRoster`, `CoverageTracker`, `DirectorBalance
 - **Budget & Late-Wave Ramp:**
 - Base polynomial: `B(w) = (10 + 5w + 0.12 * w^2) * (1 + 0.15 * completed_cycles) * rubber_factor`
 - **Late-Wave Ramp (`w > 15`):** Multiplies budget by `1.0 + 0.035 * (w - 15) + 0.0018 * (w - 15)^2` so waves 20–50+ continue to scale sharply.
-- **Stars Are Right:** `B(w) * 1.10`.
+- **Event budget modifier:** the active Run Event's `budget_mult` scales `B(w)` (e.g. Stars Are Right `×1.10`).
 - **Rubber-Banding:** Starts at `1.0` (`[0.80, 1.25]`); `-0.10` if `2+` lives lost last wave; `+0.10` after `3` consecutive zero-leak waves; else moves `0.05` toward `1.0`. Ignored (`max(1.0, rubber_factor)`) on Boss waves.
 - **Boss Waves:** Boss is not bought from budget; escorts receive **60%** of `B(w)` (`40%` withheld) and are capped at `MAX_BOSS_ESCORT_UNITS = 24`.
-- **Unit Cost & Excess Budget:** `effective_cost = cost * (1 + 0.03 * level)`. Regular waves cap at `MAX_UNITS_PER_WAVE = 60` and spend remaining budget as `+1` bonus spawn level on chosen unit types.
+- **Unit Cost & Excess Budget:** `effective_cost = cost * (1 + 0.03 * level)`. Regular waves cap at `MAX_UNITS_PER_WAVE = 60`. Once the *effective* cap is reached, leftover budget is spent as `+1` bonus spawn level on chosen unit types, bounded per type by `MAX_BONUS_LEVELS_PER_UNIT = 5` (unbounded levels previously reached `+86..+152` spawn levels, i.e. thousands of × HP). Anything still unspendable is recorded on the roster as `unspent_budget` (never silently discarded) and is reserved for future fork/objective budgets. Boss waves gate on their own `MAX_BOSS_ESCORT_UNITS = 24` cap, so escorts receive the same bonus-level compensation. Never cap unit count below `MAX_UNITS_PER_WAVE` from path length — the compensation phase gates on the effective cap, so a lower cap makes waves weaker, not denser.
 - **Hard Constraints (H1–H6) & Early-Wave Guards:**
 - Total cost `<= budget`; single unit type `<= 50%` of budget; from wave `6+`, `>= 3` distinct unit types; Air `<= 40%` of budget unless Skyline (or interval 1); Spawners `<= 2` and Healers `<= 2` per wave; never exceed path delivery window.
 - `Cloaked` units are withheld until after the first boss (`wave > 10`). Early Skyline intervals (`wave <= 10`) mix in basic Ground units so wave 1 is never 100% Air.
@@ -195,12 +223,98 @@ Implemented in `WaveDirector`, `WaveRoster`, `CoverageTracker`, `DirectorBalance
 
 ---
 
-## 8. 3D World, Biomes, Audio, UI & Performance
+## 8. Run Events (Event Deck)
+
+Implemented in `RunEventSystem`, `EventData`, `EventBalanceData`, and `EventLibrary`
+(`res://scripts/events/`). Event data lives in `res://data/events/*.tres` (7 buffs / 7 debuffs)
+with tunables in `res://data/event_balance.tres`.
+
+- **Deck of cards:** every event is a single card. The deck is shuffled with a seeded RNG
+  (`run_seed ^ EVENT_SEED_SALT`) and drawn **without replacement**, so a drawn event never
+  repeats until the deck is reshuffled — a randomized rotation, not a fixed cycle.
+- **Draw constraints:** a card is drawn only if (1) its id differs from the last fired event,
+  (2) its id differs from the one before that (no `a → b → a`), and (3) it does not extend a
+  same-category run beyond `MAX_SAME_CATEGORY_RUN = 3` (bad-luck protection: never more than
+  3 buffs or 3 debuffs in a row). Events do **not** strictly alternate category.
+- **Cadence:** after each event, the next fires `GAP_MIN..GAP_MAX = 3..7` waves later. Events
+  may fire on any wave except the **first boss wave (10)**.
+- **Not advertised:** the upcoming event is resolved at intermission (so its budget modifier is
+  baked into the locked roster) but is revealed to the player only at wave start, via the
+  `event_triggered` banner (`TelegraphLayer`) and an audio cue. The `IntelPanel` no longer
+  telegraphs it.
+- **Effects (mixed instant + wave-duration):** instant effects fire once at wave start
+  (Offerings/Scrap grants, percentage drains, Corruption change, +Jank on Rigged towers);
+  duration effects last the flagged wave and clear at wave end (additive Revealed damage bonus,
+  all-tower damage/fire-rate multipliers, enemy speed/HP multipliers, Scrap-income multiplier,
+  Revealed-bonus suppression, and the director `budget_mult`).
+- **Buff roster (7):** `stars_are_right`, `dark_patron_grant` (Offerings), `black_market_haul`
+  (Scrap), `cargo_cult_windfall` (Offerings + Scrap hybrid), `rites_of_haste`, `the_veil_thins`,
+  `salvage_bloom`.
+- **Debuff roster (7, soft only — no direct life loss, no instant game-over):**
+  `market_correction`, `scrap_glut`, `supply_shock`, `hardened_plating`, `static_interference`,
+  `creeping_rust`, `corporate_audit`.
+- **Fully deterministic:** identical `run_seed` produces an identical event schedule, so replays
+  and `DirectorSimulator` runs reproduce exactly.
+
+---
+
+## 8. Objectives (Claimable Sites on New Ground)
+
+Implemented in `ObjectiveSystem`, `ObjectiveInstance`, `ObjectiveData`, `ObjectiveBalanceData`, and
+`ObjectiveLibrary` (`res://scripts/objectives/`). Data lives in `res://data/objectives/*.tres`
+(3 objectives) with tunables in `res://data/objective_balance.tres`.
+
+Objectives are the **payload of path growth**: each committed extension settles up to
+`sites_per_growth = 1` site on the newly opened ground (never before `first_objective_wave = 10`),
+at most `max_sites = 8` alive. A site sits on a free, non-path hex within 2 hexes of the new
+stretch and always retains a legally buildable hex within its claim radius (the site hex itself
+counts, guaranteeing claimability).
+
+- **Lifecycle:** `UNCLAIMED -> CLAIMED` while any cult tower stands within
+  `claim_radius_hexes = 2`; `CLAIMED -> UNCLAIMED` the moment that tower is sold, destroyed or
+  lost, so holding a site is a live commitment, re-evaluated on every tower placement/removal and
+  at each wave start. `UNCLAIMED -> CAPTURED` after `capture_waves_required = 2` consecutive
+  waves with an enemy within `capture_radius_hexes = 2`; a quiet wave bleeds progress back down.
+  `CAPTURED -> CLAIMED` by building within claim radius again.
+- **Effects are REGION AURAS:** a site affects only the ground within
+  `aura_radius_hexes = 2` of itself, so holding a site means garrisoning the ground it sits on
+  rather than collecting a run-wide buff. Kept equal to `claim_radius_hexes` deliberately — a
+  wider aura swallows most of the buildable band (sites spawn within 2 hexes of the path) and
+  makes "local" indistinguishable from "global". Queried per hex via
+  `ObjectiveSystem.get_*_at(hex)` — `get_revealed_damage_bonus_at`, `get_jam_duration_mult_at`,
+  `get_capture_speed_mult_at`, `get_capture_damage_taken_mult_at`.
+- **Cult benefits while CLAIMED:** `ley_line` grants `+8%` additive Revealed damage;
+  `converted_data_center` halves Rigged jam duration; `corruption_reservoir` raises the
+  Corruption ceiling by `+25` **and is what unlocks drawing Rites** (see §5).
+- **Corporate penalty while CAPTURED:** the site becomes a dangerous corridor — enemies *inside
+  its aura* gain `ley_line` `-15%` damage taken, `converted_data_center` `+20%` speed,
+  `corruption_reservoir` `+15%` speed and `-10%` damage taken. This is the "leave it alone and it
+  costs you" half of the design. Both captured penalties are evaluated as the enemy moves (speed
+  per tick, damage-taken per hit) and are **never baked into spawn stats**, so per-unit stats stay
+  snapshot at spawn time.
+- **The one global effect:** `corruption_reservoir`'s Corruption ceiling. A Corruption cap is a
+  meter-wide number and cannot be local; what keeps it honest is the claim rule — lose the tower
+  holding the site and the headroom (and Rite access) goes with it.
+- **Wiring:** `GameState` places sites in `POST_BOSS` after `commit_extension()`, calls
+  `begin_wave`/`note_contested`/`end_wave` around each wave, and attaches the system to
+  `TowerSystem.objective_system` via `_sync_objective_effects()` **before** anything spawns.
+  `TowerSystem` prefers the attached system (true locality) and falls back to the wave-pushed
+  aggregate when it is null, so tests can drive the system without one. Signals:
+  `objective_placed(instance)`, `objective_state_changed(instance, old_state, new_state)`,
+  `objectives_changed(objective_system)`.
+- **Rendering:** `OverlayView._refresh_objective_overlays()` draws three ring layers
+  (unclaimed/claimed/captured) from `VisualThemeData` objective colors, rebuilt only when
+  `ObjectiveSystem.get_state_signature()` changes.
+
+---
+
+## 9. 3D World, Biomes, Audio, UI & Performance
 
 - **Urban Center Biome & 3D Views (`res://scripts/world/`):**
 - `TerrainView`, `BiomeData` (`res://data/biomes/urban_center.tres`), and `BiomeTileModels` render chunks via per-archetype `MultiMeshInstance3D` batches: skyscrapers on `BLOCKED` hexes, urban districts on `BUILDABLE` hexes, cleared street lots under placed towers, and recessed avenue road tiles on path hexes.
 - Entering tower build mode dims urban building opacity (`0.45` alpha) and highlights valid/invalid build-zone hexes in `OverlayView`.
 - `OverlayView` renders a distinct gold aura ring (`buff_range_ring_color`) for buff towers (`fever_shrine`, `chop_shop`) vs cyan (`range_ring_color`) for attack towers.
+- **Objective site signals (three layers, deliberately redundant).** A ring bounds the site's aura hexes, a flat ground fill shows the ground the aura *reaches*, and a **billboarded icon** floats above the hex (at `_ICON_Y`, which is above `HexMath.TOWER_MAX_HEIGHT`, so a tower built on the site's own hex cannot cover its own marker). The icon is **per-KIND** — one MultiMesh layer per site kind, because the silhouette is what tells the three kinds apart — tinted per state from the same `objective_*_color` theme values the ring and fill use. Glyphs come from `PlaceholderIcons.objective_icon()`: white shapes with a **baked dark halo**, so they read over both the pale ground of a zoomed-out view and the dark rooftops of a close-up. Unclaimed sites get a **dimmer** fill but never *no* fill — the unclaimed site is the one a player most needs to FIND. Where auras overlap, the strongest signal wins per hex (captured > claimed > unclaimed), because the hostile state is the one needing action. The `F3` panel prints a `Sites:` state breakdown, so "no site exists" is distinguishable from "a site that reads poorly".
 - `TowerView` meshes are strictly under `HexMath.TOWER_MAX_HEIGHT = 1.5`.
 - `EnemyMoverView` & `EnemyVisualPool` pool enemy nodes, apply a depth-disabled occlusion silhouette pass, aim projectiles at elevated Air unit models (`get_aim_world_position()`), and offload visual interpolation/label formatting to `WorkerThreadPool` when `>= 32` enemies are active.
 - **Audio System (`res://scripts/audio/`):**
@@ -215,7 +329,7 @@ Implemented in `WaveDirector`, `WaveRoster`, `CoverageTracker`, `DirectorBalance
 
 ---
 
-## 9. Engineering Conventions & Project Layout
+## 10. Engineering Conventions & Project Layout
 
 - **Data-Driven Resources:** All game data lives in `.tres` files under `res://data/` (`data/towers/`, `data/upgrades/`, `data/units/`, `data/units/bosses/`, `data/biomes/`, and `data/*_balance.tres`). Never scatter balance numbers through logic.
 - **Pure Logic vs. Nodes:** Core systems (`HexGrid`, `HexMath`, `HexSpatialIndex`, `PathGenerator`, `TowerSystem`, `TowerInstance`, `CombatUnit`, `UnitLeveling`, `WaveDirector`, `WaveRoster`, `CoverageTracker`, `AudioCueSystem`, `DisplaySettings`, `AudioSettings`) extend `RefCounted` so they can be tested headlessly without a scene tree.
@@ -231,6 +345,7 @@ Implemented in `WaveDirector`, `WaveRoster`, `CoverageTracker`, `DirectorBalance
 - `boss_leaked(wave_number)`
 - `path_extended(growth_result)`
 - `tower_damaged_enemy(tower_id, tower_type, unit_id, unit_tags, amount, damage_tag)`
+- `event_triggered(event_id, display_name, category, banner_text, banner_color)`
 
 ### Directory Structure
 
@@ -256,6 +371,7 @@ res://
 │   ├── audio/          # AudioBalanceData, AudioCueSystem, AudioSettings, SoundManager
 │   ├── core/           # SimClock, GameState, HexMath, HexSpatialIndex, DisplaySettings, VisualThemeData
 │   ├── director/       # WaveDirector, WaveRoster, CoverageTracker, DirectorBalanceData, DirectorSimulator
+│   ├── events/         # RunEventSystem, EventData, EventBalanceData, EventLibrary
 │   ├── path/           # HexGrid, PathGenerator, PathConstants, PathBalanceData
 │   ├── towers/         # TowerData, UpgradeNode, TowerInstance, CombatUnit, TowerSystem, TowerLibrary, TowerBehaviorRegistry, TowerBalanceData
 │   ├── ui/             # MainMenu, InGameMenu, SettingsMenu, TopBar, BuildPalette, TowerPanel, IntelPanel, WaveControls, BossBar, TelegraphLayer, GameOverScreen, DebugPanel, PlaceholderIcons

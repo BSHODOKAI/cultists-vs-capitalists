@@ -10,8 +10,11 @@ class_name OverlayView
 extends Node3D
 
 const _HexMath = preload("res://scripts/core/hex_math.gd")
+const _HexGrid = preload("res://scripts/path/hex_grid.gd")
+const _ObjectiveInstance = preload("res://scripts/objectives/objective_instance.gd")
 const _Theme = preload("res://scripts/core/visual_theme_data.gd")
 const _PlaceholderModels = preload("res://scripts/world/placeholder_models.gd")
+const _PlaceholderIcons = preload("res://scripts/ui/placeholder_icons.gd")
 
 @export var theme_data: VisualThemeData
 
@@ -28,6 +31,19 @@ var _range_multimesh: MultiMeshInstance3D
 var _ghost_path_multimesh: MultiMeshInstance3D
 var _preview_overlap_multimesh: MultiMeshInstance3D
 var _persistent_overlap_multimesh: MultiMeshInstance3D
+var _objective_unclaimed_multimesh: MultiMeshInstance3D
+var _objective_claimed_multimesh: MultiMeshInstance3D
+var _objective_captured_multimesh: MultiMeshInstance3D
+## Flat fills showing the ground a site's REGION AURA actually covers.
+var _objective_aura_multimesh: MultiMeshInstance3D
+## Floating icon marker layers, one per site KIND, created on demand. A site needs a readable
+## identity and the kind is what carries it, so each kind gets its own silhouette.
+var _icon_layers: Dictionary = {}
+## Quad meshes backing the icon layers, kept so a layer redrawn later reuses its geometry.
+var _icon_meshes: Dictionary = {}
+## Signature of the last drawn objective layout, so the layers are only rebuilt when
+## the objective set or its states actually change (refresh runs every frame).
+var _objective_sig: String = ""
 var _reserved_multimesh: MultiMeshInstance3D
 var _build_zone_valid_multimesh: MultiMeshInstance3D
 var _build_zone_invalid_multimesh: MultiMeshInstance3D
@@ -35,6 +51,16 @@ var _ambient_build_zone_multimesh: MultiMeshInstance3D
 
 var _ring_mesh: ArrayMesh
 var _thin_ring_mesh: ArrayMesh
+## Flat hex prism reused for every objective aura fill.
+var _aura_mesh: ArrayMesh
+## Height a site icon floats at. Above HexMath.TOWER_MAX_HEIGHT (1.5), so a tower built on the
+## site's own hex can never cover its own marker, and above the street furniture underneath.
+const _ICON_Y = 2.30
+## On-screen footprint of a site icon in world units: a little over half a hex, so it reads at
+## the default camera distance without swallowing the board it marks.
+const _ICON_WORLD_SIZE = 0.62
+## Icons stay slightly translucent so they mark a site without hiding what is behind them.
+const _ICON_ALPHA = 0.80
 var _dash_mesh: BoxMesh
 var _unshaded_alpha_mat: StandardMaterial3D
 var _last_pgen: PathGenerator = null
@@ -50,6 +76,8 @@ func _ready() -> void:
 
 	_ring_mesh = _HexMath.build_hex_ring_mesh(_HexMath.HEX_SIZE * 0.90, _HexMath.HEX_SIZE * 0.72)
 	_thin_ring_mesh = _HexMath.build_hex_ring_mesh(_HexMath.HEX_SIZE * 0.91, _HexMath.HEX_SIZE * 0.83)
+	# Very flat prism used as a ground fill for objective auras.
+	_aura_mesh = _HexMath.build_hex_prism_mesh(_HexMath.HEX_SIZE * 0.93, 0.010)
 	_dash_mesh = BoxMesh.new()
 	_dash_mesh.size = Vector3(0.42, 0.04, 0.65)
 
@@ -131,6 +159,13 @@ func _build_multimesh_layers() -> void:
 	_build_zone_valid_multimesh = _create_layer("BuildZoneValidLayer")
 	_build_zone_invalid_multimesh = _create_layer("BuildZoneInvalidLayer")
 	_ambient_build_zone_multimesh = _create_layer("AmbientBuildZoneLayer")
+	_objective_unclaimed_multimesh = _create_layer("ObjectiveUnclaimedLayer")
+	_objective_claimed_multimesh = _create_layer("ObjectiveClaimedLayer")
+	_objective_captured_multimesh = _create_layer("ObjectiveCapturedLayer")
+	# Aura fills sit UNDER the rings (y 0.030 vs 0.062+) so both stay readable.
+	_objective_aura_multimesh = _create_layer("ObjectiveAuraLayer")
+	# Site icon layers are deliberately NOT built here: one exists per site kind, so they are
+	# minted on demand by _icon_layer_for with their own billboarded material.
 
 
 func _create_layer(layer_name: String) -> MultiMeshInstance3D:
@@ -290,6 +325,9 @@ func refresh_path_overlays(pgen: PathGenerator) -> void:
 		0.025
 	)
 
+	# 3b. Objective sites (unclaimed / claimed / captured)
+	_refresh_objective_overlays()
+
 	# 4. Ghost path dashed emissive ribbon
 	if pgen.ghost_path_hexes.is_empty():
 		_ghost_path_multimesh.multimesh = null
@@ -357,3 +395,209 @@ func _refresh_build_zone_highlights(pgen: PathGenerator, build_tower: TowerData,
 		_build_zone_valid_multimesh.multimesh = null
 		_build_zone_invalid_multimesh.multimesh = null
 		_populate_ring_multimesh(_ambient_build_zone_multimesh, valid_hexes, theme_data.ambient_build_zone_border_color, 0.016, _thin_ring_mesh)
+
+
+## Draws Objective sites in three distinct rings: unclaimed (pale), claimed by the
+## cult (green) and corporate-captured (red). Rebuilt only when the objective set or
+## its states change, because refresh_path_overlays runs every frame.
+func _refresh_objective_overlays() -> void:
+	var gs: Node = get_node_or_null("/root/GameState")
+	var obj: ObjectiveSystem = null
+	if gs != null and gs.get("objective_system") != null:
+		obj = gs.get("objective_system") as ObjectiveSystem
+	if obj == null:
+		if not _objective_sig.is_empty():
+			_objective_sig = ""
+			_objective_unclaimed_multimesh.multimesh = null
+			_objective_claimed_multimesh.multimesh = null
+			_objective_captured_multimesh.multimesh = null
+			_objective_aura_multimesh.multimesh = null
+			_clear_objective_icon_layers()
+		return
+
+	var sig: String = obj.get_state_signature()
+	if sig == _objective_sig:
+		return
+	_objective_sig = sig
+
+	_populate_ring_multimesh(
+		_objective_unclaimed_multimesh,
+		obj.get_state_hexes(_ObjectiveInstance.State.UNCLAIMED),
+		theme_data.objective_unclaimed_color,
+		0.062
+	)
+	_populate_ring_multimesh(
+		_objective_claimed_multimesh,
+		obj.get_state_hexes(_ObjectiveInstance.State.CLAIMED),
+		theme_data.objective_claimed_color,
+		0.070
+	)
+	_populate_ring_multimesh(
+		_objective_captured_multimesh,
+		obj.get_state_hexes(_ObjectiveInstance.State.CAPTURED),
+		theme_data.objective_captured_color,
+		0.078
+	)
+
+	# Region fills: show the ground the effects actually REACH. A ring says "something is
+	# here"; only the fill says which hexes a site affects -- and that is the whole point of
+	# auras being local.
+	#
+	# Unclaimed sites get a fill too, deliberately dimmer. They used to be ring-only, on the
+	# theory that a site with no effect should not add noise -- but an unclaimed site is the
+	# one a player most needs to FIND, and a thin pale ring over dark district art proved to
+	# be effectively invisible. Dim beats absent.
+	_populate_objective_aura_multimesh(
+		obj.get_state_hexes(_ObjectiveInstance.State.UNCLAIMED),
+		obj.get_state_hexes(_ObjectiveInstance.State.CLAIMED),
+		obj.get_state_hexes(_ObjectiveInstance.State.CAPTURED),
+		obj.get_aura_radius()
+	)
+	_populate_objective_icons(obj)
+
+
+## Draws every hex inside a site's aura as a faint flat fill, tinted by state. Groups are laid
+## down strongest-signal-first, so where auras overlap a hex shows the state that needs action:
+## a captured site is buffing the enemy right now, so its red beats the cult's green, which in
+## turn beats a merely unclaimed marker.
+func _populate_objective_aura_multimesh(
+	unclaimed: Array[Vector2i],
+	claimed: Array[Vector2i],
+	captured: Array[Vector2i],
+	radius: int
+) -> void:
+	var target: MultiMeshInstance3D = _objective_aura_multimesh
+	if target == null:
+		return
+	if radius <= 0 or (unclaimed.is_empty() and claimed.is_empty() and captured.is_empty()):
+		target.multimesh = null
+		return
+
+	var seen: Dictionary = {}
+	var hexes: Array[Vector2i] = []
+	var colors: Array[Color] = []
+	var groups: Array = [
+		[captured, theme_data.objective_captured_color, 0.34],
+		[claimed, theme_data.objective_claimed_color, 0.30],
+		[unclaimed, theme_data.objective_unclaimed_color, 0.20],
+	]
+	for grp: Array in groups:
+		var centers: Array[Vector2i] = grp[0] as Array[Vector2i]
+		var base_col: Color = grp[1] as Color
+		var alpha: float = grp[2] as float
+		var aura_col := Color(base_col.r, base_col.g, base_col.b, alpha)
+		for c: Vector2i in centers:
+			# Walk a disk sized by the ACTUAL radius, not a hardcoded 2-hex helper:
+			# otherwise raising aura_radius_hexes would render a short aura while the
+			# effect quietly reached further.
+			for dq in range(-radius, radius + 1):
+				for dr in range(-radius, radius + 1):
+					var off := Vector2i(dq, dr)
+					if _HexGrid.hex_distance(Vector2i.ZERO, off) > radius:
+						continue
+					var h: Vector2i = c + off
+					if seen.has(h):
+						continue
+					seen[h] = true
+					hexes.append(h)
+					colors.append(aura_col)
+
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true
+	mm.mesh = _aura_mesh
+	mm.instance_count = hexes.size()
+	for i in range(hexes.size()):
+		mm.set_instance_transform(
+			i, Transform3D(Basis.IDENTITY, _HexMath.hex_to_world(hexes[i], 0.030))
+		)
+		mm.set_instance_color(i, colors[i])
+	target.multimesh = mm
+
+
+## Floats a glyph above each site, coloured by state. The ring bounds a site's ground and the
+## fill shows its reach, but neither can say WHICH site it is -- and both sit under whatever
+## gets built on the hex. An icon hovering above the tile stays readable over terrain, towers
+## and street furniture, and its silhouette is what carries the kind.
+func _populate_objective_icons(obj: ObjectiveSystem) -> void:
+	# Group by kind: a MultiMesh draws exactly one mesh, and the whole point is that the kinds
+	# do NOT share a silhouette.
+	var by_kind: Dictionary = {}
+	for inst: ObjectiveInstance in obj.objectives:
+		var kind: String = "" if inst.data == null else inst.data.id
+		if not by_kind.has(kind):
+			by_kind[kind] = []
+		var bucket: Array = by_kind[kind]
+		bucket.append(inst)
+
+	# A kind with no sites left must not leave a stale icon hovering over the board.
+	for kind: String in _icon_layers.keys():
+		if not by_kind.has(kind):
+			(_icon_layers[kind] as MultiMeshInstance3D).multimesh = null
+
+	for kind: String in by_kind.keys():
+		var sites: Array = by_kind[kind]
+		var layer: MultiMeshInstance3D = _icon_layer_for(kind)
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_colors = true
+		mm.mesh = _icon_meshes[kind] as Mesh
+		mm.instance_count = sites.size()
+		for i in range(sites.size()):
+			var inst: ObjectiveInstance = sites[i]
+			mm.set_instance_transform(
+				i, Transform3D(Basis.IDENTITY, _HexMath.hex_to_world(inst.hex, _ICON_Y))
+			)
+			var col: Color = _objective_state_color(inst.state)
+			mm.set_instance_color(i, Color(col.r, col.g, col.b, _ICON_ALPHA))
+		layer.multimesh = mm
+
+
+func _clear_objective_icon_layers() -> void:
+	for kind: String in _icon_layers.keys():
+		(_icon_layers[kind] as MultiMeshInstance3D).multimesh = null
+
+
+## Builds (once) the billboarded icon layer for [param kind]. The material is deliberately not
+## the shared unshaded decal material: an icon has to face the camera and carries its own glyph
+## texture, so it cannot be a ground-decal override.
+func _icon_layer_for(kind: String) -> MultiMeshInstance3D:
+	if _icon_layers.has(kind):
+		return _icon_layers[kind] as MultiMeshInstance3D
+
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.vertex_color_use_as_albedo = true
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	mat.albedo_texture = _PlaceholderIcons.objective_icon(kind)
+	# Draw over the city: a marker that can be hidden behind a skyscraper is not a marker.
+	# Opacity is what keeps it from blocking the board, not occlusion.
+	mat.no_depth_test = true
+	mat.render_priority = 5
+
+	var quad := QuadMesh.new()
+	quad.size = Vector2(_ICON_WORLD_SIZE, _ICON_WORLD_SIZE)
+	quad.material = mat
+
+	var layer := MultiMeshInstance3D.new()
+	layer.name = "ObjectiveIconLayer_%s" % kind
+	# NOTE: MultiMeshInstance3D has no `mesh` property of its own -- geometry and material come
+	# from the MultiMesh's mesh, which is why the quad is stored and handed to it on populate.
+	add_child(layer)
+	_icon_meshes[kind] = quad
+	_icon_layers[kind] = layer
+	return layer
+
+
+## Maps an objective state to its theme colour, so the ring, fill and marker layers cannot
+## drift apart.
+func _objective_state_color(state: int) -> Color:
+	match state:
+		_ObjectiveInstance.State.CLAIMED:
+			return theme_data.objective_claimed_color
+		_ObjectiveInstance.State.CAPTURED:
+			return theme_data.objective_captured_color
+		_:
+			return theme_data.objective_unclaimed_color

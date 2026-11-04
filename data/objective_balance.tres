@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="ObjectiveBalanceData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/objectives/objective_balance_data.gd" id="1_balance"]
+
+[resource]
+script = ExtResource("1_balance")
+sites_per_growth = 1
+claim_radius_hexes = 2
+capture_radius_hexes = 2
+capture_waves_required = 2
+aura_radius_hexes = 2
+first_objective_wave = 10
+max_sites = 8

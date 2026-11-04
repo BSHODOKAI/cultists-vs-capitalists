@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "the_plate_never_empties"
+display_name = "The Plate Never Empties"
+description = "+40% Offerings income from this tithe box, and every kill the cult makes feeds 1 Corruption into the meter. The plate is passed again and again, and the collection is taken in the currency the cult is already drowning in."
+tower_id = "tithe_box"
+tier = 3
+branch = 3
+currency = 2
+cost = 1
+prerequisite_id = "bigger_plate"
+corruption_delta = 0
+jank_set = 0
+income_mult = 0.4
+corruption_scaled_stat = {
+"income": 0.004
+}
+behaviors = Array[String](["the_plate_never_empties"])
+behavior_params = {
+"corruption_per_kill": 1
+}

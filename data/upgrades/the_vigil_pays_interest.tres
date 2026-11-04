@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "the_vigil_pays_interest"
+display_name = "The Vigil Pays Interest"
+description = "Raises the shrine's aura to +50% tower fire rate and extends it by 1 hex. Each kill feeds 2 Corruption into the meter. The vigil has been running so long that the interest is now larger than the offering."
+tower_id = "fever_shrine"
+tier = 4
+branch = 3
+currency = 2
+cost = 2
+prerequisite_id = "candles_for_the_ledger"
+corruption_delta = 0
+jank_set = 0
+aura_fire_rate_override = 0.5
+range_add = 1
+corruption_scaled_stat = {
+"aura_fire_rate": 0.007
+}
+behaviors = Array[String](["the_vigil_pays_interest"])
+behavior_params = {
+"corruption_per_kill": 2
+}

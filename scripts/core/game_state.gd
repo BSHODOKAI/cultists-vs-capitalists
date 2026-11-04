@@ -21,9 +21,15 @@ const _UpgradeNode = preload("res://scripts/towers/upgrade_node.gd")
 const _WaveDirector = preload("res://scripts/director/wave_director.gd")
 const _WaveRoster = preload("res://scripts/director/wave_roster.gd")
 const _CoverageTracker = preload("res://scripts/director/coverage_tracker.gd")
+const _DirectorBalance = preload("res://scripts/director/director_balance_data.gd")
 const _UnitLibrary = preload("res://scripts/units/unit_library.gd")
 const _UnitLeveling = preload("res://scripts/units/unit_leveling.gd")
 const _BiomeLibrary = preload("res://scripts/world/biome_library.gd")
+const _EventLibrary = preload("res://scripts/events/event_library.gd")
+const _RunEventSystem = preload("res://scripts/events/run_event_system.gd")
+const _ObjectiveLibrary = preload("res://scripts/objectives/objective_library.gd")
+const _ObjectiveSystem = preload("res://scripts/objectives/objective_system.gd")
+const _ObjectiveData = preload("res://scripts/objectives/objective_data.gd")
 
 enum RunState {
 	RUN_SETUP = 0,
@@ -38,7 +44,7 @@ enum Currency {
 	SCRAP = 1,
 }
 
-const INITIAL_PATH_LENGTH: int = 24
+const INITIAL_PATH_LENGTH: int = 18
 const OFFERINGS_PER_COST: float = 1.0
 const ROGUE_ENTITY_PATH: String = "res://data/units/rogue_entity.tres"
 
@@ -63,7 +69,15 @@ signal lives_changed(lives: int, max_lives: int)
 signal corruption_changed(corruption: int)
 signal intel_updated(intel: Dictionary, roster: WaveRoster)
 signal next_faction_announced(faction_id: String, faction_logo: String)
-signal stars_are_right_triggered(wave_number: int)
+signal event_triggered(event_id: String, display_name: String, category: int, banner_text: String, banner_color: Color)
+## Emitted when an Objective is placed on newly opened ground.
+signal objective_placed(instance: ObjectiveInstance)
+## Emitted when a site flips UNCLAIMED/CLAIMED/CAPTURED.
+signal objective_state_changed(instance: ObjectiveInstance, old_state: int, new_state: int)
+## Emitted whenever the objective set or its states change (UI/overlay refresh).
+signal objectives_changed(objective_system: ObjectiveSystem)
+## Emitted when Rites are drawn; attention is Corruption + cumulative Rite spending.
+signal rites_changed(rites: int, attention: int)
 signal ability_telegraphed(event: Dictionary)
 signal loss_report_ready(report: LossReport)
 signal tower_placed_on_hex(tower: TowerInstance)
@@ -85,6 +99,17 @@ var director: WaveDirector
 var coverage_tracker: CoverageTracker
 var unit_leveling: UnitLeveling
 var spatial_index: RefCounted
+
+## Run-Event scheduler (deck of cards). Rebuilt on each start_new_run.
+var run_event_system: RunEventSystem = null
+## Event scheduled for the upcoming wave (resolved at intermission, revealed at
+## wave start). Null when the wave has no event.
+var _pending_event: EventData = null
+
+## Objective sites on newly opened ground (claimable buffs / corporate threats).
+var objective_system: ObjectiveSystem = null
+## Objective catalog, loaded once per run.
+var objective_catalog: Array[ObjectiveData] = []
 
 # --- Run State ---------------------------------------------------------------
 var current_state: int = RunState.RUN_SETUP
@@ -268,12 +293,26 @@ func start_new_run(seed_val: int = -1) -> void:
 	hex_grid = _HexGrid.new(run_seed)
 	path_generator = _PathGen.new(run_seed, hex_grid)
 
-	# Bootstrap initial path of INITIAL_PATH_LENGTH = 24 hexes as extension 0
+	# Bootstrap the initial path (INITIAL_PATH_LENGTH hexes) as extension 0
 	path_generator.generate_initial_path(Vector2i.ZERO, INITIAL_PATH_LENGTH)
 
 	unit_leveling = _UnitLeveling.new()
 	coverage_tracker = _CoverageTracker.new()
 	director = _WaveDirector.new(run_seed, null, [], unit_leveling, coverage_tracker)
+	run_event_system = _RunEventSystem.new(
+		_RunEventSystem.compute_event_seed(run_seed),
+		_EventLibrary.load_events(),
+		_EventLibrary.load_balance()
+	)
+	_pending_event = null
+
+	# Objective sites: placement is deterministic from the run seed.
+	var obj_rng := RandomNumberGenerator.new()
+	obj_rng.seed = run_seed ^ 0x0B7EC715
+	objective_system = _ObjectiveSystem.new(_ObjectiveLibrary.load_balance(), obj_rng)
+	objective_catalog = _ObjectiveLibrary.load_all()
+	objective_system.objective_placed.connect(_on_objective_placed)
+	objective_system.objective_state_changed.connect(_on_objective_state_changed)
 
 	tower_system = _TowerSystem.new(hex_grid, path_generator.path_hexes)
 	tower_system.leveling = unit_leveling
@@ -345,15 +384,21 @@ func _enter_intermission() -> void:
 	# Director builds and LOCKS the next wave's roster
 	var branch_mix: Dictionary = _compute_tower_branch_mix()
 	var path_summary: Dictionary = _compute_path_layout_summary()
+	# Resolve (but do NOT advertise) the upcoming wave's Run-Event so its budget
+	# modifier is baked into the locked roster.
+	_pending_event = run_event_system.get_event_for_wave(next_wave) if run_event_system != null else null
 	locked_roster = director.generate_wave(next_wave, {
 		"tower_branch_mix": branch_mix,
 		"path_layout_summary": path_summary,
+		"event_budget_mult": _pending_event.budget_mult if _pending_event != null else 1.0,
+		"event_id": _pending_event.id if _pending_event != null else "",
 	})
 	_log_event("roster_locked", {
 		"wave": next_wave,
 		"faction": locked_roster.active_faction,
 		"budget": snappedf(locked_roster.budget, 0.01),
 		"spent": snappedf(locked_roster.total_cost, 0.01),
+		"unspent": snappedf(locked_roster.unspent_budget, 0.01),
 		"units": locked_roster.get_total_regular_unit_count(),
 		"is_boss": locked_roster.is_boss_wave,
 		"is_stars": locked_roster.is_stars_are_right,
@@ -384,10 +429,17 @@ func start_wave() -> bool:
 	var pre_scrap: int = tower_system.scrap
 	var pre_corr: int = tower_system.corruption
 
+	# Objective state is re-evaluated BEFORE anything spawns, so captured-site enemy
+	# buffs apply to this wave's spawns.
+	if objective_system != null:
+		objective_system.begin_wave(current_wave)
+		_refresh_objective_claims()
+
 	var wave_start_info: Dictionary = tower_system.start_wave(
 		current_wave,
 		_combat_rng,
-		locked_roster.wave_time_window
+		locked_roster.wave_time_window,
+		_pending_event.get_duration_modifiers() if _pending_event != null else {}
 	)
 
 	# Emit enemy_spawned for all Rogue Entities spawned at 100 Corruption
@@ -422,9 +474,7 @@ func start_wave() -> bool:
 		locked_roster.is_boss_wave
 	)
 
-	if locked_roster.is_stars_are_right:
-		_log_event("stars_are_right", {"wave": current_wave})
-		stars_are_right_triggered.emit(current_wave)
+	_apply_pending_event()
 
 	_log_event("wave_started", {"wave": current_wave})
 	wave_started.emit(current_wave)
@@ -476,10 +526,62 @@ func _on_sim_tick(dt: float, _tick_index: int) -> void:
 		currencies_changed.emit(tower_system.offerings, tower_system.scrap)
 
 	spatial_index.rebuild(tower_system.units, path_generator.path_hexes)
+	_note_objective_contest()
 
 	# Check wave completion
 	if current_state == RunState.WAVE_ACTIVE and _all_scheduled_spawned and _count_living_enemies() == 0:
 		_on_wave_cleared()
+
+
+## Applies the pending Run-Event's one-shot effects and reveals it to the player.
+## Called at wave start (never before), so events are never advertised in advance.
+func _apply_pending_event() -> void:
+	if _pending_event == null:
+		return
+	var ev: EventData = _pending_event
+	var scale: float = 1.0 + ev.instant_scaling_per_wave * float(maxi(0, current_wave - 1))
+
+	if ev.instant_offerings > 0:
+		add_currency(Currency.OFFERINGS, maxi(1, roundi(float(ev.instant_offerings) * scale)), "event:" + ev.id)
+	if ev.instant_scrap > 0:
+		add_currency(Currency.SCRAP, maxi(1, roundi(float(ev.instant_scrap) * scale)), "event:" + ev.id)
+	if ev.instant_offerings_pct > 0.0:
+		_drain_currency(Currency.OFFERINGS, ev.instant_offerings_pct, ev.id)
+	if ev.instant_scrap_pct > 0.0:
+		_drain_currency(Currency.SCRAP, ev.instant_scrap_pct, ev.id)
+	if ev.instant_corruption != 0:
+		tower_system.add_corruption(ev.instant_corruption)
+		corruption_changed.emit(tower_system.corruption)
+	if ev.instant_rigged_jank != 0:
+		for t: TowerInstance in tower_system.towers.values():
+			if t.is_rigged():
+				t.jank = clampi(
+					t.jank + ev.instant_rigged_jank,
+					tower_system.balance.jank_min,
+					tower_system.balance.jank_cap
+				)
+
+	_log_event("run_event", {"wave": current_wave, "event_id": ev.id, "category": ev.category})
+	event_triggered.emit(ev.id, ev.display_name, ev.category, ev.get_banner_text(), ev.banner_color)
+	if run_event_system != null:
+		run_event_system.on_event_fired(current_wave)
+	_pending_event = null
+
+
+## Drains [param pct] of the currently held amount of [param currency] (clamped to >= 0).
+func _drain_currency(currency: int, pct: float, event_id: String) -> void:
+	if tower_system == null or pct <= 0.0:
+		return
+	var current: int = tower_system.offerings if currency == Currency.OFFERINGS else tower_system.scrap
+	var amount: int = mini(current, maxi(0, roundi(float(current) * pct)))
+	if amount <= 0:
+		return
+	if currency == Currency.OFFERINGS:
+		tower_system.offerings = current - amount
+	else:
+		tower_system.scrap = current - amount
+	_log_event("event_currency_drained", {"currency": currency, "amount": amount, "reason": "event:" + event_id})
+	currencies_changed.emit(tower_system.offerings, tower_system.scrap)
 
 
 func _process_wave_spawns() -> void:
@@ -522,9 +624,9 @@ func _spawn_scheduled_item(item: Dictionary) -> CombatUnit:
 		unit.spawn_level = target_lvl
 		var hp_mult: float = _UnitLeveling.compute_health_multiplier(target_lvl)
 		var spd_mult: float = _UnitLeveling.compute_speed_multiplier(target_lvl)
-		unit.max_hp = unit.unit_data.base_hp * hp_mult
+		unit.max_hp = unit.unit_data.base_hp * hp_mult * tower_system.event_enemy_hp_mult
 		unit.hp = unit.max_hp
-		unit.speed = unit.unit_data.speed * spd_mult
+		unit.speed = unit.unit_data.speed * spd_mult * tower_system.event_enemy_speed_mult
 
 	prev_unit_positions[unit.unit_id] = unit.path_position
 	path_generator.on_enemy_spawned(is_boss)
@@ -559,6 +661,11 @@ func _on_wave_cleared() -> void:
 	var lives_lost: int = maxi(0, _lives_at_wave_start - lives)
 	director.update_rubber_factor(lives_lost)
 
+	# Objective capture resolves at wave end from this wave's contest record.
+	if objective_system != null:
+		objective_system.end_wave(current_wave)
+		_sync_objective_effects()
+
 	_log_event("wave_ended", {
 		"wave": current_wave,
 		"duration": snappedf(duration, 0.01),
@@ -592,6 +699,9 @@ func _enter_post_boss() -> void:
 		"total_path_length": path_generator.path_hexes.size(),
 	})
 	path_extended.emit(growth_res)
+
+	# 2b. Objectives settle on the newly opened ground.
+	_settle_objectives_on_growth(growth_res)
 
 	# 3. Ask the director for the next interval's faction
 	var fac_info: Dictionary = director.on_boss_killed(current_wave)
@@ -767,6 +877,7 @@ func request_place_tower(hex: Vector2i, tower_id_or_def: Variant = null) -> Towe
 		path_generator.place_tower(hex, inst)
 		_log_event("tower_placed", {"tower_id": inst.tower_id, "type": def.id, "hex": hex, "cost": cost})
 		tower_placed_on_hex.emit(inst)
+		_refresh_objective_claims()
 	return inst
 
 
@@ -779,16 +890,27 @@ func request_upgrade_tower(tower_or_hex: Variant, node_id: String) -> bool:
 	if not bool(check["ok"]):
 		return false
 	var node: UpgradeNode = check["node"] as UpgradeNode
-	var curr: int = Currency.OFFERINGS if node.currency == _UpgradeNode.Currency.OFFERINGS else Currency.SCRAP
-	if not spend(curr, node.cost, "upgrade_tower:%s:%s" % [inst.get_type_id(), node_id]):
-		return false
+	# Rite nodes are paid from the Rites bank that TowerSystem owns (Rites are Corruption spent as
+	# a resource, not a routed currency), so they bypass spend() and let upgrade_tower charge the
+	# bank itself. Routing EVERY non-Offering currency to Scrap here charged Rite upgrades in Scrap
+	# and never touched the bank: spend() rejects RITES, and upgrade_tower was then called with
+	# ignore_cost = true, skipping its own Rites deduction. One drawn Rite bought the branch on
+	# every tower, and the top bar's Rites readout never moved.
+	var is_rite: bool = node.currency == _UpgradeNode.Currency.RITES
+	if not is_rite:
+		var curr: int = Currency.OFFERINGS if node.currency == _UpgradeNode.Currency.OFFERINGS else Currency.SCRAP
+		if not spend(curr, node.cost, "upgrade_tower:%s:%s" % [inst.get_type_id(), node_id]):
+			return false
+	var pre_rites: int = tower_system.rites
 
 	_log_command("upgrade_tower", {"hex": inst.hex, "tower_id": inst.tower_id, "node_id": node_id, "cost": node.cost})
 	var pre_corr: int = tower_system.corruption
-	var ok: bool = tower_system.upgrade_tower(inst, node_id, true)
+	var ok: bool = tower_system.upgrade_tower(inst, node_id, not is_rite)
 	if ok:
 		if tower_system.corruption != pre_corr:
 			corruption_changed.emit(tower_system.corruption)
+		if tower_system.rites != pre_rites:
+			rites_changed.emit(tower_system.rites, tower_system.get_rogue_attention())
 		_log_event("tower_upgraded", {
 			"tower_id": inst.tower_id,
 			"hex": inst.hex,
@@ -821,6 +943,7 @@ func request_sell_tower(tower_or_hex: Variant) -> Dictionary:
 		})
 		currencies_changed.emit(offerings, scrap)
 		tower_sold_from_hex.emit(tid, hex, res)
+		_refresh_objective_claims()
 	return res
 
 
@@ -836,6 +959,41 @@ func request_penance() -> bool:
 	_log_event("penance_performed", {"corruption": tower_system.corruption})
 	corruption_changed.emit(tower_system.corruption)
 	penance_performed.emit(tower_system.corruption)
+	return true
+
+
+## True when the cult may draw Rites right now: it must HOLD a Corruption
+## Reservoir (the site is what makes the rot spendable) and be able to pay.
+func can_draw_rites(count: int = 1) -> bool:
+	if tower_system == null or objective_system == null:
+		return false
+	if not objective_system.has_claimed_kind(_ObjectiveData.Kind.RESERVOIR):
+		return false
+	return tower_system.can_draw_rites(count)
+
+
+## Player command: draw [param count] Rites, spending Corruption as a resource.
+## Requires the cult to HOLD a Corruption Reservoir: the Reservoir is what makes
+## the rot drawable. Every Rite drawn adds permanent Corporate Attention, which is
+## what wakes the Rogue Entities -- so this trades a spike of risk for a steady one
+## rather than dodging the danger.
+func request_draw_rites(count: int = 1) -> bool:
+	if tower_system == null or objective_system == null:
+		return false
+	var n: int = maxi(1, count)
+	if not can_draw_rites(n):
+		return false
+	if not tower_system.draw_rites(n):
+		return false
+	_log_command("draw_rites", {"count": n})
+	_log_event("rites_drawn", {
+		"count": n,
+		"rites": tower_system.rites,
+		"corruption": tower_system.corruption,
+		"attention": tower_system.get_rogue_attention(),
+	})
+	corruption_changed.emit(tower_system.corruption)
+	rites_changed.emit(tower_system.rites, tower_system.get_rogue_attention())
 	return true
 
 
@@ -934,6 +1092,10 @@ func _on_tower_system_enemy_died(unit_id: int) -> void:
 	_log_event("enemy_died", {"unit_id": unit_id, "wave": current_wave})
 	if not _in_sim_tick:
 		currencies_changed.emit(offerings, scrap)
+		# Rite nodes convert their own kills into Corruption, so the meter can move mid-wave.
+		# Same guard as the currency readout above, so the top bar's Corruption/Rites readout
+		# does not lag all the way to the next wave boundary.
+		corruption_changed.emit(corruption)
 	enemy_died.emit(unit_id)
 
 
@@ -1007,26 +1169,159 @@ func _compute_tower_branch_mix() -> Dictionary:
 	}
 
 
+## True when [param hex] is within the effective range of at least one placed tower.
+func _is_hex_covered_by_tower(hex: Vector2i) -> bool:
+	if tower_system == null:
+		return false
+	for t: TowerInstance in tower_system.towers.values():
+		if t == null:
+			continue
+		if _HexMath.distance(hex, t.hex) <= tower_system.get_effective_tower_range_hexes(t):
+			return true
+	return false
+
+
+# --- Objective integration ----------------------------------------------------
+
+func _on_objective_placed(instance: ObjectiveInstance) -> void:
+	_log_event("objective_placed", {
+		"wave": current_wave,
+		"objective_id": instance.get_id(),
+		"hex": instance.hex,
+	})
+	objective_placed.emit(instance)
+	objectives_changed.emit(objective_system)
+
+
+func _on_objective_state_changed(instance: ObjectiveInstance, old_state: int, new_state: int) -> void:
+	_log_event("objective_state_changed", {
+		"wave": current_wave,
+		"objective_id": instance.get_id(),
+		"hex": instance.hex,
+		"from": old_state,
+		"to": new_state,
+	})
+	objective_state_changed.emit(instance, old_state, new_state)
+	objectives_changed.emit(objective_system)
+	_sync_objective_effects()
+
+
+## Settles objective sites on the ground a growth just opened. Shared by POST_BOSS
+## and the debug growth command so the two can never drift apart -- a bare
+## commit_extension() leaves the new ground empty and hides the whole system.
+func _settle_objectives_on_growth(growth_res: Dictionary) -> void:
+	if objective_system == null:
+		return
+	var raw_new: Array = growth_res.get("new_hexes", []) as Array
+	var new_hexes: Array[Vector2i] = []
+	for h: Vector2i in raw_new:
+		new_hexes.append(h)
+	objective_system.place_for_growth(
+		new_hexes, hex_grid, tower_system, current_wave, objective_catalog
+	)
+	_refresh_objective_claims()
+
+
+## Debug only: grows the path AND settles objectives on it, exactly as POST_BOSS
+## does, so debug tooling reaches the same state real play would.
+func debug_force_growth() -> Dictionary:
+	if path_generator == null:
+		return {}
+	var growth_res: Dictionary = path_generator.commit_extension()
+	if tower_system != null:
+		tower_system.set_path(path_generator.path_hexes)
+	path_extended.emit(growth_res)
+	_settle_objectives_on_growth(growth_res)
+	return growth_res
+
+
+## Attaches the ObjectiveSystem to the TowerSystem (so objective effects are
+## evaluated as REGION AURAS at the queried hex) and pushes the one genuinely
+## global effect, the Corruption ceiling. Must run BEFORE a wave spawns anything.
+func _sync_objective_effects() -> void:
+	if objective_system == null or tower_system == null:
+		return
+	tower_system.objective_system = objective_system
+	tower_system.apply_objective_effects(
+		objective_system.get_revealed_damage_bonus(),
+		objective_system.get_corruption_cap_bonus(),
+		objective_system.get_jam_duration_mult()
+	)
+
+
+## Re-evaluates which sites the cult holds (live tower presence), then syncs effects.
+func _refresh_objective_claims() -> void:
+	if objective_system == null or tower_system == null:
+		return
+	objective_system.refresh_claims(tower_system, current_wave)
+	_sync_objective_effects()
+
+
+## Feeds live enemy positions to the capture tracker. Near-free when nothing is unclaimed.
+func _note_objective_contest() -> void:
+	if objective_system == null or tower_system == null:
+		return
+	if not objective_system.has_unclaimed_sites():
+		return
+	var hexes: Array[Vector2i] = []
+	for u: CombatUnit in tower_system.units:
+		if u != null and u.is_alive():
+			hexes.append(tower_system.get_unit_hex(u))
+	objective_system.note_contested(hexes)
+
+
+## Builds the path-layout signal consumed by the Adaptive Wave Director.
+##
+## Emitted keys (all real, derived from the committed path and placed towers):
+##   path_length, overlap_count, dense_overlap_zones               — geometry
+##   undefended_preview_hexes, has_undefended_preview_stretch      — preview coverage
+##   long_exposed_stretches, longest_exposed_stretch               — longest uncovered run
+##   wave_time_window                                             — fixed spawn window
+## Threshold-based flags (has_long_exposed_stretch, has_dense_overlap_zones) are
+## intentionally NOT emitted: the director derives them from its own balance
+## thresholds so those stay tunable.
 func _compute_path_layout_summary() -> Dictionary:
 	if path_generator == null:
 		return {}
+
+	# Preview coverage: ghost hexes with no tower in range.
 	var undefended_preview: int = 0
 	for gh: Vector2i in path_generator.ghost_path_hexes:
-		var covered: bool = false
-		if tower_system != null:
-			for t: TowerInstance in tower_system.towers.values():
-				if _HexMath.distance(gh, t.hex) <= tower_system.get_effective_tower_range_hexes(t):
-					covered = true
-					break
-		if not covered:
+		if not _is_hex_covered_by_tower(gh):
 			undefended_preview += 1
 
+	# Longest contiguous run of committed path hexes with no tower coverage.
+	var longest_exposed: int = 0
+	var current_run: int = 0
+	for ph: Vector2i in path_generator.path_hexes:
+		if _is_hex_covered_by_tower(ph):
+			current_run = 0
+		else:
+			current_run += 1
+			longest_exposed = maxi(longest_exposed, current_run)
+
+	# NOTE: no max_deliverable_units is emitted. A unit-count cap below
+	# MAX_UNITS_PER_WAVE silently disables the director's excess-budget -> bonus-level
+	# compensation (it gates on total_units >= max_units_per_wave), which makes waves
+	# WEAKER, not denser: e.g. wave 25 went from 60 units @ +19 levels (321/321 budget)
+	# to 44 units @ +4 levels (184/321). Path length must not cap unit count.
+	var path_length: int = path_generator.path_hexes.size()
+
+	# Unclaimed golden strongholds: overlap hexes not yet occupied by a tower.
+	var unclaimed_overlaps: int = 0
+	for oh: Vector2i in path_generator.persistent_overlap_hexes:
+		if tower_system == null or not tower_system.towers_by_hex.has(oh):
+			unclaimed_overlaps += 1
+
 	return {
-		"path_length": path_generator.path_hexes.size(),
+		"path_length": path_length,
 		"overlap_count": path_generator.persistent_overlap_hexes.size(),
-		"dense_overlap_zones": path_generator.persistent_overlap_hexes.size(),
+		"dense_overlap_zones": unclaimed_overlaps,
 		"undefended_preview_hexes": undefended_preview,
 		"has_undefended_preview_stretch": undefended_preview > 0,
+		"long_exposed_stretches": longest_exposed,
+		"longest_exposed_stretch": longest_exposed,
+		"wave_time_window": _DirectorBalance.DEFAULT_WAVE_TIME_WINDOW,
 	}
 
 

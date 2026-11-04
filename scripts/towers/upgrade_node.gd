@@ -11,11 +11,17 @@ enum Branch {
 	SHARED = 0,
 	REVEALED = 1,
 	RIGGED = 2,
+	## Rite branch: paid in Rites (Corruption spent as a resource). The T3 fork is
+	## exclusive, so choosing Rite locks both Revealed and Rigged, and vice versa.
+	RITE = 3,
 }
 
 enum Currency {
 	OFFERINGS = 0,
 	SCRAP = 1,
+	## Rites are Corruption spent as a resource: drawing them costs Corruption and
+	## leaves permanent Corporate Attention behind (see TowerBalanceData).
+	RITES = 2,
 }
 
 @export var id: String = ""
@@ -64,6 +70,16 @@ enum Currency {
 @export var income_mult: float = 0.0
 ## When true, allows a Ground-only tower to also target Air units.
 @export var grants_air_targeting: bool = false
+## Additive damage multiplier per point of CURRENT Corruption (e.g. 0.004 = +0.4%
+## per point, so +40% at 100 Corruption). The Rite branch's signature: it turns the
+## danger meter into a damage stat, which is what the cult paid Attention for.
+@export var corruption_scaled_damage: float = 0.0
+## Additive bonus per point of CURRENT Corruption, keyed by stat name. The Rite branch exists
+## on ALL towers, but damage is meaningless on a tower that never attacks -- this is how the
+## branch scales the stats a SUPPORT tower actually has. Supported keys: `"aura_fire_rate"`,
+## `"income"`, `"summon_hp"`. `"damage"` is also accepted here and folds into
+## `corruption_scaled_damage`, so both spellings work.
+@export var corruption_scaled_stat: Dictionary = {}
 
 @export_group("Named Behaviors")
 ## Named behavior IDs resolved via TowerBehaviorRegistry.

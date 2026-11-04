@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="EventBalanceData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/events/event_balance_data.gd" id="1_ebl"]
+
+[resource]
+script = ExtResource("1_ebl")
+gap_min = 3
+gap_max = 7
+first_boss_wave = 10
+boss_wave_interval = 10
+max_same_category_run = 3

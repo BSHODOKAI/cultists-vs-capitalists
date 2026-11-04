@@ -13,6 +13,13 @@ var _scrap_label: Label
 var _corruption_bar: ProgressBar
 var _corruption_label: Label
 var _penance_button: Button
+var _rites_label: Label
+var _attention_label: Label
+var _draw_rite_button: Button
+
+const ATTENTION_COLOR = Color(0.74, 0.56, 0.46)
+const ATTENTION_HOT_COLOR = Color(1.0, 0.34, 0.28)
+const RITES_COLOR = Color(0.96, 0.80, 0.36)
 
 
 func _ready() -> void:
@@ -64,6 +71,34 @@ func _build_ui() -> void:
 	_penance_button.pressed.connect(_on_penance_pressed)
 	corr_box.add_child(_penance_button)
 
+	# Rites / Corporate Attention: Corruption is spendable, and every Rite drawn
+	# leaves permanent Attention behind -- so the two must be read together.
+	_rites_label = _make_stat_label(hbox, "Rites: 0", RITES_COLOR)
+	_rites_label.add_theme_font_size_override("font_size", 13)
+
+	_attention_label = Label.new()
+	_attention_label.text = "Attention: 0/100"
+	_attention_label.add_theme_font_size_override("font_size", 13)
+	_attention_label.add_theme_color_override("font_color", ATTENTION_COLOR)
+	_attention_label.tooltip_text = (
+		"Reckoning = extra severity the NEXT Rogue wave gets from Rite debt drawn "
+		+ "since the last one.\nRogues wake when Corruption reaches the Rogue threshold "
+		+ "(raised by a held Reservoir). Debt RESETS when they come, so it cannot snowball."
+	)
+	hbox.add_child(_attention_label)
+
+	_draw_rite_button = Button.new()
+	_draw_rite_button.text = "Draw Rite"
+	_draw_rite_button.focus_mode = Control.FOCUS_NONE
+	_draw_rite_button.add_theme_font_size_override("font_size", 12)
+	_draw_rite_button.tooltip_text = (
+		"Spend Corruption to bank a Rite. Requires a held Corruption Reservoir.\n"
+		+ "Drawing a Rite adds permanent Corporate Attention."
+	)
+	_draw_rite_button.pressed.connect(_on_draw_rite_pressed)
+	_draw_rite_button.visible = false
+	hbox.add_child(_draw_rite_button)
+
 
 func _make_stat_label(parent: Node, text: String, col: Color) -> Label:
 	var lbl := Label.new()
@@ -81,6 +116,8 @@ func _connect_signals() -> void:
 	gs.connect("currencies_changed", func(_o: int, _s: int) -> void: refresh())
 	gs.connect("lives_changed", func(_l: int, _m: int) -> void: refresh())
 	gs.connect("corruption_changed", func(_c: int) -> void: refresh())
+	gs.connect("rites_changed", func(_r: int, _a: int) -> void: refresh())
+	gs.connect("objectives_changed", func(_o: Variant) -> void: refresh())
 	gs.connect("wave_started", func(_w: int) -> void: refresh())
 	gs.connect("intel_updated", func(_i: Dictionary, _r: Variant) -> void: refresh())
 
@@ -97,18 +134,45 @@ func refresh() -> void:
 	var off: int = int(gs.get("offerings"))
 	var scr: int = int(gs.get("scrap"))
 	var corr: int = int(gs.get("corruption"))
+	var tsys_row: TowerSystem = gs.get("tower_system") as TowerSystem
+	var corr_cap: int = tsys_row.get_corruption_cap() if tsys_row != null else 100
 
 	_lives_label.text = "Lives: %d/%d" % [l, ml]
 	_wave_label.text = "Wave: %d (Interval %d)" % [w, inter]
 	_faction_label.text = "[%s]" % fac
 	_offerings_label.text = "Offerings: %d" % off
 	_scrap_label.text = "Scrap: %d" % scr
-	_corruption_label.text = "Corruption: %d/100" % corr
+	_corruption_label.text = "Corruption: %d/%d" % [corr, corr_cap]
+	_corruption_bar.max_value = float(corr_cap)
 	_corruption_bar.value = float(corr)
 	if _penance_button != null:
 		var tsys: TowerSystem = gs.get("tower_system") as TowerSystem
 		_penance_button.visible = (corr > 0)
 		_penance_button.disabled = (tsys == null or not tsys.can_perform_penance())
+
+	if _rites_label != null:
+		var tsys2: TowerSystem = gs.get("tower_system") as TowerSystem
+		var rites_n: int = tsys2.rites if tsys2 != null else 0
+		var rogue_threshold: int = (
+			tsys2.get_rogue_entity_threshold() if tsys2 != null else 100
+		)
+		var severity: int = tsys2.get_rite_debt_severity() if tsys2 != null else 0
+		_rites_label.text = "Rites: %d" % rites_n
+		# "Reckoning +N" is how much the next Rogue wave is amplified by debt drawn
+		# since the last one. Shown hot once Corruption is actually at the line.
+		_attention_label.text = "Reckoning: +%d" % severity
+		_attention_label.add_theme_color_override(
+			"font_color", ATTENTION_HOT_COLOR if corr >= rogue_threshold else ATTENTION_COLOR
+		)
+		var can_draw: bool = bool(gs.call("can_draw_rites", 1))
+		_draw_rite_button.visible = can_draw or rites_n > 0
+		_draw_rite_button.disabled = not can_draw
+
+
+func _on_draw_rite_pressed() -> void:
+	var gs: Node = get_node_or_null("/root/GameState")
+	if gs != null:
+		gs.call("request_draw_rites", 1)
 
 
 func _on_penance_pressed() -> void:

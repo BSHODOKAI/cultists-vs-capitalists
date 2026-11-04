@@ -128,7 +128,7 @@ func bind_to_game_state(gs: Node) -> void:
 	_connect_once(gs, "ability_telegraphed", _on_ability_telegraphed)
 	_connect_once(gs, "wave_started", _on_wave_started)
 	_connect_once(gs, "wave_ended", _on_wave_ended)
-	_connect_once(gs, "stars_are_right_triggered", _on_stars_are_right_triggered)
+	_connect_once(gs, "event_triggered", _on_event_triggered)
 	_connect_once(gs, "path_extended", _on_path_extended)
 	_connect_once(gs, "loss_report_ready", _on_loss_report_ready)
 	_connect_once(gs, "biome_changed", _on_biome_changed)
@@ -398,9 +398,9 @@ func play_wave_ended(wave_number: int) -> Dictionary:
 	return _play_approved_cue(cue_system.on_wave_ended(wave_number))
 
 
-func play_stars_are_right(wave_number: int) -> Dictionary:
+func play_run_event(event_id: String) -> Dictionary:
 	_ensure_initialized()
-	return _play_approved_cue(cue_system.on_stars_are_right(wave_number))
+	return _play_approved_cue(cue_system.on_run_event(event_id))
 
 
 func play_path_extended(growth_result: Dictionary = {}) -> Dictionary:
@@ -528,8 +528,8 @@ func _on_wave_ended(wave_number: int) -> void:
 	play_wave_ended(wave_number)
 
 
-func _on_stars_are_right_triggered(wave_number: int) -> void:
-	play_stars_are_right(wave_number)
+func _on_event_triggered(event_id: String, _display_name: String, _category: int, _banner_text: String, _banner_color: Color) -> void:
+	play_run_event(event_id)
 
 
 func _on_path_extended(growth_result: Dictionary) -> void:

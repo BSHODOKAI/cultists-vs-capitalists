@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="EventData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/events/event_data.gd" id="1_ev"]
+
+[resource]
+script = ExtResource("1_ev")
+id = "dark_patron_grant"
+display_name = "Dark Patron's Grant"
+description = "A wealthy benefactor leaves Offerings at the Sanctum."
+category = 0
+banner_color = Color(0.95, 0.78, 0.3, 1)
+instant_offerings = 30
+instant_scaling_per_wave = 0.25

@@ -8,9 +8,11 @@
 ##   • Set Lives
 ##   • Jump to Wave N
 ##   • Spawn Unit or Boss
-##   • Force Path Growth
+##   • Force Path Growth (via GameState.debug_force_growth, so objectives settle too)
 ##   • Set Seed
 ##   • Toggle God Mode
+##   • Add Corruption / Add Rite / Seed Objective (reaches the late-run systems:
+##     path growth, objective sites and the Rite branch, without a boss kill)
 class_name DebugPanel
 extends CanvasLayer
 
@@ -20,6 +22,9 @@ var _wave_spin: SpinBox
 var _seed_spin: SpinBox
 var _unit_option: OptionButton
 var _refresh_timer: float = 0.0
+## Cycles the kind of site the "Seed Objective" debug command forces, so repeated
+## presses walk through all three instead of stacking the same one.
+var _seed_kind_idx: int = 0
 
 
 func _ready() -> void:
@@ -106,14 +111,10 @@ func _build_ui() -> void:
 		refresh()
 	)
 	_add_cmd_btn(row2, "Force Growth", func() -> void:
-		var gs: Node = _gs()
-		var pgen: PathGenerator = gs.get("path_generator") as PathGenerator
-		var tsys: TowerSystem = gs.get("tower_system") as TowerSystem
-		if pgen != null and tsys != null:
-			var gres: Dictionary = pgen.commit_extension()
-			tsys.set_path(pgen.path_hexes)
-			gs.emit_signal("path_extended", gres)
-			refresh()
+		# Routed through GameState (not a bare commit_extension) so objectives
+		# settle on the new ground exactly as they do after a boss kill.
+		_gs().call("debug_force_growth")
+		refresh()
 	)
 
 	# Command buttons row 3: Spawn Unit / Boss & Set Seed
@@ -178,12 +179,98 @@ func _build_ui() -> void:
 	)
 
 
+# Command buttons row 6: Objectives & Rites -- the late-run systems that
+	# normal play only reaches after a boss kill plus (for Rites) a held Reservoir.
+	var row6 := HBoxContainer.new()
+	vbox.add_child(row6)
+	_add_cmd_btn(row6, "+10 Corruption", func() -> void:
+		var gs: Node = _gs()
+		var tsys: TowerSystem = gs.get("tower_system") as TowerSystem
+		if tsys != null:
+			tsys.add_corruption(10)
+			# Emit the signal the HUD listens to. Without it the TopBar never
+			# refreshes and the player would be playtesting against a lying HUD.
+			gs.emit_signal("corruption_changed", tsys.corruption)
+		refresh()
+	)
+	_add_cmd_btn(row6, "+1 Rite", func() -> void:
+		var gs: Node = _gs()
+		var tsys: TowerSystem = gs.get("tower_system") as TowerSystem
+		if tsys != null:
+			tsys.rites += 1
+			gs.emit_signal("rites_changed", tsys.rites, tsys.get_rogue_attention())
+			gs.emit_signal("corruption_changed", tsys.corruption)
+		refresh()
+	)
+	_add_cmd_btn(row6, "Seed Objective", func() -> void:
+		_seed_objective()
+		refresh()
+	)
+
+	# Command buttons row 7: push the SELECTED tower up the tier ladder. The T2 fork layout and
+	# the Corruption readout are the two things normal play cannot reach quickly: T2 costs a
+	# tower's worth of income, and the Rite T3 additionally needs Corruption drawn at a held
+	# Reservoir.
+	var row7 := HBoxContainer.new()
+	vbox.add_child(row7)
+	_add_cmd_btn(row7, "T2 Selected", func() -> void: _debug_upgrade_selected(false))
+	_add_cmd_btn(row7, "Rite Selected", func() -> void: _debug_upgrade_selected(true))
+
+
+## Upgrades the selected tower through the tower panel's own public API: to T2, and optionally on
+## into the Rite T3 branch. Debug-only shortcut for inspecting the fork UI and the Rite readout.
+func _debug_upgrade_selected(include_rite: bool) -> void:
+	var gs: Node = _gs()
+	if gs == null:
+		return
+	var inst: TowerInstance = gs.get("selected_placed_tower") as TowerInstance
+	if inst == null or inst.def == null:
+		return
+	if inst.tier < 2 and inst.def.t2_upgrade != null:
+		gs.call("request_upgrade_tower", inst, inst.def.t2_upgrade.id)
+	if include_rite and inst.tier == 2 and inst.def.rite_t3_upgrade != null:
+		gs.call("request_upgrade_tower", inst, inst.def.rite_t3_upgrade.id)
+	refresh()
+
+
 func _add_cmd_btn(parent: Node, text: String, cb: Callable) -> void:
 	var b := Button.new()
 	b.text = text
 	b.focus_mode = Control.FOCUS_NONE
 	b.pressed.connect(cb)
 	parent.add_child(b)
+
+
+## Forces a site beside the base, cycling through the three kinds so repeated
+## presses expose every ring colour and guarantee a Corruption Reservoir (the
+## gate on drawing Rites) without waiting on the placement rng.
+func _seed_objective() -> void:
+	var gs: Node = _gs()
+	if gs == null:
+		return
+	var obj: ObjectiveSystem = gs.get("objective_system") as ObjectiveSystem
+	var tsys: TowerSystem = gs.get("tower_system") as TowerSystem
+	var grid: HexGrid = gs.get("hex_grid") as HexGrid
+	var catalog: Array = gs.get("objective_catalog") as Array
+	if obj == null or tsys == null or grid == null or catalog.is_empty():
+		return
+	var data: ObjectiveData = catalog[_seed_kind_idx % catalog.size()] as ObjectiveData
+	_seed_kind_idx += 1
+	# Try a few centres: the preferred hex may already hold a site, and debug_force_site then
+	# returns null. Retrying a shifted centre stops repeated seeding from silently doing
+	# nothing -- which a playtester cannot tell apart from a broken button.
+	var placed: ObjectiveInstance = null
+	for off: Vector2i in [
+		Vector2i.ZERO, Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)
+	]:
+		placed = obj.debug_force_site(data, off, grid, tsys, int(gs.get("current_wave")))
+		if placed != null:
+			break
+	# Refresh regardless, so the Sites readout updates even when no hex was free.
+	gs.call("_refresh_objective_claims")
+	# The ring/fill/marker layers poll the ObjectiveSystem directly, but the HUD needs the
+	# signal or its readout stays stale.
+	gs.emit_signal("objectives_changed", obj)
 
 
 func _gs() -> Node:
@@ -197,6 +284,7 @@ func refresh() -> void:
 	var roster: WaveRoster = gs.get("locked_roster") as WaveRoster
 	var tsys: TowerSystem = gs.get("tower_system") as TowerSystem
 	var dir: WaveDirector = gs.get("director") as WaveDirector
+	var obj: ObjectiveSystem = gs.get("objective_system") as ObjectiveSystem
 
 	var lines: Array[String] = []
 	lines.append("FPS: %d | Seed: %d | GodMode: %s" % [
@@ -222,6 +310,17 @@ func refresh() -> void:
 			tsys.corruption,
 			tsys.towers.size(),
 			tsys.units.size()
+		])
+	# Objective sites are invisible on the map until they render, and a failed seed or spawn
+	# looks identical to one that simply reads poorly. Printing the breakdown separates
+	# "there is no site" from "there is a site I cannot see".
+	if obj != null:
+		lines.append("Sites: %d (unclaimed %d / claimed %d / captured %d) aura_r=%d" % [
+			obj.objectives.size(),
+			obj.get_state_hexes(ObjectiveInstance.State.UNCLAIMED).size(),
+			obj.get_state_hexes(ObjectiveInstance.State.CLAIMED).size(),
+			obj.get_state_hexes(ObjectiveInstance.State.CAPTURED).size(),
+			obj.get_aura_radius()
 		])
 
 	if roster != null:

@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "covetous_gaze"
+display_name = "Covetous Gaze"
+description = "+40% damage, and +0.5% per point of Corruption. COVETOUS: damage rises as the target's remaining HP falls, up to +60% on a nearly-dead unit. Every kill feeds 1 Corruption into the meter."
+tower_id = "watcher_in_the_billboard"
+tier = 3
+branch = 3
+currency = 2
+cost = 1
+prerequisite_id = "dilated_pupil"
+corruption_delta = 0
+jank_set = 0
+damage_mult = 0.4
+corruption_scaled_damage = 0.005
+behaviors = Array[String](["covetous_gaze"])
+behavior_params = {
+"damage_per_missing_hp": 0.6,
+"corruption_per_kill": 1
+}

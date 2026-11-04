@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "the_rust_audits"
+display_name = "The Rust Audits"
+description = "+50% corrosion damage, an 8.0s DoT duration, Armor Shred stacking up to 8, and +0.8% damage per point of Corruption. THE RUST AUDITS: each kill feeds 2 Corruption into the meter and claims 1 Offering from what is left of the plating."
+tower_id = "rust_censer"
+tier = 4
+branch = 3
+currency = 2
+cost = 2
+prerequisite_id = "corroded_receipts"
+corruption_delta = 0
+jank_set = 0
+damage_mult = 0.5
+dot_duration_override = 8.0
+shred_cap_override = 8
+corruption_scaled_damage = 0.008
+behaviors = Array[String](["the_rust_audits"])
+behavior_params = {
+"corruption_per_kill": 2,
+"rite_offerings_per_kill": 1
+}

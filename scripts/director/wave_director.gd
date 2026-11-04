@@ -326,7 +326,8 @@ func update_rubber_factor(lives_lost_last_wave: int) -> float:
 func compute_budget_breakdown(
 	wave_number: int,
 	p_rubber_factor: float = -1.0,
-	p_completed_cycles: int = -1
+	p_completed_cycles: int = -1,
+	p_event_budget_mult: float = 1.0
 ) -> Dictionary:
 	var w: int = maxi(1, wave_number)
 	var interval_idx: int = compute_interval_index(w)
@@ -335,7 +336,6 @@ func compute_budget_breakdown(
 		p_rubber_factor, balance.rubber_factor_min, balance.rubber_factor_max
 	)
 	var boss_wave: bool = is_boss_wave(w)
-	var stars_wave: bool = is_stars_are_right_wave(w)
 
 	# Ignore rubber-banding reduction on boss waves
 	var eff_rubber: float = maxf(balance.rubber_factor_default, raw_rubber) if boss_wave else raw_rubber
@@ -352,8 +352,7 @@ func compute_budget_breakdown(
 		var dw: float = float(w - balance.late_ramp_start_wave)
 		var late_mult: float = 1.0 + balance.late_ramp_linear_per_wave * dw + balance.late_ramp_quadratic_per_wave * dw * dw
 		full_b *= late_mult
-	if stars_wave:
-		full_b *= balance.stars_are_right_budget_multiplier
+	full_b *= maxf(0.0, p_event_budget_mult)
 
 	var escort_b: float = full_b * balance.boss_escort_budget_ratio if boss_wave else 0.0
 	var withheld_b: float = full_b * balance.boss_withheld_budget_ratio if boss_wave else 0.0
@@ -364,7 +363,7 @@ func compute_budget_breakdown(
 		"interval_index": interval_idx,
 		"completed_cycles": cycles,
 		"is_boss_wave": boss_wave,
-		"is_stars_are_right": stars_wave,
+		"event_budget_mult": p_event_budget_mult,
 		"rubber_factor": raw_rubber,
 		"effective_rubber_factor": eff_rubber,
 		"full_budget": full_b,
@@ -664,7 +663,8 @@ func generate_wave(wave_number: int, inputs: Dictionary = {}) -> WaveRoster:
 	var interval_idx: int = compute_interval_index(w)
 	var cycles_override: int = int(inputs.get("completed_cycles", int(inputs.get("cycle_index", -1))))
 	var rubber_override: float = float(inputs.get("rubber_factor", -1.0))
-	var b_info: Dictionary = compute_budget_breakdown(w, rubber_override, cycles_override)
+	var event_budget_mult: float = float(inputs.get("event_budget_mult", 1.0))
+	var b_info: Dictionary = compute_budget_breakdown(w, rubber_override, cycles_override, event_budget_mult)
 
 	var active_fac: String = String(inputs.get("active_faction", ""))
 	if active_fac.is_empty():
@@ -836,17 +836,25 @@ func generate_wave(wave_number: int, inputs: Dictionary = {}) -> WaveRoster:
 			healer_count += 1
 		total_units += 1
 
-	# Phase 3: If total_units reached MAX_UNITS_PER_WAVE (or cap) with excess budget,
-	# spend excess budget as +1 level on chosen unit types (applied at spawn).
+	# Phase 3: Once the EFFECTIVE unit cap is reached with budget left over, spend the
+	# excess as +1 bonus spawn level on chosen unit types (applied at spawn). Two fixes
+	# over the old behaviour:
+	#   • gates on max_units_cap (the effective cap), not balance.max_units_per_wave —
+	#     boss waves cap at MAX_BOSS_ESCORT_UNITS and previously got no compensation at all;
+	#   • bonus levels are bounded per unit type (max_bonus_levels_per_unit) so leftover
+	#     budget can no longer pump a unit to +86..+152 spawn levels.
+	# Whatever still cannot be spent is recorded on the roster as unspent_budget.
 	var excess_upgrades: Dictionary = {}
-	if total_units >= balance.max_units_per_wave and (spendable_budget - total_spent) > 0.01:
-		var upgrade_safety: int = 0
-		while upgrade_safety < 500:
-			upgrade_safety += 1
+	if total_units >= max_units_cap and (spendable_budget - total_spent) > 0.01:
+		var upgrade_safety: int = distinct_ids.size() * balance.max_bonus_levels_per_unit + 8
+		while upgrade_safety > 0:
+			upgrade_safety -= 1
 			var upgradable_ids: Array[String] = []
 			for uid: String in distinct_ids:
 				var u_cnt: int = int(counts_by_id.get(uid, 0))
 				if u_cnt <= 0:
+					continue
+				if int(bonus_levels_by_id.get(uid, 0)) >= balance.max_bonus_levels_per_unit:
 					continue
 				var u_def: UnitData = unit_map[uid] as UnitData
 				var delta_cost: float = float(u_cnt) * float(u_def.cost) * balance.unit_level_cost_multiplier
@@ -928,7 +936,8 @@ func generate_wave(wave_number: int, inputs: Dictionary = {}) -> WaveRoster:
 	roster.next_faction_after_boss = next_fac
 	roster.is_mixed_interval = mixed_flag
 	roster.is_boss_wave = bool(b_info["is_boss_wave"])
-	roster.is_stars_are_right = bool(b_info["is_stars_are_right"])
+	roster.event_id = String(inputs.get("event_id", ""))
+	roster.is_stars_are_right = roster.event_id == "stars_are_right"
 	roster.rubber_factor = float(b_info["rubber_factor"])
 	roster.effective_rubber_factor = float(b_info["effective_rubber_factor"])
 	roster.full_budget = float(b_info["full_budget"])
@@ -936,6 +945,7 @@ func generate_wave(wave_number: int, inputs: Dictionary = {}) -> WaveRoster:
 	roster.escort_budget = float(b_info["escort_budget"])
 	roster.withheld_budget = float(b_info["withheld_budget"])
 	roster.total_cost = total_spent
+	roster.unspent_budget = maxf(0.0, spendable_budget - total_spent)
 	roster.wave_time_window = wave_time_window
 	roster.max_deliverable_units = max_units_cap
 	roster.pick_rationales = pick_rationales

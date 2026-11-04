@@ -31,6 +31,15 @@ const _C = preload("res://scripts/path/path_constants.gd")
 @export var preview_overlap_color: Color = Color(1.0, 0.85, 0.25, 0.85)
 @export var persistent_overlap_color: Color = Color(0.78, 0.68, 0.42, 0.38)
 @export var reserved_hex_color: Color = Color(0.90, 0.35, 0.20, 0.28)
+@export_group("Objective Colors")
+## Site nobody holds yet: corporations can still take it. Kept bright, because an
+## unclaimed site is the one a player most needs to FIND -- a faint version of this
+## colour proved invisible over dark district art.
+@export var objective_unclaimed_color: Color = Color(0.90, 0.90, 0.95, 0.92)
+## Site held by the cult (a tower stands within its claim radius).
+@export var objective_claimed_color: Color = Color(0.35, 1.0, 0.62, 0.80)
+## Site seized by the corporations: it is buffing the enemy right now.
+@export var objective_captured_color: Color = Color(1.0, 0.22, 0.32, 0.85)
 @export var range_ring_color: Color = Color(0.45, 0.85, 1.0, 0.65)
 @export var buff_range_ring_color: Color = Color(1.0, 0.78, 0.22, 0.78)
 @export var build_zone_valid_color: Color = Color(0.20, 0.95, 0.55, 0.52)
@@ -41,6 +50,9 @@ const _C = preload("res://scripts/path/path_constants.gd")
 @export var branch_shared_color: Color = Color(0.60, 0.68, 0.76, 1.0)
 @export var branch_revealed_color: Color = Color(0.68, 0.24, 0.96, 1.0)
 @export var branch_rigged_color: Color = Color(0.96, 0.54, 0.16, 1.0)
+## Rite branch: blood-debt crimson. Deliberately distinct from Revealed purple,
+## Rigged orange, the cyan attack range ring, gold buff ring and objective greens.
+@export var branch_rite_color: Color = Color(0.92, 0.28, 0.42, 1.0)
 
 @export_group("Faction Colors")
 @export var faction_swarm_syndicate: Color = Color(0.98, 0.78, 0.18, 1.0)

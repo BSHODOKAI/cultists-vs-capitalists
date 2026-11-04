@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="ObjectiveData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/objectives/objective_data.gd" id="1_objective"]
+
+[resource]
+script = ExtResource("1_objective")
+id = "converted_data_center"
+display_name = "Converted Data Center"
+description = "A server farm the cult has wired into its own rites. Rigged towers built on the ground around it jam for half as long; if the corporations take it back they run logistics through it and their units move faster across it."
+kind = 1
+color = Color(0.96, 0.58, 0.18, 0.85)
+claim_radius_hexes = 2
+revealed_damage_bonus = 0.0
+corruption_cap_bonus = 0
+jam_duration_mult = 0.5
+capture_enemy_speed_bonus = 0.2
+capture_enemy_damage_reduction = 0.0
+capture_banner_text = "CORPORATE SEIZURE: the Data Center routes their logistics (+20% speed on corporate ground)!"

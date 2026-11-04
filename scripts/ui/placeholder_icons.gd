@@ -10,6 +10,7 @@ extends RefCounted
 static var _tower_icon_cache: Dictionary = {}
 static var _unit_icon_cache: Dictionary = {}
 static var _faction_icon_cache: Dictionary = {}
+static var _objective_icon_cache: Dictionary = {}
 
 
 static func _draw_rect(img: Image, x0: int, y0: int, w: int, h: int, col: Color) -> void:
@@ -66,6 +67,98 @@ static func _draw_line(img: Image, x0: float, y0: float, x1: float, y1: float, t
 		var px: float = lerpf(x0, x1, t)
 		var py: float = lerpf(y0, y1, t)
 		_draw_circle(img, px, py, thickness * 0.5, col)
+
+
+## Draws a closed outline through [param pts], joining the last vertex back to the first.
+static func _poly_outline(img: Image, pts: PackedVector2Array, thickness: float, col: Color) -> void:
+	for i in range(pts.size()):
+		var a: Vector2 = pts[i]
+		var b: Vector2 = pts[(i + 1) % pts.size()]
+		_draw_line(img, a.x, a.y, b.x, b.y, thickness, col)
+
+
+## Vertices of a regular polygon centred on [param cx],[param cy], first vertex placed
+## [param start_deg] clockwise from straight up.
+static func _regular_polygon(
+	cx: float, cy: float, r: float, sides: int, start_deg: float
+) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for i in range(sides):
+		var a: float = deg_to_rad(start_deg + 360.0 * float(i) / float(sides))
+		pts.append(Vector2(cx + r * cos(a), cy + r * sin(a)))
+	return pts
+
+
+## World-space marker glyph for an objective site KIND, drawn white on a transparent
+## background. White on purpose: the marker is tinted per state at draw time, so one texture
+## serves unclaimed / claimed / captured, and the SILHOUETTE is left free to tell the three
+## site kinds apart at a glance.
+static func objective_icon(kind_id: String) -> ImageTexture:
+	if _objective_icon_cache.has(kind_id):
+		return _objective_icon_cache[kind_id] as ImageTexture
+
+	var size: int = 64
+	var img: Image = Image.create(size, size, false, Image.FORMAT_RGBA8)
+	img.fill(Color(1.0, 1.0, 1.0, 0.0))
+	var c: float = float(size) * 0.5
+
+	# Two passes: a dark halo, then the white glyph. The halo is what makes the marker readable
+	# over BOTH the pale ground that dominates a zoomed-out view and the dark rooftops that
+	# dominate a close-up -- a single-colour glyph vanishes against one or the other. The halo
+	# survives state tinting, because a tint can only darken an already near-black outline.
+	var halo := Color(0.05, 0.04, 0.08, 0.95)
+	_draw_site_outline(img, kind_id, c, halo, 4.5)
+	_draw_site_outline(img, kind_id, c, Color.WHITE, 0.0)
+	_draw_site_detail(img, kind_id, c, Color.WHITE)
+
+	var tex := ImageTexture.create_from_image(img)
+	_objective_icon_cache[kind_id] = tex
+	return tex
+
+
+## The outer silhouette of a site glyph -- the shape that tells the three kinds apart. Drawn one
+## level thicker when building the halo, so the dark backing tracks the silhouette exactly.
+static func _draw_site_outline(
+	img: Image, kind_id: String, c: float, col: Color, extra: float
+) -> void:
+	var t: float = 5.0 + extra
+	match kind_id:
+		"ley_line":
+			_poly_outline(img, _regular_polygon(c, c, 26.0, 6, -90.0), t, col)
+		"converted_data_center":
+			_poly_outline(img, _regular_polygon(c, c, 25.0, 4, -45.0), t, col)
+		"corruption_reservoir":
+			_poly_outline(
+				img,
+				PackedVector2Array([
+					Vector2(c, c - 27.0),
+					Vector2(c + 24.0, c + 17.0),
+					Vector2(c - 24.0, c + 17.0),
+				]),
+				t,
+				col
+			)
+		_:
+			# Unknown kind: still mark the site rather than drawing nothing at all.
+			_draw_ring(img, c, c, 15.0 - extra * 0.5, 24.0 + extra * 0.5, col)
+
+
+## Inner detail, drawn white only. A halo pass over these would smear them into a solid block
+## and cost the glyph the very shape that makes it recognisable.
+static func _draw_site_detail(img: Image, kind_id: String, c: float, col: Color) -> void:
+	match kind_id:
+		"ley_line":
+			# A node of the ley network: a bright core inside the hexagon.
+			_draw_circle(img, c, c, 7.0, col)
+		"converted_data_center":
+			# A server block: three drive slots inside the frame.
+			for i in range(3):
+				_draw_rect(img, int(c) - 11, int(c) - 11 + i * 8, 22, 5, col)
+		"corruption_reservoir":
+			# An alchemical vessel: it stands on a plinth.
+			_draw_rect(img, int(c) - 12, int(c) + 20, 24, 5, col)
+		_:
+			pass
 
 
 static func _draw_triangle(img: Image, p0: Vector2, p1: Vector2, p2: Vector2, col: Color) -> void:

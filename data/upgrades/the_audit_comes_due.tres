@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "the_audit_comes_due"
+display_name = "The Audit Comes Due"
+description = "+45% damage, +30% fire rate, and +0.8% per point of Corruption. THE AUDIT COLLECTS: every kill this tower makes pays 2 Offerings on top of the usual reward. Every kill also feeds 2 Corruption into the meter."
+tower_id = "hexed_nail_gun"
+tier = 4
+branch = 3
+currency = 2
+cost = 2
+prerequisite_id = "nail_of_accounting"
+corruption_delta = 0
+jank_set = 0
+damage_mult = 0.45
+fire_rate_mult = 0.3
+corruption_scaled_damage = 0.008
+behaviors = Array[String](["the_audit_comes_due"])
+behavior_params = {
+"offerings_per_kill": 2,
+"corruption_per_kill": 2
+}

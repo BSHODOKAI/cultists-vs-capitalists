@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "nail_of_accounting"
+display_name = "Nail of Accounting"
+description = "+30% damage, and +0.5% per point of Corruption. THE LEDGER: every consecutive shot at the same target adds +8% damage (up to +96%), and resets when the tower switches target. Every kill feeds 1 Corruption into the meter."
+tower_id = "hexed_nail_gun"
+tier = 3
+branch = 3
+currency = 2
+cost = 1
+prerequisite_id = "rapid_cycling"
+corruption_delta = 0
+jank_set = 0
+damage_mult = 0.3
+corruption_scaled_damage = 0.005
+behaviors = Array[String](["nail_of_accounting"])
+behavior_params = {
+"damage_per_stack": 0.08,
+"max_stacks": 12,
+"corruption_per_kill": 1
+}

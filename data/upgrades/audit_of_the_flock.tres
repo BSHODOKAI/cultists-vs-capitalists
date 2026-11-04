@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "audit_of_the_flock"
+display_name = "Audit of the Flock"
+description = "Summons one additional blocker and gives every blocker +60% HP. Each kill feeds 2 Corruption into the meter. The congregation is counted twice and charged for both."
+tower_id = "the_congregation"
+tier = 4
+branch = 3
+currency = 2
+cost = 2
+prerequisite_id = "paid_in_flesh"
+corruption_delta = 0
+jank_set = 0
+summon_count_add = 1
+summon_hp_mult = 0.6
+corruption_scaled_stat = {
+"summon_hp": 0.007
+}
+behaviors = Array[String](["audit_of_the_flock"])
+behavior_params = {
+"corruption_per_kill": 2
+}

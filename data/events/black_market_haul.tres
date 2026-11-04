@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="EventData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/events/event_data.gd" id="1_ev"]
+
+[resource]
+script = ExtResource("1_ev")
+id = "black_market_haul"
+display_name = "Black Market Haul"
+description = "A smuggled crate of salvage reaches the cult."
+category = 0
+banner_color = Color(1, 0.65, 0.25, 1)
+instant_scrap = 25
+instant_scaling_per_wave = 0.3

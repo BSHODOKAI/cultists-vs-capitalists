@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "the_grid_forecloses"
+display_name = "The Grid Forecloses"
+description = "+50% electric damage, +25% fire rate, and +0.8% damage per point of Corruption. THE GRID FORECLOSES: each kill feeds 2 Corruption into the meter and pulls 1 Scrap out of the exposed wiring."
+tower_id = "substation_effigy"
+tier = 4
+branch = 3
+currency = 2
+cost = 2
+prerequisite_id = "metered_current"
+corruption_delta = 0
+jank_set = 0
+damage_mult = 0.5
+fire_rate_mult = 0.25
+corruption_scaled_damage = 0.008
+behaviors = Array[String](["the_grid_forecloses"])
+behavior_params = {
+"corruption_per_kill": 2,
+"rite_scrap_per_kill": 1
+}

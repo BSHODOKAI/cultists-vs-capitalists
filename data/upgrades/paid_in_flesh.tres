@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "paid_in_flesh"
+display_name = "Paid in Flesh"
+description = "Summons one additional blocker, and every kill feeds 1 Corruption into the meter. The congregation is settled up in bodies rather than coin, and the roster grows with the rot."
+tower_id = "the_congregation"
+tier = 3
+branch = 3
+currency = 2
+cost = 1
+prerequisite_id = "bigger_flock"
+corruption_delta = 0
+jank_set = 0
+summon_count_add = 1
+corruption_scaled_stat = {
+"summon_hp": 0.004
+}
+behaviors = Array[String](["paid_in_flesh"])
+behavior_params = {
+"corruption_per_kill": 1
+}

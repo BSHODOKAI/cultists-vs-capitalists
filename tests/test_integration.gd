@@ -12,8 +12,8 @@
 ##      Penance, maintenance and sell refunds are correct.
 ##   6. Scripted headless run (seeded, scripted build order, SimClock at max speed):
 ##      reaches wave 25 without errors; the wave-8 preview appears; after the wave-10
-##      boss the committed path equals the preview; the faction changes; Stars Are Right
-##      fires on waves 5 and 15.
+##      boss the committed path equals the preview; the faction changes; run events
+##      fire (pseudo-randomly) and never on the first boss wave.
 ##   7. Determinism: two runs with the same seed and command log produce identical event logs.
 ##   8. A forced boss leak ends the run and shows a LossReport with all fields.
 ##   9. Performance: 300 simultaneous enemies at 3x speed, measured both in a
@@ -25,6 +25,7 @@ const _C = preload("res://scripts/path/path_constants.gd")
 const _HexMath = preload("res://scripts/core/hex_math.gd")
 const _SimClock = preload("res://scripts/core/sim_clock.gd")
 const _GameState = preload("res://scripts/core/game_state.gd")
+const _DirectorBalance = preload("res://scripts/director/director_balance_data.gd")
 const _CameraRig = preload("res://scripts/world/camera_rig.gd")
 
 
@@ -150,7 +151,7 @@ func test_02_smoke_main_loads_and_reaches_intermission() -> void:
 	assert(main_inst.get_node_or_null("HUD/GameOverScreen") != null, "Missing HUD/GameOverScreen")
 	assert(main_inst.get_node_or_null("DebugPanel") != null, "Missing DebugPanel")
 
-	# Verify GameState reached INTERMISSION with 150 Offerings, 0 Scrap, 20 Lives, 24-hex initial path
+	# Verify GameState reached INTERMISSION with 150 Offerings, 0 Scrap, 20 Lives, initial-path hexes
 	assert(
 		gs.current_state == _GameState.RunState.INTERMISSION,
 		"Main must reach INTERMISSION on start, got %d" % gs.current_state
@@ -160,7 +161,7 @@ func test_02_smoke_main_loads_and_reaches_intermission() -> void:
 	assert(gs.lives == 20, "Starting Lives must be 20, got %d" % gs.lives)
 	assert(
 		gs.path_generator.path_hexes.size() == _GameState.INITIAL_PATH_LENGTH,
-		"Initial path length must be 24, got %d" % gs.path_generator.path_hexes.size()
+		"Initial path length must be %d, got %d" % [_GameState.INITIAL_PATH_LENGTH, gs.path_generator.path_hexes.size()]
 	)
 
 	main_inst.queue_free()
@@ -398,11 +399,11 @@ func test_06_scripted_headless_run_reaches_wave_25() -> void:
 	var path_after_wave_10_commit: Array[Vector2i] = []
 	var interval_1_faction: String = gs.active_faction
 	var interval_2_faction: String = ""
-	var stars_waves_fired: Array[int] = []
+	var events_fired: Array[Dictionary] = []
 
-	var conn_stars := func(w: int) -> void:
-		stars_waves_fired.append(w)
-	gs.stars_are_right_triggered.connect(conn_stars)
+	var conn_event := func(event_id: String, _dn: String, _cat: int, _bt: String, _bc: Color) -> void:
+		events_fired.append({"wave": int(gs.get("current_wave")), "event_id": event_id})
+	gs.event_triggered.connect(conn_event)
 
 	for target_wave in range(1, 26):
 		assert(gs.current_state == _GameState.RunState.INTERMISSION, "Must be in INTERMISSION before wave %d" % target_wave)
@@ -418,6 +419,16 @@ func test_06_scripted_headless_run_reaches_wave_25() -> void:
 		if target_wave == 11:
 			interval_2_faction = gs.active_faction
 			path_after_wave_10_commit = gs.path_generator.path_hexes.duplicate()
+			# The wave-10 growth must have settled Objectives on the new ground.
+			assert(
+				gs.objective_system != null and gs.objective_system.get_site_count() > 0,
+				"Path growth must place at least one Objective site"
+			)
+			for inst: ObjectiveInstance in gs.objective_system.objectives:
+				assert(
+					not gs.path_generator.grid.is_path_hex(inst.hex),
+					"Objective site %s must not sit on a path hex" % str(inst.hex)
+				)
 
 		assert(gs.start_wave(), "Wave %d must start cleanly" % target_wave)
 
@@ -438,7 +449,7 @@ func test_06_scripted_headless_run_reaches_wave_25() -> void:
 			"Wave %d must finish and return to INTERMISSION (state=%d)" % [target_wave, gs.current_state]
 		)
 
-	gs.stars_are_right_triggered.disconnect(conn_stars)
+	gs.event_triggered.disconnect(conn_event)
 
 	# Verify Wave 10 committed path equals path_before_wave_10_commit + wave_8_preview_hexes
 	var expected_committed: Array[Vector2i] = path_before_wave_10_commit.duplicate()
@@ -454,11 +465,11 @@ func test_06_scripted_headless_run_reaches_wave_25() -> void:
 		"Faction must rotate after Wave 10 boss (was %s, now %s)" % [interval_1_faction, interval_2_faction]
 	)
 
-	# Verify Stars Are Right fired on waves 5, 15, and 25 (and NOT 10 or 20)
-	assert(stars_waves_fired.has(5), "Stars Are Right must fire on wave 5")
-	assert(stars_waves_fired.has(15), "Stars Are Right must fire on wave 15")
-	assert(stars_waves_fired.has(25), "Stars Are Right must fire on wave 25")
-	assert(not stars_waves_fired.has(10) and not stars_waves_fired.has(20), "Stars Are Right must not fire on boss waves 10 or 20")
+	# Run events are pseudo-random now. Assert the system fired events within 25
+	# waves and never on the first boss wave (10).
+	assert(not events_fired.is_empty(), "At least one run event must fire within 25 waves")
+	for e: Dictionary in events_fired:
+		assert(int(e["wave"]) != 10, "No run event may fire on the first boss wave")
 
 
 # --- Test 7: Determinism (same seed + command log -> identical event log) -----
@@ -610,3 +621,71 @@ func test_09_performance_300_simultaneous_enemies_headless_and_3d_scene() -> voi
 	bench_node.queue_free()
 	gs.god_mode = false
 	clock.manual_mode = false
+
+
+# --- Test 10: Path-layout summary emits real director signals -----------------
+
+func test_10_path_layout_summary_emits_real_director_signals() -> void:
+	var gs: GameStateNode = _get_game_state()
+	gs.start_new_run(20261)
+
+	var summary: Dictionary = gs._compute_path_layout_summary()
+	for key: String in [
+		"path_length",
+		"dense_overlap_zones",
+		"long_exposed_stretches",
+		"wave_time_window",
+	]:
+		assert(summary.has(key), "Path summary must emit '%s'" % key)
+
+	# Regression guard: a path-length unit cap disables the director's excess-budget
+	# -> bonus-level compensation (it gates on total_units >= max_units_per_wave),
+	# which makes waves weaker instead of denser. Never emit a delivery cap again.
+	assert(
+		not summary.has("max_deliverable_units"),
+		"Path summary must NOT emit max_deliverable_units (it silently weakens waves)"
+	)
+
+	assert(int(summary["path_length"]) == gs.path_generator.path_hexes.size(), "path_length must match committed path")
+	assert(float(summary["wave_time_window"]) > 0.0, "wave_time_window must be positive")
+	# With no towers placed, the whole path is one exposed stretch.
+	assert(
+		int(summary["long_exposed_stretches"]) == int(summary["path_length"]),
+		"With no towers, the longest exposed stretch must equal the whole path"
+	)
+	assert(
+		int(summary["long_exposed_stretches"]) >= _DirectorBalance.LONG_EXPOSED_STRETCH_THRESHOLD,
+		"A fully-towerless path must exceed the director's exposed-stretch threshold"
+	)
+
+	# Growth must feed the director: a longer path is a longer exposed stretch.
+	var len_before: int = int(summary["path_length"])
+	for _i in range(3):
+		gs.path_generator.commit_extension()
+		gs.tower_system.set_path(gs.path_generator.path_hexes)
+	var summary_after: Dictionary = gs._compute_path_layout_summary()
+	assert(
+		int(summary_after["path_length"]) > len_before,
+		"Path must have grown after three extensions"
+	)
+	assert(
+		int(summary_after["long_exposed_stretches"]) == int(summary_after["path_length"]),
+		"With still no towers, growth must keep the whole path one exposed stretch"
+	)
+
+	# A tower covering part of the path must reduce the longest exposed stretch.
+	var buildable: Array[Vector2i] = gs.path_generator.get_buildable_hexes()
+	if not buildable.is_empty():
+		var mid_hex: Vector2i = gs.path_generator.path_hexes[gs.path_generator.path_hexes.size() / 2]
+		var placed_any: bool = false
+		for h: Vector2i in buildable:
+			if _HexMath.distance(h, mid_hex) <= 1:
+				if gs.request_place_tower(h, "hexed_nail_gun") != null:
+					placed_any = true
+					break
+		if placed_any:
+			var summary_towered: Dictionary = gs._compute_path_layout_summary()
+			assert(
+				int(summary_towered["long_exposed_stretches"]) <= int(summary_after["long_exposed_stretches"]),
+				"Covering the mid-path must not increase the longest exposed stretch"
+			)

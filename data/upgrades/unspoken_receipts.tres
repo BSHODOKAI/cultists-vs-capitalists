@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "unspoken_receipts"
+display_name = "Unspoken Receipts"
+description = "+45% damage, +1 choir member, +1 hex range, and +0.7% damage per point of Corruption. THE UNSPOKEN RECEIPTS: each kill feeds 2 Corruption into the meter and takes 1 Offering in fees, so the choir is paid in both directions at once."
+tower_id = "chanting_choir"
+tier = 4
+branch = 3
+currency = 2
+cost = 2
+prerequisite_id = "the_song_is_billed"
+corruption_delta = 0
+jank_set = 0
+damage_mult = 0.45
+members_add = 1
+range_add = 1
+corruption_scaled_damage = 0.007
+behaviors = Array[String](["unspoken_receipts"])
+behavior_params = {
+"corruption_per_kill": 2,
+"rite_offerings_per_kill": 1
+}

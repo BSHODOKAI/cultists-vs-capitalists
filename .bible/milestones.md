@@ -22,20 +22,18 @@ Workflow Improvements
 - Design Bible for developer
     - WE have agents.md base context, but we want to envision a more general design bible for what we are accomplishing that is not used by the coding agent at all times, is more used for a human to examine, add/detract from, and use to brainstorm new features.
 - reusable skills
-    - plan for towers
     - May need one for mobs
 
 
 Gameplay milestones to add
-- camera lock 'keep camera in playable area, dont let it leave to some unknown place'
-- Events overhaul
-    - Should be psuedo random (every 3-7 waves, use bag of marbles/deck of cards style randomization)
-    - Add more events, we need a 'scrap' based buff event, and hybrid based buff event
-    - debuff events, we need debuff events to add flavor
-    - events are not advertised before they happen (for now)
-    - never have 2 buff or 2 debuff events in a row
 - Is the growing path really adding something to gameplay, or is it just causing the player to rebuild tower strongholds as it grows to prevent boredome. we need to noodle on this.
+
+sell tower needs confirm
+not show rites as upgrade options until the player has received their first one
+keep an eye as rites as a trap
+
 - Veticality?
+- TOWER STATS!
 - Additional Biomes
     - Bioms shift after bosses (maybe not every boss, noodle on this)
     - Think 'UNRAILED' gameplay as an idea, certain criteria met, and then the path starts to grow the path to a new biome

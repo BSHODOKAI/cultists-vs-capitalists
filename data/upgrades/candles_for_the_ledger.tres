@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "candles_for_the_ledger"
+display_name = "Candles for the Ledger"
+description = "Raises the shrine's aura to +35% tower fire rate, and every kill feeds 1 Corruption into the meter. The candles are lit for the accounts rather than the gods, and the room burns hotter the deeper the debt runs."
+tower_id = "fever_shrine"
+tier = 3
+branch = 3
+currency = 2
+cost = 1
+prerequisite_id = "more_candles"
+corruption_delta = 0
+jank_set = 0
+aura_fire_rate_override = 0.35
+corruption_scaled_stat = {
+"aura_fire_rate": 0.004
+}
+behaviors = Array[String](["candles_for_the_ledger"])
+behavior_params = {
+"corruption_per_kill": 1
+}

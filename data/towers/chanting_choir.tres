@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="TowerData" load_steps=7 format=3]
+[gd_resource type="Resource" script_class="TowerData" load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://scripts/towers/tower_data.gd" id="1_td"]
 [ext_resource type="Resource" path="res://data/upgrades/deeper_harmony.tres" id="2_t2"]
@@ -6,6 +6,8 @@
 [ext_resource type="Resource" path="res://data/upgrades/the_unspoken_verse.tres" id="4_rev4"]
 [ext_resource type="Resource" path="res://data/upgrades/bullhorn_array.tres" id="5_rig3"]
 [ext_resource type="Resource" path="res://data/upgrades/jammer_choir.tres" id="6_rig4"]
+[ext_resource type="Resource" path="res://data/upgrades/the_song_is_billed.tres" id="7_rite3"]
+[ext_resource type="Resource" path="res://data/upgrades/unspoken_receipts.tres" id="8_rite4"]
 
 [resource]
 script = ExtResource("1_td")
@@ -29,3 +31,5 @@ revealed_t3_upgrade = ExtResource("3_rev3")
 revealed_t4_upgrade = ExtResource("4_rev4")
 rigged_t3_upgrade = ExtResource("5_rig3")
 rigged_t4_upgrade = ExtResource("6_rig4")
+rite_t3_upgrade = ExtResource("7_rite3")
+rite_t4_upgrade = ExtResource("8_rite4")

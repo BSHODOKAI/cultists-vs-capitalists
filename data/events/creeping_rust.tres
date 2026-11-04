@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="EventData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/events/event_data.gd" id="1_ev"]
+
+[resource]
+script = ExtResource("1_ev")
+id = "creeping_rust"
+display_name = "Creeping Rust"
+description = "+10 Jank on Rigged towers and +2 Corruption."
+category = 1
+banner_color = Color(0.8, 0.45, 0.35, 1)
+instant_rigged_jank = 10
+instant_corruption = 2

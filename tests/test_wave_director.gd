@@ -607,3 +607,62 @@ func test_07_same_seed_and_same_inputs_give_identical_rosters() -> void:
 		bool(sim_res["all_profiles_fair"]),
 		"All 4 scripted profiles must neither be trivially safe nor trivially punished"
 	)
+
+
+# --- Test 8: Excess-budget spend model (bounded levels, boss compensation, accounting)
+
+func test_08_excess_budget_bounded_levels_boss_compensation_and_unspent_accounting() -> void:
+	var balance: DirectorBalanceData = _WaveDirector.new(1).balance
+	var max_bonus: int = balance.max_bonus_levels_per_unit
+
+	var boss_wave_got_levels: bool = false
+	var worst_hp_mult: float = 0.0
+
+	for w in [25, 30, 35, 45, 50, 55, 70, 95, 100]:
+		var director := _WaveDirector.new(271828)
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 4242 + w
+		var roster: WaveRoster = director.generate_wave(w, {
+			"rng": rng,
+			"record_history": false,
+			"path_layout_summary": {"wave_time_window": 36.0},
+		})
+
+		# 1. Bonus levels are bounded per unit type (they used to reach +86..+152).
+		for e: Dictionary in roster.entries:
+			var bonus: int = int(e["bonus_level"])
+			assert(
+				bonus <= max_bonus,
+				"Wave %d %s bonus_level %d must be <= %d" % [w, String(e["unit_id"]), bonus, max_bonus]
+			)
+			assert(
+				int(e["spawn_level"]) == int(e["base_level"]) + bonus,
+				"Wave %d spawn_level must equal base_level + bonus_level" % w
+			)
+			worst_hp_mult = maxf(worst_hp_mult, _UnitLeveling.compute_health_multiplier(int(e["spawn_level"])))
+
+		# 2. Accounting: spent + unspent never exceeds the wave budget, and unspent is never negative.
+		assert(roster.unspent_budget >= 0.0, "Wave %d unspent_budget must never be negative" % w)
+		assert(
+			roster.total_cost + roster.unspent_budget <= roster.budget + 0.5,
+			"Wave %d spent (%.1f) + unspent (%.1f) must not exceed budget (%.1f)" % [
+				w, roster.total_cost, roster.unspent_budget, roster.budget
+			]
+		)
+
+		# 3. Boss waves MUST get bonus-level compensation once the escort budget exceeds
+		#    what MAX_BOSS_ESCORT_UNITS can absorb. The old gate (total_units >=
+		#    max_units_per_wave) made this impossible for every boss wave.
+		if roster.is_boss_wave and w >= 30:
+			for e: Dictionary in roster.entries:
+				if int(e["bonus_level"]) > 0:
+					boss_wave_got_levels = true
+					break
+
+	assert(boss_wave_got_levels, "Late boss waves must receive bonus-level compensation for excess escort budget")
+
+	# 4. Bounded levels keep the worst-case HP multiplier a curve, not a wall.
+	assert(
+		worst_hp_mult < 100.0,
+		"Worst-case late-wave HP multiplier must stay under 100x (got x%.0f); unbounded levels reached thousands" % worst_hp_mult
+	)

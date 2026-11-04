@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "the_circle_is_paid"
+display_name = "The Circle Is Paid"
+description = "+25% pulse damage, +1 hex radius, and +0.3% per point of Corruption. THE CIRCLE PAYS BY THE HEAD: each enemy caught past the first adds +15% pulse damage (up to +90%). Every kill feeds 1 Corruption into the meter."
+tower_id = "gutter_ritual_circle"
+tier = 3
+branch = 3
+currency = 2
+cost = 1
+prerequisite_id = "wider_circle"
+corruption_delta = 0
+jank_set = 0
+damage_mult = 0.25
+range_add = 1
+corruption_scaled_damage = 0.003
+behaviors = Array[String](["the_circle_is_paid"])
+behavior_params = {
+"damage_per_extra_target": 0.15,
+"max_extra_targets": 6,
+"corruption_per_kill": 1
+}

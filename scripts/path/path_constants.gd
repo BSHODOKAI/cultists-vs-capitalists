@@ -77,9 +77,9 @@ const TERRAIN_MARGIN: int = 4
 
 # --- Path generation & extension sizes ---------------------------------------
 ## Minimum hexes added per growth extension.
-const MIN_EXT: int = 12
+const MIN_EXT: int = 10
 ## Maximum hexes added per growth extension.
-const MAX_EXT: int = 20
+const MAX_EXT: int = 16
 ## Initial path length range (base at index 0 to initial spawn at last index).
 const INITIAL_MIN_LENGTH: int = 12
 const INITIAL_MAX_LENGTH: int = 20

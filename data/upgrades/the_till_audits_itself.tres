@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "the_till_audits_itself"
+display_name = "The Till Audits Itself"
+description = "+75% Offerings income from this tithe box. Each kill feeds 2 Corruption into the meter and 1 Offering into the till. The box has started keeping its own books, and it counts better than the cult does."
+tower_id = "tithe_box"
+tier = 4
+branch = 3
+currency = 2
+cost = 2
+prerequisite_id = "the_plate_never_empties"
+corruption_delta = 0
+jank_set = 0
+income_mult = 0.75
+corruption_scaled_stat = {
+"income": 0.007
+}
+behaviors = Array[String](["the_till_audits_itself"])
+behavior_params = {
+"corruption_per_kill": 2,
+"rite_offerings_per_kill": 1
+}

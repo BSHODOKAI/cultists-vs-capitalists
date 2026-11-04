@@ -44,6 +44,18 @@ const ROGUE_ENTITY_HP_SCALE_PER_KILL: float = 1.45
 const PENANCE_OFFERINGS_COST: int = 40
 const PENANCE_CORRUPTION_REDUCTION: int = 5
 
+# --- Rites & Corporate Attention ---------------------------------------------
+## Corruption paid to draw a single Rite.
+const RITE_CORRUPTION_COST: int = 10
+## Corporate Attention gained per Rite drawn. Debt accrues SINCE the last reckoning
+## and scales how bad the next Rogue wave is; it resets when that wave arrives, so a
+## single spending spree cannot snowball into an unrecoverable spiral.
+const RITE_DEBT_PER_RITE: int = 10
+## Rite debt per point of extra Rogue severity.
+const RITE_DEBT_PER_ROGUE_LEVEL: int = 25
+## Hard ceiling on how many Rogues one reckoning can send.
+const MAX_ROGUE_ENTITY_SPAWN_COUNT: int = 8
+
 # --- Jank constants ----------------------------------------------------------
 const JANK_MIN: int = 0
 const JANK_CAP: int = 60
@@ -103,6 +115,10 @@ const CC_DR_STEP_3_MULT: float = 0.25
 @export var rogue_entity_kill_offerings: int = ROGUE_ENTITY_KILL_OFFERINGS
 @export var penance_offerings_cost: int = PENANCE_OFFERINGS_COST
 @export var penance_corruption_reduction: int = PENANCE_CORRUPTION_REDUCTION
+@export var rite_corruption_cost: int = RITE_CORRUPTION_COST
+@export var rite_debt_per_rite: int = RITE_DEBT_PER_RITE
+@export var rite_debt_per_rogue_level: int = RITE_DEBT_PER_ROGUE_LEVEL
+@export var max_rogue_entity_spawn_count: int = MAX_ROGUE_ENTITY_SPAWN_COUNT
 
 @export var jank_min: int = JANK_MIN
 @export var jank_cap: int = JANK_CAP

@@ -41,6 +41,7 @@ func test_01_audio_balance_resource_and_all_wav_files_load() -> void:
 		_AudioBalance.CUE_WAVE_STARTED,
 		_AudioBalance.CUE_WAVE_ENDED,
 		_AudioBalance.CUE_STARS_ARE_RIGHT,
+		_AudioBalance.CUE_RUN_EVENT,
 		_AudioBalance.CUE_PATH_EXTENDED,
 		_AudioBalance.CUE_ENEMY_LEAKED,
 		_AudioBalance.CUE_GAME_OVER,
