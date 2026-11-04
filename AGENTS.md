@@ -333,6 +333,11 @@ counts, guaranteeing claimability).
 - `TowerPanel`: **Selling takes two presses** — the first arms the button (`_sell_armed_for`, keyed by `tower_id`, so changing selection disarms), the second sells. Confirming a Rite tower's sale states that the Rite is **not** refunded. Selling is irreversible and Rites are never returned, so a single misclick used to destroy both the tower and a drawn Rite.
 - `IntelPanel` & `TelegraphLayer`: Pre-wave Intel preview; post-boss "BOSS SLAIN / Next Faction" banners automatically clear when the next wave starts.
 - `CameraRig`: Orthographic (`size 7..48`, default `18`), WASD/arrow pan, middle-mouse drag pan, single-finger touchscreen drag pan, mouse-wheel & two-finger pinch zoom, `Home` (focus base), `End` (focus spawn/preview).
+- **HUD window consistency (rules — keep them):**
+- **One fixed frame per window.** A HUD window has a single size for its whole life, set by constants (`TowerPanel.PANEL_WIDTH` x `PANEL_HEIGHT`), never derived from its content, so it cannot resize as the player interacts with it. `TowerPanel` is the same size for all 10 towers and every state (build preview, T1, T2 fork, T3, T4).
+- **Variable content scrolls vertically, never horizontally.** Anything whose height can grow (readouts, the upgrade ladder, site auras) lives in a `ScrollContainer` inside the fixed frame with `horizontal_scroll_mode = SCROLL_MODE_DISABLED`; overflow scrolls up/down instead of growing or clipping the window. A HUD window never shows a horizontal scrollbar — wide content is wrapped, not scrolled sideways.
+- **Text never sets width.** A `Button` does not wrap and its minimum width is the full width of its longest line, so buttons carry only short, pre-broken labels and never a description; all variable text is a wrapping `Label`. A side-by-side pair (the T3 fork) gives each column half the inner width and its buttons must fit that half. Enforced by `test_build_menu_ui.gd::test_04`.
+- **HUD scale is bounded.** The whole UI is authored at `DisplaySettings.UI_BASE_SIZE` (1152x648) and scaled by `clampf(window_height / 648, UI_MIN_SCALE, UI_MAX_SCALE)` via the `UiScale` autoload; never set `content_scale_size` from the chosen resolution.
 
 ---
 

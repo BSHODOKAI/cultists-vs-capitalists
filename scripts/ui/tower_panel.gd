@@ -5,6 +5,31 @@
 ## currency, Corruption or Jank impact, and "locks the other branch" warning;
 ## then the T4 capstone), Rigged Jank% + Maintenance button, Cleanse button
 ## when converted/channeled, Sell button with refund, and the global Penance button.
+##
+## ---- UI WINDOW CONSISTENCY RULES (apply to every HUD window) ----------------
+##
+## R1. ONE FIXED FRAME. A window has a single size for its entire life, set by
+##     [constant PANEL_WIDTH] x [constant PANEL_HEIGHT] (and custom_minimum_size).
+##     Its rect is NEVER derived from its content, so it cannot resize while the
+##     player interacts with it. Anything whose height can vary -- readouts, the
+##     upgrade ladder, a growing list of site auras -- lives inside the
+##     ScrollContainer, which absorbs overflow by scrolling VERTICALLY only.
+##     Horizontal scrolling is DISABLED (SCROLL_MODE_DISABLED): width is handled
+##     by wrapping text against the fixed frame, never by scrolling sideways, so
+##     no window can ever present a horizontal scrollbar.
+## R2. SAME SIZE FOR EVERY CONTENT. The frame is identical for all 10 towers and
+##     all lifecycle states (build preview, T1, T2 fork, T3, T4). Size may depend
+##     only on the viewport, never on which tower or tier is shown.
+## R3. TEXT NEVER SETS WIDTH. Variable text is a wrapping Label. A Button does NOT
+##     wrap and its minimum width is the full width of its longest line, so a
+##     button label is kept SHORT and broken across lines to fit the window's
+##     inner width; a button never carries a description. This is what the
+##     `_max_button_line_*` guards and the layout test enforce.
+## R4. FIXED SECTION ORDER. icon/title header -> scrollable detail -> pinned
+##     actions. The header and the action buttons stay put; only the middle
+##     scrolls, so the primary actions are always reachable.
+## R5. COLUMNS SPLIT THE INNER WIDTH. A side-by-side pair (the T3 fork) gives each
+##     column half the inner width; every control in a column must fit that half.
 class_name TowerPanel
 extends PanelContainer
 
@@ -15,6 +40,8 @@ var _icon_rect: TextureRect
 var _title_label: Label
 var _stats_label: Label
 var _tier_container: VBoxContainer
+var _scroll: ScrollContainer
+var _detail_vbox: VBoxContainer
 var _maintenance_button: Button
 var _cleanse_button: Button
 var _sell_button: Button
@@ -23,18 +50,22 @@ var _penance_button: Button
 
 ## Gap kept between the panel and the screen edge it is anchored to.
 const PANEL_MARGIN = 12.0
-## Narrowest the panel may become. Also wins when the viewport is narrower than this, because a
-## panel squeezed below its own minimum width is unreadable anyway.
-const PANEL_MIN_WIDTH = 318.0
+## Fixed outer size of the panel (rules R1/R2). One size for every tower and every
+## lifecycle state; it never grows or shrinks as the player upgrades. The content
+## below the header scrolls, so this never clips.
+const PANEL_WIDTH = 320.0
+## Sized to the tallest normal state -- the T2 fork with a Rite row -- so the common
+## case does not scroll. Kept <= 648 - PANEL_MARGIN - PANEL_PREFERRED_TOP so the panel
+## always fits BELOW the IntelPanel on the 1152x648 minimum layout.
+const PANEL_HEIGHT = 400.0
 ## Where the panel prefers to sit: directly under the IntelPanel on the right edge.
 const PANEL_PREFERRED_TOP = 226.0
 ## The panel must never rise above this: it is the bottom of the top bar, whose Corruption /
-## Rites / Reckoning readouts are exactly what the player needs while choosing an upgrade. The
-## T2 fork is the tallest the panel ever gets, so this is the line it is tuned against.
+## Rites / Reckoning readouts are exactly what the player needs while choosing an upgrade.
 const PANEL_SAFE_TOP = 58.0
-const PANEL_MIN_HEIGHT = 120.0
-## Guards the deferred second layout pass so it cannot reschedule itself forever.
-var _rect_settle_pending: bool = false
+## The panel's inner width (frame minus the stylebox content margins). Buttons live here, and
+## a button's minimum width is its longest line, so button labels are broken to fit this.
+const PANEL_INNER_WIDTH = PANEL_WIDTH - 20.0
 ## Which tower's Sell button is ARMED, waiting for a confirming second press. Keyed by
 ## tower_id so changing selection disarms it automatically; -1 means nothing is armed.
 var _sell_armed_for: int = -1
@@ -43,11 +74,28 @@ var _sell_armed_for: int = -1
 func _ready() -> void:
 	_build_ui()
 	_connect_signals()
+	var vp: Viewport = get_viewport()
+	if vp != null and not vp.size_changed.is_connected(_apply_panel_rect):
+		vp.size_changed.connect(_apply_panel_rect)
 	refresh()
 
 
 func _build_ui() -> void:
-	custom_minimum_size = Vector2(310.0, 0.0)
+	# Fixed frame (rules R1/R2): the panel is exactly PANEL_WIDTH x PANEL_HEIGHT for its
+	# whole life. Anchored to the top-right; the offsets below are viewport-independent
+	# because anchor_right == 1, so only the top is ever re-clamped (see _apply_panel_rect).
+	custom_minimum_size = Vector2(PANEL_WIDTH, PANEL_HEIGHT)
+	anchor_left = 1.0
+	anchor_right = 1.0
+	anchor_top = 0.0
+	anchor_bottom = 0.0
+	grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	grow_vertical = Control.GROW_DIRECTION_END
+	offset_right = -PANEL_MARGIN
+	offset_left = -(PANEL_MARGIN + PANEL_WIDTH)
+	offset_top = PANEL_PREFERRED_TOP
+	offset_bottom = PANEL_PREFERRED_TOP + PANEL_HEIGHT
+
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.08, 0.09, 0.13, 0.94)
 	style.border_color = Color(0.42, 0.32, 0.58, 0.85)
@@ -57,6 +105,7 @@ func _build_ui() -> void:
 	add_theme_stylebox_override("panel", style)
 
 	var vbox := VBoxContainer.new()
+	vbox.name = "Root"
 	vbox.add_theme_constant_override("separation", 5)
 	add_child(vbox)
 
@@ -78,17 +127,39 @@ func _build_ui() -> void:
 	_title_label.add_theme_color_override("font_color", Color(0.95, 0.88, 1.0))
 	title_hbox.add_child(_title_label)
 
+	# Rule R4: only this middle section scrolls (VERTICALLY only), so the header and the
+	# pinned action buttons never move and the action buttons are always reachable.
+	# Horizontal scrolling is deliberately DISABLED: width is solved by wrapping text to the
+	# fixed frame, never by a sideways scrollbar. With it disabled the ScrollContainer
+	# stretches _detail_vbox to its width so labels wrap correctly, and any too-wide child
+	# would be clipped rather than fit the frame -- which the width tests forbid.
+	_scroll = ScrollContainer.new()
+	_scroll.name = "DetailScroll"
+	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vbox.add_child(_scroll)
+
+	_detail_vbox = VBoxContainer.new()
+	_detail_vbox.name = "Detail"
+	_detail_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_detail_vbox.add_theme_constant_override("separation", 6)
+	_scroll.add_child(_detail_vbox)
+
 	_stats_label = Label.new()
 	_stats_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_stats_label.add_theme_font_size_override("font_size", 12)
-	vbox.add_child(_stats_label)
+	_detail_vbox.add_child(_stats_label)
 
 	_tier_container = VBoxContainer.new()
 	_tier_container.add_theme_constant_override("separation", 6)
-	vbox.add_child(_tier_container)
+	_detail_vbox.add_child(_tier_container)
 
+	# Pinned actions. Labels are broken so no single line exceeds PANEL_INNER_WIDTH
+	# (rule R3): a Button does not wrap, so its longest line sets its minimum width.
 	_maintenance_button = Button.new()
-	_maintenance_button.text = "Maintenance (-10 Jank) [15 Scrap]"
+	_maintenance_button.text = "Maintenance: -10 Jank\n[15 Scrap]"
 	_maintenance_button.focus_mode = Control.FOCUS_NONE
 	_maintenance_button.pressed.connect(_on_maintenance_pressed)
 	vbox.add_child(_maintenance_button)
@@ -109,7 +180,7 @@ func _build_ui() -> void:
 	vbox.add_child(_sep)
 
 	_penance_button = Button.new()
-	_penance_button.text = "Global Penance (-5 Corruption) [40 Off]"
+	_penance_button.text = "Global Penance (-5 Corruption)"
 	_penance_button.focus_mode = Control.FOCUS_NONE
 	_penance_button.pressed.connect(_on_penance_pressed)
 	vbox.add_child(_penance_button)
@@ -145,7 +216,7 @@ func refresh() -> void:
 	var inst: TowerInstance = gs.get("selected_placed_tower") as TowerInstance
 
 	_penance_button.disabled = (tsys == null or not tsys.can_perform_penance())
-	_penance_button.text = "Global Penance (-5 Corr) [40 Off] (Now: %d)" % int(gs.get("corruption"))
+	_penance_button.text = "Global Penance (-5 Corruption)\n[40 Offerings] · Now: %d" % int(gs.get("corruption"))
 
 	for child: Node in _tier_container.get_children():
 		_tier_container.remove_child(child)
@@ -258,13 +329,13 @@ func refresh() -> void:
 
 	_maintenance_button.visible = inst.is_rigged()
 	_maintenance_button.disabled = not tsys.can_perform_maintenance(inst)
-	_maintenance_button.text = "Maintenance: -10 Jank (Now %d%%) [15 Scrap]" % inst.jank
+	_maintenance_button.text = "Maintenance: -10 Jank\n(Now %d%%) · [15 Scrap]" % inst.jank
 
 	var needs_cleanse: bool = (inst.converted_by_enemy or inst.being_channeled_by_unit_id >= 0)
 	_cleanse_button.visible = needs_cleanse
 	if needs_cleanse:
 		var c_cost: int = inst.get_cleanse_cost()
-		_cleanse_button.text = "Cleanse Conversion [%d Offerings]" % c_cost
+		_cleanse_button.text = "Cleanse Conversion\n[%d Offerings]" % c_cost
 		_cleanse_button.disabled = (int(gs.get("offerings")) < c_cost)
 
 	_sell_button.visible = true
@@ -283,9 +354,9 @@ func refresh() -> void:
 		var rite_note: String = ""
 		if inst.branch == _UpgradeNode.Branch.RITE:
 			rite_note = "\nThe Rite spent here is NOT refunded"
-		_sell_button.text = "CONFIRM SELL — press again for %s%s" % [refund_str, rite_note]
+		_sell_button.text = "CONFIRM SELL\npress again for %s%s" % [refund_str, rite_note]
 	else:
-		_sell_button.text = "Sell Tower (%s)" % refund_str
+		_sell_button.text = "Sell Tower\n%s" % refund_str
 	_sync_right_aligned_rect()
 
 
@@ -347,31 +418,16 @@ static func site_effect_summary(data: ObjectiveData, held: bool) -> String:
 	return ", ".join(parts)
 
 
-## Right-aligns the panel under the IntelPanel and keeps it fully on screen.
-##
-## Wrapped text only reports its true height once a width has been laid out, so the first pass
-## under-measures and one deferred pass settles it (guarded against rescheduling itself).
+## Re-applies the panel's fixed rect. The SIZE never changes (rules R1/R2) -- only the
+## top may slide down from PANEL_PREFERRED_TOP when the viewport is too short to fit the
+## panel below the IntelPanel. Safe to call on refresh and on every viewport resize.
 func _sync_right_aligned_rect() -> void:
-	_apply_panel_rect()
-	if not _rect_settle_pending:
-		_rect_settle_pending = true
-		call_deferred("_settle_panel_rect")
-
-
-func _settle_panel_rect() -> void:
-	_rect_settle_pending = false
 	_apply_panel_rect()
 
 
 func _apply_panel_rect() -> void:
 	var view: Vector2 = get_viewport_rect().size
-	var rect: Rect2 = compute_panel_rect(view, get_combined_minimum_size(), PANEL_PREFERRED_TOP)
-	anchor_left = 1.0
-	anchor_right = 1.0
-	anchor_top = 0.0
-	anchor_bottom = 0.0
-	grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	grow_vertical = Control.GROW_DIRECTION_END
+	var rect: Rect2 = compute_panel_rect(view, PANEL_PREFERRED_TOP)
 	# Anchored to the right edge, so offsets are measured back from the viewport's right side.
 	offset_left = rect.position.x - view.x
 	offset_right = rect.position.x + rect.size.x - view.x
@@ -379,20 +435,18 @@ func _apply_panel_rect() -> void:
 	offset_bottom = rect.position.y + rect.size.y
 
 
-## Pure layout rule for the panel, in viewport coordinates: a right-justified rect that fits
-## inside the viewport on BOTH axes, preferring [param preferred_top] until the content is too
-## tall to fit from there. Static so the rule is testable without standing up a live panel.
-##
-## The top bar is treated as forbidden ground: the panel slides up only as far as
-## PANEL_SAFE_TOP. If content ever exceeds that band it grows past the BOTTOM instead, which
-## costs at worst a clipped button -- far cheaper than hiding the currency readouts.
-static func compute_panel_rect(view_size: Vector2, content_min: Vector2, preferred_top: float) -> Rect2:
-	var avail_w: float = maxf(PANEL_MIN_WIDTH, view_size.x - PANEL_MARGIN * 2.0)
-	var band_h: float = maxf(PANEL_MIN_HEIGHT, view_size.y - PANEL_MARGIN - PANEL_SAFE_TOP)
-	var w: float = clampf(maxf(PANEL_MIN_WIDTH, content_min.x), PANEL_MIN_WIDTH, avail_w)
-	var h: float = clampf(content_min.y, PANEL_MIN_HEIGHT, band_h)
-	var top: float = clampf(preferred_top, PANEL_SAFE_TOP, maxf(PANEL_SAFE_TOP, view_size.y - PANEL_MARGIN - h))
-	return Rect2(view_size.x - PANEL_MARGIN - w, top, w, h)
+## The fixed panel rect for a viewport of [param view_size]: right-justified and exactly
+## PANEL_WIDTH x PANEL_HEIGHT. Independent of content by construction (rules R1/R2), so the
+## window cannot resize as the player upgrades or when a different tower is selected. It
+## prefers [param preferred_top] (just under the IntelPanel) and never rises above
+## PANEL_SAFE_TOP (the bottom of the top bar). Static so the rule is testable headlessly.
+static func compute_panel_rect(view_size: Vector2, preferred_top: float) -> Rect2:
+	var top: float = clampf(
+		preferred_top,
+		PANEL_SAFE_TOP,
+		maxf(PANEL_SAFE_TOP, view_size.y - PANEL_MARGIN - PANEL_HEIGHT)
+	)
+	return Rect2(view_size.x - PANEL_MARGIN - PANEL_WIDTH, top, PANEL_WIDTH, PANEL_HEIGHT)
 
 
 func _build_upgrade_ladder(inst: TowerInstance, tsys: TowerSystem) -> void:
@@ -440,58 +494,84 @@ func _build_upgrade_ladder(inst: TowerInstance, tsys: TowerSystem) -> void:
 		_tier_container.add_child(maxed)
 
 
-## One upgrade option: a compact clickable header, with the description as a WRAPPED label beneath.
+## One upgrade option: a branch heading, a wrapped NAME label, a SHORT clickable cost
+## button, then the description as a wrapped label.
 ##
-## The description deliberately does NOT live in the button text. A Button's minimum width is the
-## full unwrapped width of its longest line, and `autowrap_mode` does NOT reduce it (measured: a
-## ~200-character description made a single button 1398 px wide), so the T2 fork -- two such
-## buttons side by side in an HBox -- forced the whole panel off the screen. A wrapping Label's
-## minimum width collapses to its longest word instead, so the text stays readable at any width.
+## No variable text is ever placed in a Button. A Button does not wrap and its minimum
+## width is the full width of its longest line (`autowrap_mode` does NOT reduce it -- a
+## ~200-character description once made a single button 1398 px wide and forced the panel
+## off the screen). A wrapping Label collapses to its longest WORD instead. This is what
+## lets the T3 fork put two options side by side, each half the panel's inner width,
+## without the panel ever widening to fit its content (rule R3/R5).
 func _create_upgrade_card(inst: TowerInstance, tsys: TowerSystem, node: UpgradeNode) -> Control:
 	var card := VBoxContainer.new()
 	card.add_theme_constant_override("separation", 2)
+
+	var branch := Label.new()
+	branch.text = _branch_tag(node)
+	branch.add_theme_font_size_override("font_size", 11)
+	branch.add_theme_color_override("font_color", _branch_color(node.branch))
+	card.add_child(branch)
+
+	var name_label := Label.new()
+	name_label.text = node.display_name
+	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	name_label.add_theme_font_size_override("font_size", 13)
+	name_label.add_theme_color_override("font_color", Color(0.95, 0.88, 1.0))
+	card.add_child(name_label)
 
 	card.add_child(_create_upgrade_button(inst, tsys, node))
 
 	var desc := Label.new()
 	desc.text = node.description
 	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	# Font 10 rather than 11: the T2 fork is the tallest the panel gets, and one point smaller
-	# fits a description into fewer lines -- about 40 px off the fork, which is what keeps the
-	# whole panel below the top bar. Every option stays fully readable.
 	desc.add_theme_font_size_override("font_size", 10)
 	desc.add_theme_color_override("font_color", Color(0.74, 0.74, 0.80))
 	card.add_child(desc)
 	return card
 
 
-## The clickable header of one upgrade option. Its text stays SHORT (branch, name, cost, impact)
-## for the reason documented on `_create_upgrade_card`; the fork's "locks the other branches"
-## warning is stated once by the T3 warning label rather than repeated on every button.
+## Column heading for an upgrade option (branch + tier), shown above its name. Kept to a
+## fixed, pre-measured width so it never forces a fork column wider.
+static func _branch_tag(node: UpgradeNode) -> String:
+	match node.branch:
+		_UpgradeNode.Branch.REVEALED:
+			return "REVEALED T%d" % node.tier
+		_UpgradeNode.Branch.RIGGED:
+			return "RIGGED T%d" % node.tier
+		_UpgradeNode.Branch.RITE:
+			return "RITE T%d" % node.tier
+	return "SHARED T%d" % node.tier
+
+
+static func _branch_color(branch: int) -> Color:
+	match branch:
+		_UpgradeNode.Branch.REVEALED:
+			return Color(0.60, 0.85, 1.0)
+		_UpgradeNode.Branch.RIGGED:
+			return Color(1.0, 0.70, 0.35)
+		_UpgradeNode.Branch.RITE:
+			return Color(0.80, 0.55, 1.0)
+	return Color(0.75, 0.78, 0.85)
+
+
+## The clickable cost line of one upgrade option: the only part that is a Button, and it is
+## kept SHORT (rule R3) and broken over two lines so it fits a fork column's half width.
 func _create_upgrade_button(inst: TowerInstance, tsys: TowerSystem, node: UpgradeNode) -> Button:
 	var btn := Button.new()
 	btn.focus_mode = Control.FOCUS_NONE
-	btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	btn.add_theme_font_size_override("font_size", 13)
+	btn.add_theme_font_size_override("font_size", 12)
 	var check: Dictionary = tsys.can_upgrade_tower(inst, node.id, false)
 	btn.disabled = not bool(check.get("ok", false))
 
 	var curr_name: String = _currency_label(node.currency)
 	var impact_str: String = ""
 	if node.corruption_delta > 0:
-		impact_str = " [+%d Corruption]" % node.corruption_delta
+		impact_str = "\n+%d Corruption" % node.corruption_delta
 	elif node.jank_set > 0:
-		impact_str = " [Sets %d%% Jank]" % node.jank_set
+		impact_str = "\nSets %d%% Jank" % node.jank_set
 
-	var branch_tag: String = "T%d" % node.tier
-	if node.branch == _UpgradeNode.Branch.REVEALED:
-		branch_tag = "REVEALED T%d" % node.tier
-	elif node.branch == _UpgradeNode.Branch.RITE:
-		branch_tag = "RITE T%d" % node.tier
-	elif node.branch == _UpgradeNode.Branch.RIGGED:
-		branch_tag = "RIGGED T%d" % node.tier
-
-	btn.text = "[%s] %s\nCost: %d %s%s" % [branch_tag, node.display_name, node.cost, curr_name, impact_str]
+	btn.text = "Cost: %d %s%s" % [node.cost, curr_name, impact_str]
 	btn.pressed.connect(_on_upgrade_pressed.bind(inst, node.id))
 	return btn
 

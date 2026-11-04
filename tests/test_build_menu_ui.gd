@@ -295,28 +295,26 @@ func test_03_urban_center_biome_skyscrapers_districts_and_cleared_street_under_t
 	clock.manual_mode = false
 
 
-## The T2 fork is where the upgrade descriptions are on screen all at once, and it used to push
-## the panel thousands of pixels wide: a Button's minimum width is the full UNWRAPPED width of its
-## longest line and autowrap_mode does not reduce it, so two ~1398 px fork buttons side by side in
-## an HBox forced the panel off the screen. Descriptions now live in wrapping Labels instead.
-func test_04_tower_panel_upgrade_fork_stays_on_screen() -> void:
+## The panel is ONE FIXED SIZE for its whole life (rules R1/R2 in tower_panel.gd): it does not
+## resize as the player upgrades, and it is the same size for every tower type. Content that can
+## grow -- the T2 fork with two wrapped-description columns side by side -- scrolls inside the
+## fixed frame instead of widening or heightening it. The old panel sized itself to its content,
+## so a Button's full UNWRAPPED line width (up to ~1398 px for a description) pushed it off screen.
+func test_04_tower_panel_has_one_fixed_size_for_every_tower_and_state() -> void:
 	var view := Vector2(1152.0, 648.0)
+	var fixed := Vector2(TowerPanel.PANEL_WIDTH, TowerPanel.PANEL_HEIGHT)
 
-	# 1. The pure layout rule must never place the panel partly off the screen.
-	var huge: Rect2 = TowerPanel.compute_panel_rect(view, Vector2(1398.0, 900.0), 226.0)
-	assert(huge.position.x >= 0.0 and huge.position.y >= 0.0, "Panel must never start off screen")
-	assert(
-		huge.position.x + huge.size.x <= view.x and huge.position.y + huge.size.y <= view.y,
-		"Panel must never extend past the screen edge"
-	)
-	var small: Rect2 = TowerPanel.compute_panel_rect(view, Vector2(318.0, 200.0), 226.0)
-	assert(is_equal_approx(small.position.y, 226.0), "A panel that fits keeps its top under the IntelPanel")
-	assert(
-		is_equal_approx(small.position.x + small.size.x, view.x - TowerPanel.PANEL_MARGIN),
-		"Panel must stay right-justified"
-	)
+	# 1. The pure layout rule returns a constant size, independent of content AND of the viewport.
+	var a: Rect2 = TowerPanel.compute_panel_rect(view, TowerPanel.PANEL_PREFERRED_TOP)
+	var b: Rect2 = TowerPanel.compute_panel_rect(Vector2(3840.0, 2160.0), TowerPanel.PANEL_PREFERRED_TOP)
+	assert(a.size == fixed, "The panel rect must be exactly the fixed frame (got %s)" % str(a.size))
+	assert(b.size == fixed, "The frame size must not depend on the viewport")
+	assert(is_equal_approx(a.position.y, TowerPanel.PANEL_PREFERRED_TOP), "A frame that fits keeps its top under the IntelPanel")
+	assert(is_equal_approx(a.position.x + a.size.x, view.x - TowerPanel.PANEL_MARGIN), "Frame must stay right-justified")
+	assert(a.position.x >= 0.0 and a.position.x + a.size.x <= view.x, "Frame must fit on screen horizontally")
+	assert(a.position.y >= TowerPanel.PANEL_SAFE_TOP - 0.5, "Frame must never rise into the top bar")
 
-	# 2. The real panel in its T2 fork state, measured with real text metrics.
+	# 2. The live panel: every tower, at T1 and at the T2 fork, must report the SAME fixed size.
 	var gs: GameStateNode = _get_game_state()
 	var clock: SimClockNode = _get_sim_clock()
 	clock.manual_mode = true
@@ -325,16 +323,67 @@ func test_04_tower_panel_upgrade_fork_stays_on_screen() -> void:
 	var main_inst: Node = main_packed.instantiate()
 	add_child(main_inst)
 	var tower_panel: TowerPanel = main_inst.get_node("HUD/TowerPanel") as TowerPanel
+	assert(
+		tower_panel.custom_minimum_size == fixed,
+		"The panel must pin its fixed frame via custom_minimum_size (got %s)" % str(tower_panel.custom_minimum_size)
+	)
+	# The structural guarantee that variable content can never grow the frame: the readouts and
+	# upgrade ladder live in a vertically-scrolling, horizontally-locked container.
+	assert(tower_panel._scroll is ScrollContainer, "The panel must hold its variable detail in a ScrollContainer")
+	assert(
+		tower_panel._scroll.vertical_scroll_mode != ScrollContainer.SCROLL_MODE_DISABLED,
+		"Variable content must be allowed to scroll vertically instead of growing the frame"
+	)
+	assert(
+		tower_panel._scroll.horizontal_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED,
+		"Horizontal scrolling must be off so a too-wide child clips rather than stretching the frame"
+	)
+	assert(tower_panel._detail_vbox.get_parent() == tower_panel._scroll, "Stats + ladder must live inside the scroll area")
+	assert(tower_panel._stats_label.get_parent() == tower_panel._detail_vbox, "Stats readout must be inside the scroll area")
+	assert(tower_panel._tier_container.get_parent() == tower_panel._detail_vbox, "Upgrade ladder must be inside the scroll area")
 
-	var placed: TowerInstance = null
-	for h: Vector2i in gs.path_generator.get_buildable_hexes():
-		placed = gs.request_place_tower(h, "gutter_ritual_circle")
-		if placed != null:
-			break
-	assert(placed != null, "Must place a tower for the fork UI")
-	gs.add_currency(0, 10000, "test")
-	assert(gs.request_upgrade_tower(placed, placed.def.t2_upgrade.id), "T2 must purchase")
-	gs.select_placed_tower(placed)
+	var towers: Array[TowerData] = _TowerLibrary.load_towers()
+	gs.add_currency(0, 1000000, "test")
+	gs.add_currency(1, 1000000, "test")
+	var hexes: Array[Vector2i] = gs.path_generator.get_buildable_hexes()
+	assert(hexes.size() > towers.size(), "Need a buildable hex per tower plus one for the fork check")
+
+	var ti := 0
+	for td: TowerData in towers:
+		# Some towers may only build on particular hexes (the_congregation must sit adjacent to the
+		# path), so scan forward until one accepts the placement rather than assuming hex order.
+		var placed: TowerInstance = null
+		while placed == null and ti < hexes.size():
+			placed = gs.request_place_tower(hexes[ti], td.id)
+			ti += 1
+		assert(placed != null, "Must place %s" % td.id)
+		gs.select_placed_tower(placed)
+		# Only WIDTH is meaningful without a layout frame: a wrapped Label collapses to its longest
+		# word at any time, whereas a wrapped Label's HEIGHT (and so the panel's) is not resolvable
+		# until something lays the containers out. Width is exactly the axis the old bug abused.
+		var m1: Vector2 = tower_panel.get_combined_minimum_size()
+		assert(
+			m1.x <= fixed.x + 0.5,
+			"%s T1 content must not demand more width than the frame (content %s vs frame %s)" % [td.id, str(m1), str(fixed)]
+		)
+		if placed.def.t2_upgrade != null:
+			gs.request_upgrade_tower(placed, placed.def.t2_upgrade.id)
+			var m2: Vector2 = tower_panel.get_combined_minimum_size()
+			assert(
+				m2.x <= fixed.x + 0.5,
+				"%s T2 fork content must not demand more width than the frame (content %s vs frame %s)" % [td.id, str(m2), str(fixed)]
+			)
+		gs.select_placed_tower(null)
+
+	# 3. The fork still shows two branches side by side with WRAPPED description labels, and no
+	#    button line is wider than the column / inner width it has to fit (rules R3/R5).
+	var gutter: TowerInstance = null
+	while gutter == null and ti < hexes.size():
+		gutter = gs.request_place_tower(hexes[ti], "gutter_ritual_circle")
+		ti += 1
+	assert(gutter != null, "Must place a gutter_ritual_circle for the fork check")
+	gs.request_upgrade_tower(gutter, gutter.def.t2_upgrade.id)
+	gs.select_placed_tower(gutter)
 
 	var fork_boxes: Array[HBoxContainer] = []
 	for c: Node in tower_panel._tier_container.get_children():
@@ -342,75 +391,65 @@ func test_04_tower_panel_upgrade_fork_stays_on_screen() -> void:
 			fork_boxes.append(c)
 	assert(fork_boxes.size() == 1, "T2 must show exactly one fork row")
 	assert(fork_boxes[0].get_child_count() == 2, "The fork row must offer Revealed and Rigged side by side")
-	# The Rite row is deliberately ABSENT here: this test never draws a Rite, and the branch
-	# stays hidden until the cult has received one (pinned by test_06). Warning + fork pair is
-	# the whole of T2 for a player who has no Rites.
-	assert(
-		tower_panel._tier_container.get_child_count() == 2,
-		"With no Rite received, T2 must show only the locking warning and the fork pair"
-	)
 
-	# The descriptions must still be READABLE, just no longer inside the buttons.
 	var rev_card: Control = fork_boxes[0].get_child(0) as Control
-	var rev_desc: Label = rev_card.get_child(1) as Label
-	assert(rev_desc != null and rev_desc is Label, "A fork option must still show its description")
-	assert(
-		rev_desc.text == placed.def.revealed_t3_upgrade.description,
-		"The fork description label must carry the upgrade's own description"
-	)
-	assert(
-		rev_desc.autowrap_mode != TextServer.AUTOWRAP_OFF,
-		"The description label must wrap, or it stretches the panel off the screen"
-	)
-	assert(rev_desc.text.length() > 40, "This tower's description is long: it is the case that broke the layout")
+	var desc_found := false
+	for sub: Node in rev_card.get_children():
+		if sub is Label and (sub as Label).text == gutter.def.revealed_t3_upgrade.description:
+			desc_found = true
+			assert((sub as Label).autowrap_mode != TextServer.AUTOWRAP_OFF, "The description label must wrap")
+	assert(desc_found, "A fork option must show its description in a wrapped label, not inside a button")
 
-	# 3. Measured content on a real screen: the panel must fit on both axes.
-	#
-	# Only the WIDTH is meaningful here. A wrapped Label reports its real width at any layout
-	# state (a Label collapses to its longest word, a Button does not collapse at all), which is
-	# exactly how the original bug showed up. Its HEIGHT is not meaningful in a single-pass test:
-	# nothing lays the containers out without a frame, so wrapped heights come back garbage.
-	var min_sz: Vector2 = tower_panel.get_combined_minimum_size()
-	assert(min_sz.x < view.x * 0.6, "T2 fork content must not demand most of the screen width (got %.0f)" % min_sz.x)
-	var rect: Rect2 = TowerPanel.compute_panel_rect(view, min_sz, TowerPanel.PANEL_PREFERRED_TOP)
-	assert(rect.position.x >= 0.0, "T2 fork panel must not run off the left edge")
-	assert(rect.position.x + rect.size.x <= view.x, "T2 fork panel must not run off the right edge")
-
-	# The root cause of the stretched panel: long descriptions inside BUTTON text. Button minimum
-	# width is the full unwrapped width of its longest line and autowrap_mode does not reduce it,
-	# so no button may ever carry a description again -- the cards put them in wrapping labels.
-	for card: Node in tower_panel._tier_container.get_children():
-		for sub: Node in card.get_children():
-			if sub is Button:
-				var b: Button = sub
-				assert(
-					b.text.length() < 80,
-					"An upgrade button must stay a short header, not carry a description (got %d chars)" % b.text.length()
-				)
-				for u: UpgradeNode in [
-					placed.def.revealed_t3_upgrade, placed.def.rigged_t3_upgrade, placed.def.rite_t3_upgrade
-				]:
-					if u != null:
-						assert(not b.text.contains(u.description), "A description must not be inside a button's text")
-
-	# The top bar must stay readable while choosing a branch: the rule may never place the panel
-	# into it, whatever the content height turns out to be. (The panel's real T2 height is
-	# measured in a live run, because that is the only place a layout actually happens.)
-	assert(
-		TowerPanel.compute_panel_rect(view, Vector2(406.0, 625.0), TowerPanel.PANEL_PREFERRED_TOP).position.y
-		>= TowerPanel.PANEL_SAFE_TOP - 0.5,
-		"Even at its tallest measured height the panel must stay below the top bar"
+	# Fork buttons must fit HALF the inner width; the pinned actions must fit the FULL inner width.
+	var half: float = (TowerPanel.PANEL_INNER_WIDTH - 6.0) / 2.0
+	_assert_buttons_fit(_collect_buttons(fork_boxes[0]), half, "fork column")
+	_assert_buttons_fit(
+		[tower_panel._sell_button, tower_panel._penance_button, tower_panel._maintenance_button, tower_panel._cleanse_button],
+		TowerPanel.PANEL_INNER_WIDTH,
+		"pinned action"
 	)
-	for content_h: float in [120.0, 400.0, 625.0, 900.0]:
-		var r: Rect2 = TowerPanel.compute_panel_rect(view, Vector2(406.0, content_h), TowerPanel.PANEL_PREFERRED_TOP)
-		assert(
-			r.position.y >= TowerPanel.PANEL_SAFE_TOP - 0.5,
-			"Panel must never rise into the top bar (content %.0f put it at %.0f)" % [content_h, r.position.y]
-		)
-		assert(r.position.x >= 0.0 and r.position.x + r.size.x <= view.x, "Panel must stay within the screen width")
 
 	main_inst.queue_free()
 	clock.manual_mode = false
+
+
+## True when any upgrade option label or button below the panel's tier list carries [param needle].
+func _tier_text_contains(panel: TowerPanel, needle: String) -> bool:
+	return _subtree_text_contains(panel._tier_container, needle)
+
+
+func _subtree_text_contains(node: Node, needle: String) -> bool:
+	for c: Node in node.get_children():
+		if c is Button and (c as Button).text.contains(needle):
+			return true
+		if c is Label and (c as Label).text.contains(needle):
+			return true
+		if _subtree_text_contains(c, needle):
+			return true
+	return false
+
+
+## Every Button at or below [param node].
+func _collect_buttons(node: Node) -> Array[Button]:
+	var out: Array[Button] = []
+	for c: Node in node.get_children():
+		if c is Button:
+			out.append(c as Button)
+		out.append_array(_collect_buttons(c))
+	return out
+
+
+## Asserts no single line of any button's text is wider than [param limit] px, so a button can
+## never force a window wider than the column it lives in (rule R3).
+func _assert_buttons_fit(buttons: Array, limit: float, what: String) -> void:
+	for b: Button in buttons:
+		if b == null:
+			continue
+		var font: Font = b.get_theme_font("font")
+		var fs: int = b.get_theme_font_size("font_size")
+		for line: String in b.text.split("\n"):
+			var w: float = font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+			assert(w <= limit + 0.5, "%s button line '%s' (%.0f px) must fit %.0f px" % [what, line, w, limit])
 
 
 ## The player-facing purchase path must charge a Rite node in RITES. It used to charge Scrap and
@@ -581,19 +620,5 @@ func test_07_selling_requires_a_confirming_second_press_and_warns_about_rites() 
 
 	main_inst.queue_free()
 	clock.manual_mode = false
-
-
-## True when any upgrade button in the panel's tier list carries [param needle] in its text.
-func _tier_text_contains(panel: TowerPanel, needle: String) -> bool:
-	return _subtree_text_contains(panel._tier_container, needle)
-
-
-func _subtree_text_contains(node: Node, needle: String) -> bool:
-	for c: Node in node.get_children():
-		if c is Button and (c as Button).text.contains(needle):
-			return true
-		if _subtree_text_contains(c, needle):
-			return true
-	return false
 
 

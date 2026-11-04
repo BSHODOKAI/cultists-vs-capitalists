@@ -20,6 +20,15 @@ const CONFIG_SECTION: String = "display"
 const BASE_VIEWPORT_HEIGHT: int = 648
 const DEFAULT_FALLBACK_SCREEN_SIZE: Vector2i = Vector2i(1920, 1080)
 
+## The resolution the HUD and every pop-up window/banner are authored against.
+## UI scaling follows the window but is clamped around this base so the UI stays
+## consistent and bounded instead of ballooning to fill a high-resolution screen.
+const UI_BASE_SIZE: Vector2i = Vector2i(1152, 648)
+## The UI never shrinks below the base (UI_MIN_SCALE) nor grows past this factor
+## of it (UI_MAX_SCALE) no matter how large the window is.
+const UI_MIN_SCALE: float = 1.0
+const UI_MAX_SCALE: float = 2.0
+
 ## Common standard resolutions across 16:9, 16:10, 21:9, and 4:3 aspect ratios.
 const CANDIDATE_RESOLUTIONS: Array[Vector2i] = [
 	# 16:9
@@ -333,12 +342,56 @@ func set_window_mode(mode: int) -> void:
 		current_window_mode = mode
 
 
+## Effective UI scale for a window of [param window_size]: the design base
+## stretched by its height, clamped to [UI_MIN_SCALE, UI_MAX_SCALE] so the HUD
+## stays consistent and bounded across every resolution and window mode.
+static func compute_ui_scale(window_size: Vector2i) -> float:
+	if window_size.y <= 0:
+		return UI_MIN_SCALE
+	return clampf(float(window_size.y) / float(UI_BASE_SIZE.y), UI_MIN_SCALE, UI_MAX_SCALE)
+
+
+## The Window.content_scale_size (Control layout space) that yields
+## compute_ui_scale() for a window of [param window_size]: the window size
+## divided by its clamped scale. Keeping the base aspect equal to the window's
+## means "keep" aspect introduces no letterboxing.
+static func compute_content_scale_size(window_size: Vector2i) -> Vector2i:
+	var scale: float = compute_ui_scale(window_size)
+	return Vector2i(
+		maxi(1, roundi(float(window_size.x) / scale)),
+		maxi(1, roundi(float(window_size.y) / scale))
+	)
+
+
+## Applies the bounded, consistent canvas_items scaling to [param root_window]
+## for its CURRENT size. Safe to call on every window resize: the UI scale is
+## derived from the real window size, never from a possibly-mismatched
+## resolution, so windows/banners can no longer grow to fill the screen.
+static func apply_bounded_ui_scale(root_window: Window) -> void:
+	if root_window == null:
+		return
+	var size: Vector2i = root_window.size
+	if size.x <= 0 or size.y <= 0:
+		return
+	root_window.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
+	root_window.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_KEEP
+	root_window.content_scale_size = compute_content_scale_size(size)
+
+
 ## Applies the current resolution, aspect ratio, and window mode to the root window / DisplayServer.
 func apply_to_window(root_window: Window = null, persist: bool = true) -> void:
 	if root_window != null:
+		# UI scaling is derived from the size the window will actually have, so it
+		# stays bounded whether the player picks a resolution or goes fullscreen on a
+		# larger monitor. The autoloaded UiScale controller re-applies this on resize.
+		var target_size: Vector2i = current_resolution
+		if current_window_mode == WindowMode.FULLSCREEN and DisplayServer.get_name() != "headless":
+			var screen_size: Vector2i = DisplayServer.screen_get_size(DisplayServer.window_get_current_screen())
+			if screen_size.x > 0 and screen_size.y > 0:
+				target_size = screen_size
 		root_window.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
 		root_window.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_KEEP
-		root_window.content_scale_size = current_resolution
+		root_window.content_scale_size = compute_content_scale_size(target_size)
 
 	if DisplayServer.get_name() != "headless" and not Engine.is_embedded_in_editor():
 		if not is_steam_deck():

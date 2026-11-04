@@ -18,6 +18,7 @@ config/features=PackedStringArray("4.7")
 
 SimClock="*res://scripts/core/sim_clock.gd"
 GameState="*res://scripts/core/game_state.gd"
+UiScale="*res://scripts/core/ui_scale_controller.gd"
 
 [display]
 

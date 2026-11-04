@@ -27,6 +27,52 @@ func test_supported_resolutions_bounded_by_machine_screen() -> void:
 	assert(res_custom.has(custom_screen), "Custom native resolution must be included in supported list")
 
 
+func test_ui_scale_is_consistent_and_bounded_across_resolutions() -> void:
+	# The scale follows window height around the 1152x648 design base...
+	assert(is_equal_approx(_DisplaySettings.compute_ui_scale(Vector2i(1152, 648)), 1.0), "Base resolution must scale 1.0")
+	assert(
+		is_equal_approx(_DisplaySettings.compute_ui_scale(Vector2i(1920, 1080)), 1080.0 / 648.0),
+		"1080p must scale by the height ratio"
+	)
+	# ...but is clamped: never below the base, never above UI_MAX_SCALE even on 4K/8K.
+	assert(is_equal_approx(_DisplaySettings.compute_ui_scale(Vector2i(2560, 1440)), _DisplaySettings.UI_MAX_SCALE), "1440p must clamp to UI_MAX_SCALE")
+	assert(is_equal_approx(_DisplaySettings.compute_ui_scale(Vector2i(3840, 2160)), _DisplaySettings.UI_MAX_SCALE), "4K must clamp to UI_MAX_SCALE")
+	assert(is_equal_approx(_DisplaySettings.compute_ui_scale(Vector2i(7680, 4320)), _DisplaySettings.UI_MAX_SCALE), "8K must clamp to UI_MAX_SCALE")
+	assert(is_equal_approx(_DisplaySettings.compute_ui_scale(Vector2i(800, 450)), _DisplaySettings.UI_MIN_SCALE), "Sub-base window must clamp to UI_MIN_SCALE")
+
+	# The layout space handed to the HUD shrinks as the window grows, so a Control
+	# authored at the base never renders larger than UI_MAX_SCALE * its design size.
+	for size: Vector2i in [
+		Vector2i(1152, 648), Vector2i(1280, 800), Vector2i(1920, 1080),
+		Vector2i(2560, 1440), Vector2i(3440, 1440), Vector2i(3840, 2160)
+	]:
+		var base: Vector2i = _DisplaySettings.compute_content_scale_size(size)
+		var scale: float = float(size.y) / float(base.y)
+		assert(scale <= _DisplaySettings.UI_MAX_SCALE + 0.001, "UI scale at %s must stay <= UI_MAX_SCALE, got %.3f" % [str(size), scale])
+		assert(scale >= _DisplaySettings.UI_MIN_SCALE - 0.001, "UI scale at %s must stay >= UI_MIN_SCALE, got %.3f" % [str(size), scale])
+
+	# The old bug pinned content_scale_size to a resolution, so the same monitor
+	# produced a ~1x HUD (window == resolution) or ballooned ~3x (fullscreen /
+	# maximized with a low saved resolution). A 4K window must now lay the HUD out
+	# at a bounded 1920x1080 (2x), never at 3840x2160 (1:1 = tiny) nor 1152x648 (3.3x).
+	assert(
+		_DisplaySettings.compute_content_scale_size(Vector2i(3840, 2160)) == Vector2i(1920, 1080),
+		"4K window must lay the HUD out at 1920x1080 (bounded 2x)"
+	)
+
+	# apply_bounded_ui_scale must stamp those same bounded values onto a live Window.
+	var win := Window.new()
+	win.size = Vector2i(3840, 2160)
+	_DisplaySettings.apply_bounded_ui_scale(win)
+	assert(win.content_scale_mode == Window.CONTENT_SCALE_MODE_CANVAS_ITEMS, "Bounded scale must use canvas_items mode")
+	assert(win.content_scale_aspect == Window.CONTENT_SCALE_ASPECT_KEEP, "Bounded scale must keep aspect")
+	assert(
+		win.content_scale_size == Vector2i(1920, 1080),
+		"Bounded scale must cap a 4K window to a 1920x1080 base, got %s" % str(win.content_scale_size)
+	)
+	win.free()
+
+
 func test_aspect_ratio_filtering_and_selection() -> void:
 	var screen_4k := Vector2i(3840, 2160)
 	var aspects: PackedStringArray = _DisplaySettings.get_supported_aspect_ratios(screen_4k)
