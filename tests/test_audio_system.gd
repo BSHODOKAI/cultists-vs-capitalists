@@ -39,6 +39,8 @@ func test_01_audio_balance_resource_and_all_wav_files_load() -> void:
 		_AudioBalance.CUE_BOSS_DEATH,
 		_AudioBalance.CUE_BOSS_SPECIAL_ABILITY,
 		_AudioBalance.CUE_ENVIRONMENT_URBAN,
+		_AudioBalance.CUE_ENVIRONMENT_URBAN_2,
+		_AudioBalance.CUE_ENVIRONMENT_URBAN_3,
 		_AudioBalance.CUE_WAVE_STARTED,
 		_AudioBalance.CUE_WAVE_ENDED,
 		_AudioBalance.CUE_STARS_ARE_RIGHT,
@@ -254,11 +256,16 @@ func test_05_sound_manager_in_main_scene_and_urban_environment_loop() -> void:
 	assert(sm.is_environment_playing(), "SoundManager must start the urban environment loop on ready")
 	assert(
 		sm.active_environment_cue_id == _AudioBalance.CUE_ENVIRONMENT_URBAN,
-		"Active environment cue must be environment_urban"
+		"Active environment cue must start on environment_urban (playlist movement 1)"
 	)
 	assert(
-		sm.get_environment_stream_path().ends_with("Rainy City Alley Loop.wav"),
-		"Urban environment stream must be Rainy City Alley Loop.wav"
+		sm.get_environment_stream_path().ends_with("ambient_urban_center_01.mp3"),
+		"Urban environment stream must be the ambient_urban_center_01 playlist track"
+	)
+	var bal: AudioBalanceData = load(_AudioBalance.DEFAULT_RESOURCE_PATH) as AudioBalanceData
+	assert(
+		bal != null and bal.get_environment_playlist_for_biome("urban_center").size() == 3,
+		"urban_center biome must define a 3-movement crossfading ambience playlist"
 	)
 
 	# Trigger construction & upgrade via GameState and verify SoundManager logs the cues
@@ -418,3 +425,64 @@ func test_07_every_run_event_has_a_unique_loadable_stinger() -> void:
 		var sys := _AudioCueSystem.new(bal, null, 7)
 		var res: Dictionary = sys.on_run_event(ev.id)
 		assert(bool(res["played"]) and String(res["cue_id"]) == cue_id, "on_run_event('%s') must play cue '%s'" % [ev.id, cue_id])
+
+
+# --- Test 8: Biome ambience plays as a crossfading playlist ------------------
+
+func test_08_biome_ambience_crossfades_between_playlist_tracks() -> void:
+	var sm := _SoundManager.new()
+	sm.auto_start_environment = false
+	add_child(sm)
+
+	assert(sm._environment_players.size() == 2, "SoundManager must own two environment players to crossfade between beds")
+
+	var started: bool = sm.play_environment_for_biome("urban_center")
+	assert(started, "urban_center ambience playlist must start")
+	assert(
+		sm.active_environment_cue_id == _AudioBalance.CUE_ENVIRONMENT_URBAN,
+		"Playlist must start on movement 1 (environment_urban)"
+	)
+	assert(sm._environment_playlist.size() == 3, "urban_center playlist must contain three movements")
+
+	var first_slot: int = sm._environment_active_slot
+
+	# Begin a crossfade to movement 2. In headless no stream is auto-assigned, so
+	# give the incoming bed one to exercise the per-frame crossfade loop.
+	sm._begin_environment_track(1, true)
+	assert(
+		sm.active_environment_cue_id == _AudioBalance.CUE_ENVIRONMENT_URBAN_2,
+		"Crossfade must advance to movement 2"
+	)
+	var incoming_slot: int = sm._environment_active_slot
+	assert(incoming_slot != first_slot, "Crossfade must fade in on the spare environment slot")
+	assert(sm._environment_fade_active, "Starting a crossfade must set the fade flag")
+
+	var incoming: AudioStreamPlayer = sm._environment_players[incoming_slot]
+	var outgoing: AudioStreamPlayer = sm._environment_players[1 - incoming_slot]
+	incoming.stream = load("res://assets/generated/audio/ambient_urban_center_02.mp3") as AudioStream
+	assert(incoming.stream != null, "Movement 2 stream must load")
+
+	var target_db: float = sm._environment_target_volume_db()
+
+	# Halfway through: incoming bed has risen, outgoing bed has fallen.
+	sm._update_environment_crossfade(sm._environment_fade_duration * 0.5)
+	assert(incoming.volume_db > _AudioSettings.MUTED_DB + 1.0, "Incoming bed must fade up during a crossfade")
+	assert(outgoing.volume_db < target_db - 1.0, "Outgoing bed must fade down during a crossfade")
+
+	# Finishing the fade leaves movement 2 at full volume and silences movement 1.
+	sm._update_environment_crossfade(sm._environment_fade_duration + 0.1)
+	assert(not sm._environment_fade_active, "Crossfade must complete and clear the fade flag")
+	assert(
+		sm.active_environment_cue_id == _AudioBalance.CUE_ENVIRONMENT_URBAN_2,
+		"Movement 2 must remain the active bed after the fade"
+	)
+	assert(is_equal_approx(incoming.volume_db, target_db), "Incoming bed must sit at the target volume after the fade")
+	assert(not outgoing.playing or outgoing.stream == null, "Outgoing bed must be released after the fade")
+
+	# Muting Background Audio silences every environment slot.
+	sm.apply_audio_volumes(0, 100)
+	assert(not sm.is_environment_playing(), "Muting Background Audio must stop the ambience playlist")
+	assert(is_equal_approx(sm.get_environment_volume_db(), _AudioSettings.MUTED_DB), "Muted ambience must report MUTED_DB")
+
+	remove_child(sm)
+	sm.free()

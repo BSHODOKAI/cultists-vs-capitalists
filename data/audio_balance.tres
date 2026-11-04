@@ -8,8 +8,12 @@ sfx_pool_size = 16
 max_global_sfx_voices = 8
 master_sfx_volume_db = 0.0
 environment_volume_db = -14.0
+environment_crossfade_duration = 5.0
 polyphony_attenuation_per_voice_db = 2.5
 global_density_attenuation_per_voice_db = 0.8
+biome_environment_playlists = {
+"urban_center": ["environment_urban", "environment_urban_2", "environment_urban_3"]
+}
 biome_environment_cues = {
 "urban_center": "environment_urban"
 }
@@ -65,11 +69,31 @@ cues = {
 "volume_db": -5.0
 },
 "environment_urban": {
-"active_duration": 60.0,
+"active_duration": 22.0,
 "loop": true,
 "max_voices": 1,
 "min_interval": 0.0,
-"path": "res://Sound FX Starter Pack Vol. 1/Environment/Rainy City Alley Loop.wav",
+"path": "res://assets/generated/audio/ambient_urban_center_01.mp3",
+"pitch_max": 1.0,
+"pitch_min": 1.0,
+"volume_db": -14.0
+},
+"environment_urban_2": {
+"active_duration": 22.0,
+"loop": true,
+"max_voices": 1,
+"min_interval": 0.0,
+"path": "res://assets/generated/audio/ambient_urban_center_02.mp3",
+"pitch_max": 1.0,
+"pitch_min": 1.0,
+"volume_db": -14.0
+},
+"environment_urban_3": {
+"active_duration": 22.0,
+"loop": true,
+"max_voices": 1,
+"min_interval": 0.0,
+"path": "res://assets/generated/audio/ambient_urban_center_03.mp3",
 "pitch_max": 1.0,
 "pitch_min": 1.0,
 "volume_db": -14.0

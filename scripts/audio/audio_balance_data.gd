@@ -28,7 +28,11 @@ const CUE_MOB_DEATH: String = "mob_death"
 const CUE_BOSS_HIT: String = "boss_hit"
 const CUE_BOSS_DEATH: String = "boss_death"
 const CUE_BOSS_SPECIAL_ABILITY: String = "boss_special_ability"
+## First movement of the urban ambience, and the legacy single-track fallback
+## for the urban_center biome. Additional movements are crossfaded in sequence.
 const CUE_ENVIRONMENT_URBAN: String = "environment_urban"
+const CUE_ENVIRONMENT_URBAN_2: String = "environment_urban_2"
+const CUE_ENVIRONMENT_URBAN_3: String = "environment_urban_3"
 
 # --- Additional Discovered Gameplay & UI Cues --------------------------------
 const CUE_WAVE_STARTED: String = "wave_started"
@@ -72,7 +76,18 @@ const DEFAULT_RESOURCE_PATH: String = "res://data/audio_balance.tres"
 @export var polyphony_attenuation_per_voice_db: float = 2.5
 @export var global_density_attenuation_per_voice_db: float = 0.8
 
-## Biome ID -> environment cue ID mapping.
+## Seconds spent crossfading from one ambience track to the next within a biome
+## playlist, so the beds bleed into each other instead of cutting at the seam.
+@export var environment_crossfade_duration: float = 5.0
+
+## Biome ID -> ordered list of environment cue IDs played back-to-back as a
+## crossfading playlist (the ambient score for that biome).
+@export var biome_environment_playlists: Dictionary = {
+	"urban_center": [CUE_ENVIRONMENT_URBAN, CUE_ENVIRONMENT_URBAN_2, CUE_ENVIRONMENT_URBAN_3],
+}
+
+## Biome ID -> single environment cue ID mapping (legacy/fallback when a biome
+## has no playlist configured).
 @export var biome_environment_cues: Dictionary = {
 	"urban_center": CUE_ENVIRONMENT_URBAN,
 }
@@ -365,15 +380,35 @@ static func build_default_cues() -> Dictionary:
 			"loop": false,
 		},
 
-		# 11. Urban Environment Loop
+		# 11. Urban Environment Score (movement 1 + legacy single-track fallback)
 		CUE_ENVIRONMENT_URBAN: {
-			"path": "res://Sound FX Starter Pack Vol. 1/Environment/Rainy City Alley Loop.wav",
+			"path": "res://assets/generated/audio/ambient_urban_center_01.mp3",
 			"volume_db": -14.0,
 			"min_interval": 0.0,
 			"max_voices": 1,
 			"pitch_min": 1.0,
 			"pitch_max": 1.0,
-			"active_duration": 60.0,
+			"active_duration": 22.0,
+			"loop": true,
+		},
+		CUE_ENVIRONMENT_URBAN_2: {
+			"path": "res://assets/generated/audio/ambient_urban_center_02.mp3",
+			"volume_db": -14.0,
+			"min_interval": 0.0,
+			"max_voices": 1,
+			"pitch_min": 1.0,
+			"pitch_max": 1.0,
+			"active_duration": 22.0,
+			"loop": true,
+		},
+		CUE_ENVIRONMENT_URBAN_3: {
+			"path": "res://assets/generated/audio/ambient_urban_center_03.mp3",
+			"volume_db": -14.0,
+			"min_interval": 0.0,
+			"max_voices": 1,
+			"pitch_min": 1.0,
+			"pitch_max": 1.0,
+			"active_duration": 22.0,
 			"loop": true,
 		},
 
@@ -666,3 +701,14 @@ func get_environment_cue_for_biome(biome_id: String) -> String:
 	if biome_environment_cues.has(biome_id):
 		return String(biome_environment_cues[biome_id])
 	return CUE_ENVIRONMENT_URBAN
+
+
+## Returns the ordered list of environment cue IDs for [param biome_id], played
+## as a crossfading playlist. Falls back to the single legacy cue when no
+## playlist is configured for the biome.
+func get_environment_playlist_for_biome(biome_id: String) -> Array:
+	if biome_environment_playlists.has(biome_id):
+		var list: Variant = biome_environment_playlists[biome_id]
+		if list is Array and not (list as Array).is_empty():
+			return list as Array
+	return [get_environment_cue_for_biome(biome_id)]
