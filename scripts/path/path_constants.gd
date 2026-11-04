@@ -50,7 +50,11 @@ const STARTING_OFFERINGS: int = 150
 const STARTING_SCRAP: int = 40
 const DEFAULT_SCRAP_RATIO: float = 0.5
 
-const BOSS_WAVE_INTERVAL: int = 10
+const BOSS_WAVE_INTERVAL: int = 5
+## Wave of the FIRST boss; bosses then recur every BOSS_WAVE_INTERVAL. Keeps the first boss from
+## being dragged earlier when the interval is shortened. Overridden at run setup from
+## DirectorBalanceData.first_boss_wave via GameState.sync_derived_interval().
+const FIRST_BOSS_WAVE: int = 10
 const BOSS_SLOW_DOT_STRENGTH: float = 0.50
 
 # --- Hex grid & chunk constants ----------------------------------------------

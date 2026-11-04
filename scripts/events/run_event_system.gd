@@ -114,7 +114,8 @@ func get_category_run() -> int:
 # --- Internals ---------------------------------------------------------------
 
 func _is_boss_wave(wave: int) -> bool:
-	return wave > 0 and balance.boss_wave_interval > 0 and (wave % balance.boss_wave_interval) == 0
+	var first: int = maxi(1, balance.first_boss_wave)
+	return wave >= first and balance.boss_wave_interval > 0 and (wave - first) % balance.boss_wave_interval == 0
 
 
 ## The first boss wave is excluded for every event; if a gap roll lands there,

@@ -26,6 +26,7 @@ const _C = preload("res://scripts/path/path_constants.gd")
 @export var max_drift_factor: float = _C.MAX_DRIFT_FACTOR
 @export var preview_lead_waves: int = _C.PREVIEW_LEAD_WAVES
 @export var boss_wave_interval: int = _C.BOSS_WAVE_INTERVAL
+@export var first_boss_wave: int = _C.FIRST_BOSS_WAVE
 
 @export var max_lanes: int = _C.MAX_LANES
 @export var fork_min_wave: int = _C.FORK_MIN_WAVE

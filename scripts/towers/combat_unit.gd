@@ -36,6 +36,7 @@ var speed: float = 1.0
 var spawn_level: int = 0
 var boss_index: int = 1
 var boss_cycle: int = 0
+var boss_tier: float = -1.0
 var boss_timing_mult: float = 1.0
 
 ## Continuous position in path index coordinates (spawns at path.size() - 1, walks toward 0.0).

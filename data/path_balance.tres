@@ -18,4 +18,4 @@ max_candidates = 200
 top_candidate_pool = 3
 max_drift_factor = 1.5
 preview_lead_waves = 2
-boss_wave_interval = 10
+boss_wave_interval = 5

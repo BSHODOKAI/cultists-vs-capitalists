@@ -389,22 +389,25 @@ func sync_derived_interval() -> void:
 	if director == null or director.balance == null:
 		return
 	var interval: int = maxi(1, director.balance.waves_per_interval)
+	var first_boss: int = maxi(1, director.balance.first_boss_wave)
 
 	if path_generator != null:
 		path_generator.boss_wave_interval = interval
+		path_generator.first_boss_wave = first_boss
 
 	if run_event_system != null and run_event_system.balance != null:
 		var eb: EventBalanceData = run_event_system.balance
-		if eb.boss_wave_interval != interval or eb.first_boss_wave != interval:
+		if eb.boss_wave_interval != interval or eb.first_boss_wave != first_boss:
 			eb = eb.duplicate() as EventBalanceData
 			eb.boss_wave_interval = interval
-			eb.first_boss_wave = interval
+			eb.first_boss_wave = first_boss
 			run_event_system.balance = eb
 
 	if tower_system != null and tower_system.balance != null:
-		if tower_system.balance.boss_wave_interval != interval:
+		if tower_system.balance.boss_wave_interval != interval or tower_system.balance.first_boss_wave != first_boss:
 			var tb: TowerBalanceData = tower_system.balance.duplicate() as TowerBalanceData
 			tb.boss_wave_interval = interval
+			tb.first_boss_wave = first_boss
 			tower_system.balance = tb
 
 
@@ -678,14 +681,20 @@ func _spawn_scheduled_item(item: Dictionary) -> CombatUnit:
 	var uid: String = String(item.get("unit_id", ""))
 	var is_boss: bool = bool(item.get("is_boss", false))
 	var b_idx: int = maxi(1, int(item.get("boss_index", 1)))
+	# Wave-anchored boss tier: Boss HP and telegraph shortening derive from the WAVE the boss
+	# arrives on (see WaveDirector.compute_boss_tier), so the interval controls how OFTEN bosses
+	# come, not how hard each one is. Pass -1 for the cycle override so the tier drives the
+	# boss's timing multiplier (at the reference interval this equals completed_cycles exactly).
+	var b_tier: float = float(item.get("boss_tier", -1.0))
 	var lid: int = 0 if is_boss else int(item.get("lane_id", 0))
 	var unit: CombatUnit = tower_system.spawn_unit_from_data(
 		uid,
 		-1.0,
 		b_idx,
 		_combat_rng,
-		locked_roster.completed_cycles if locked_roster != null else -1,
-		lid
+		-1,
+		lid,
+		b_tier
 	)
 	if unit == null:
 		return null

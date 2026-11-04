@@ -20,7 +20,7 @@
 - **Air units** follow the same path at `HexMath.AIR_ALTITUDE = 1.8` (ignoring ground blockers and ground-only towers; targeted only by air-capable towers).
 - A leaked enemy costs lives (`leak_cost`, default `1`). Lives start at **20** (`STARTING_LIVES`).
 - A leaked **Boss** triggers an immediate `GAME_OVER`. Reaching `0` lives triggers `GAME_OVER` and emits a `LossReport`.
-- Every **10th wave** (`10, 20, 30...`) is a Boss wave. When the boss is slain and all wave enemies are cleared, the path extends in `POST_BOSS`.
+- Boss waves arrive every **5** waves from wave **10** (`10, 15, 20...`; `waves_per_interval = 5`, `first_boss_wave = 10`). When the boss is slain and all wave enemies are cleared, the path extends in `POST_BOSS`.
 - **Towers have NO HP in v1.** Enemies interact with towers by disabling (`TowerDisable`), suppressing fire rate (`RangedSuppress`), negating Corruption bonuses (`AntiMagicAura`), or channeling to convert them (`TowerConvert`, `LeveragedBuyout`).
 - **Run Events (see §8):** pseudo-random events fire every `3..7` waves, drawn from a shuffled deck of Event cards (never advertised before they happen). They include buffs and debuffs. The classic "Stars Are Right" (+20% Revealed damage, +10% budget) is now one buff card among many rather than a fixed every-5th-wave event.
 
@@ -68,7 +68,7 @@ All player currency spending must route through the single choke point `GameStat
 - Terrain is `BUILDABLE` or `BLOCKED` (~12% `BLOCKED_TERRAIN_FRACTION`), generated lazily in chunks (`CHUNK_RADIUS = 8`) deterministically from `run_seed + chunk_coord`, independent of chunk load order. Chunks containing path hexes, towers, or reserved preview hexes are pinned and cannot unload.
 - **Initial Path & Growth Lifecycle (`PathGenerator`):**
 - Initial path starts at the player's base (`Vector2i.ZERO`, path index `0`) and extends `INITIAL_PATH_LENGTH = 18` hexes to the initial spawn hex.
-- **Preview (`PREVIEW_LEAD_WAVES = 2`):** Generated at the intermission before wave `8, 18, 28...`. Immediately reserves `ghost_path_hexes` and any hex in the 2-hex build zone *only* of the previewed extension.
+- **Preview (`PREVIEW_LEAD_WAVES = 2`):** Generated at the intermission before wave `8, 13, 18...` (2 waves before each boss). Immediately reserves `ghost_path_hexes` and any hex in the 2-hex build zone *only* of the previewed extension.
 - **Commit:** Happens once after each boss wave in `POST_BOSS` (only when the boss is dead and no enemies remain). Commits the *exact* previewed extension (`10..16` hexes, `MIN_EXT..MAX_EXT`) from the spawn end.
 - **Hard Constraints (H1–H5 — never relaxed):**
 - **H1:** Single non-branching chain; no hex visited twice.
@@ -195,7 +195,7 @@ All 16 regular units live in `res://data/units/*.tres` and all 5 bosses live in 
 - `medic_drone` (8 / 90 / 1.0 / Air, Healer — `Heal(2 hexes, 15 HP/s, 3 targets, not self/medics)`)
 - `drone_carrier` (18 / 450 / 0.6 / Air, Tank, Spawner — Kinetic 0.75, Electric 1.3, `SpawnOnTimer(courier_drone, 4s, cap 6, batch 2)`)
 - **5 Bosses (`Boss` tag):**
-- **Boss Scaling:** `HP = base_hp * (1.0 + 0.55 * (n - 1) + 0.15 * (n - 1)^2)` for 1-based `boss_index = n`. Every completed 5-interval cycle shortens boss telegraphs and cooldowns by **15%** (`0.85^cycle`, min `0.25x`).
+- **Boss Scaling (WAVE-anchored):** bosses arrive every **5** waves from wave **10** (`10, 15, 20...`). Boss HP is anchored to the WAVE, not the boss index: `tier = max(0, wave / 10 - 1)` and `HP = base_hp * (1.0 + 0.55 * tier + 0.15 * tier^2)`, so a shorter boss interval adds MORE bosses without inflating each boss's HP for the wave it arrives on. Telegraphs and cooldowns shorten after each `5` completed reference cycles by **15%** (`0.85^cycles`, min `0.25x`). The first boss is pinned at wave `10` (`DirectorBalanceData.first_boss_wave`), decoupled from the interval so a shorter cadence never drags it earlier.
 - `the_disruptor` (Swarm Syndicate, 1000 base HP, 0.9 speed, Ground): `NetworkEffect` (-8% dmg taken per Syndicate unit within 3 hexes, max 50%) + `SurgePricing` (every 15s, 1.5s siren telegraph, +30% Syndicate speed for 4s).
 - `the_chairman` (Iron Board, 1600 base HP, 0.4 speed, Ground, Armored, Tank): `Restructuring` at 100/66/33% HP (shifts 0.4x resistance to a new DamageTag, halts & immune for 3s while 2 `riot_shield_unit` escorts spawn).
 - `the_raider` (Hostile Takeover, 1200 base HP, 0.6 speed, Ground, Hacker): `LeveragedBuyout` every 20s (4s beam on highest-cost tower within 4 hexes + 150 HP `bid_drone`; converts tower for 10s unless drone is killed, channel is interrupted, or cleansed for 50% base cost).
@@ -209,10 +209,10 @@ All 16 regular units live in `res://data/units/*.tres` and all 5 bosses live in 
 Implemented in `WaveDirector`, `WaveRoster`, `CoverageTracker`, `DirectorBalanceData`, and `DirectorSimulator` (`res://scripts/director/`).
 
 - **Schedule & Factions:**
-- 10 waves per interval (`WAVES_PER_INTERVAL = 10`). Intervals `1..4` of each 5-interval cycle are **Faction** intervals (seeded RNG, no consecutive regular faction repeats); Interval `5` (`5, 10, 15...`) is a **Coalition Mixed** interval (`all 16 units`, `the_holding_company` boss).
+- 5 waves per interval (`WAVES_PER_INTERVAL = 5`). Intervals `1..4` of each 5-interval cycle are **Faction** intervals (seeded RNG, no consecutive regular faction repeats); the 5th interval of each cycle (waves `21-25`, `46-50`, ...) is a **Coalition Mixed** interval (`all 16 units`, `the_holding_company` boss).
 - **Budget & Late-Wave Ramp:**
-- Base polynomial: `B(w) = (10 + 5w + 0.12 * w^2) * (1 + 0.15 * completed_cycles) * rubber_factor`
-- **Late-Wave Ramp (`w > 15`):** Multiplies budget by `1.0 + 0.035 * (w - 15) + 0.0018 * (w - 15)^2` so waves 20–50+ continue to scale sharply.
+- Base polynomial: `B(w) = (10 + 5w + 0.06 * w^2) * (1 + 0.10 * completed_cycles) * rubber_factor`
+- **Late-Wave Ramp (`w > 15`):** Multiplies budget by `1.0 + 0.02 * (w - 15) + 0.0008 * (w - 15)^2` so waves 20–50+ continue to scale sharply.
 - **Event budget modifier:** the active Run Event's `budget_mult` scales `B(w)` (e.g. Stars Are Right `×1.10`).
 - **Rubber-Banding:** Starts at `1.0` (`[0.80, 1.25]`); `-0.10` if `2+` lives lost last wave; `+0.10` after `3` consecutive zero-leak waves; else moves `0.05` toward `1.0`. Ignored (`max(1.0, rubber_factor)`) on Boss waves.
 - **Boss Waves:** Boss is not bought from budget; escorts receive **60%** of `B(w)` (`40%` withheld) and are capped at `MAX_BOSS_ESCORT_UNITS = 24`.

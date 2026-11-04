@@ -1,0 +1,81 @@
+{
+  "baseline_mean_reached": 23.3333333333333,
+  "presets": [
+    {
+      "archetypes": [
+        {
+          "archetype": "balanced",
+          "bosses": 3.5,
+          "censored": 0,
+          "deaths": 1,
+          "growths": 2.5,
+          "mean_reached": 24.5,
+          "median_wod": 29.0,
+          "stalls": 1
+        },
+        {
+          "archetype": "mono_kinetic",
+          "bosses": 3.0,
+          "censored": 0,
+          "deaths": 2,
+          "growths": 2.5,
+          "mean_reached": 22.5,
+          "median_wod": 26.0,
+          "stalls": 0
+        },
+        {
+          "archetype": "turtle",
+          "bosses": 3.5,
+          "censored": 0,
+          "deaths": 1,
+          "growths": 2.5,
+          "mean_reached": 23.0,
+          "median_wod": 26.0,
+          "stalls": 1
+        }
+      ],
+      "mean_bosses_seen": 3.33333333333333,
+      "mean_growths": 2.5,
+      "mean_reached": 23.3333333333333,
+      "preset": "baseline"
+    },
+    {
+      "archetypes": [
+        {
+          "archetype": "balanced",
+          "bosses": 2.0,
+          "censored": 0,
+          "deaths": 1,
+          "growths": 1.0,
+          "mean_reached": 24.0,
+          "median_wod": 28.0,
+          "stalls": 1
+        },
+        {
+          "archetype": "mono_kinetic",
+          "bosses": 1.5,
+          "censored": 0,
+          "deaths": 2,
+          "growths": 1.0,
+          "mean_reached": 23.0,
+          "median_wod": 29.0,
+          "stalls": 0
+        },
+        {
+          "archetype": "turtle",
+          "bosses": 2.0,
+          "censored": 0,
+          "deaths": 1,
+          "growths": 1.0,
+          "mean_reached": 24.0,
+          "median_wod": 28.0,
+          "stalls": 1
+        }
+      ],
+      "mean_bosses_seen": 1.83333333333333,
+      "mean_growths": 1.0,
+      "mean_reached": 23.6666666666667,
+      "preset": "long_interval"
+    }
+  ]
+}

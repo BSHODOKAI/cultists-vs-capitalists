@@ -216,18 +216,22 @@ func is_mixed_interval(interval_index: int) -> bool:
 
 
 func is_boss_wave(wave_number: int) -> bool:
-	return wave_number > 0 and (wave_number % balance.waves_per_interval) == 0
+	var first: int = maxi(1, balance.first_boss_wave)
+	return wave_number >= first and (wave_number - first) % maxi(1, balance.waves_per_interval) == 0
 
 
-## Cloaked units are only allowed after the first boss (wave > waves_per_interval).
+## Cloaked units are only allowed after the first boss.
 func is_cloaked_allowed_on_wave(wave_number: int) -> bool:
-	return wave_number > balance.waves_per_interval
+	return wave_number > maxi(1, balance.first_boss_wave)
 
 
 func compute_boss_index(wave_number: int) -> int:
 	if wave_number <= 0:
 		return 1
-	return maxi(1, floori(float(wave_number) / float(maxi(1, balance.waves_per_interval))))
+	var first: int = maxi(1, balance.first_boss_wave)
+	if wave_number < first:
+		return 1
+	return maxi(1, floori(float(wave_number - first) / float(maxi(1, balance.waves_per_interval))) + 1)
 
 
 ## Deterministically rolls and caches the active faction for [param interval_index].
@@ -413,6 +417,22 @@ func compute_effective_cost(base_cost: int, level: int) -> float:
 func compute_boss_hp(base_hp: float, boss_index: int) -> float:
 	var n: float = float(maxi(1, boss_index) - 1)
 	return base_hp * (1.0 + balance.boss_hp_scaling_per_index * n + balance.boss_hp_quadratic_per_index * n * n)
+
+
+## Wave-anchored boss tier: the boss arriving on [param wave_number] is scaled as if the
+## cadence were the reference interval (10). So shortening waves_per_interval changes how
+## OFTEN bosses appear, not how hard each is for the wave it arrives on. 0.0 at the
+## reference first boss (wave == boss_reference_interval).
+func compute_boss_tier(wave_number: int) -> float:
+	var ref: int = maxi(1, balance.boss_reference_interval)
+	return maxf(0.0, float(maxi(1, wave_number)) / float(ref) - 1.0)
+
+
+## Boss HP anchored to the WAVE (see compute_boss_tier), using the director's own scaling
+## balance so the Intel preview matches the spawned boss exactly.
+func compute_boss_hp_for_wave(base_hp: float, wave_number: int) -> float:
+	var t: float = compute_boss_tier(wave_number)
+	return base_hp * (1.0 + balance.boss_hp_scaling_per_index * t + balance.boss_hp_quadratic_per_index * t * t)
 
 
 # --- Scoring & Counter-Biases ------------------------------------------------
@@ -1036,12 +1056,13 @@ func generate_wave(wave_number: int, inputs: Dictionary = {}) -> WaveRoster:
 		boss_unit = get_boss_for_faction(active_fac)
 		var b_idx: int = compute_boss_index(w)
 		roster.boss_index = b_idx
+		roster.boss_tier = compute_boss_tier(w)
 		if boss_unit != null:
 			roster.boss_id = boss_unit.id
 			roster.boss_display_name = boss_unit.display_name
 			roster.boss_signature_mechanic = String(BOSS_SIGNATURE_MECHANICS.get(boss_unit.id, "Corporate Boss Protocol"))
 			roster.boss_base_hp = boss_unit.base_hp
-			roster.boss_hp = compute_boss_hp(boss_unit.base_hp, b_idx)
+			roster.boss_hp = compute_boss_hp_for_wave(boss_unit.base_hp, w)
 
 	# 10. Build ordered spawn_schedule per SPAWN ORDER spec (and assign lane_id across active lanes)
 	roster.spawn_schedule = _build_spawn_schedule(roster, boss_unit, wave_time_window, fork_shares)
@@ -1736,6 +1757,7 @@ func _build_spawn_schedule(
 			"tags": boss_unit.tags.duplicate(),
 			"effective_cost": 0.0,
 			"boss_index": roster.boss_index,
+			"boss_tier": roster.boss_tier,
 			"boss_hp": roster.boss_hp,
 			"lane_id": 0,
 		})

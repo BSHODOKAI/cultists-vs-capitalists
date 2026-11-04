@@ -125,8 +125,8 @@ func test_01_hard_constraints_hold_across_1000_seeded_rosters() -> void:
 				]
 			)
 
-			# Cloaked restriction: never send Cloaked units until after the first boss (wave > waves_per_interval)
-			if w <= balance.waves_per_interval:
+			# Cloaked restriction: never send Cloaked units until after the first boss
+			if w <= balance.first_boss_wave:
 				assert(
 					roster.get_tag_unit_count(_C.UnitTag.CLOAKED) == 0,
 					"Seed %d Wave %d must not send CLOAKED units before/during first boss, got %d" % [
@@ -460,8 +460,9 @@ func test_06_boss_waves_escorts_60_percent_and_boss_hp_scales_by_n() -> void:
 	# Drop rubber_factor to 0.80 to verify boss waves ignore the rubber-banding reduction (< 1.0)
 	director.rubber_factor = 0.80
 
+	# Shipped cadence: bosses every 5 waves from wave 10 (10, 15, 20, ..., 35).
 	for n in range(1, 7):
-		var wave_num: int = n * 10
+		var wave_num: int = 10 + (n - 1) * 5
 		var roster: WaveRoster = director.generate_wave(wave_num)
 		assert(roster.is_boss_wave, "Wave %d must be a boss wave" % wave_num)
 		assert(not roster.is_stars_are_right, "Boss wave %d must NOT be Stars Are Right" % wave_num)
@@ -497,9 +498,9 @@ func test_06_boss_waves_escorts_60_percent_and_boss_hp_scales_by_n() -> void:
 			]
 		)
 
-		# Boss HP scales by n: base_hp * (1 + 0.55 * (n - 1) + 0.15 * (n - 1)^2)
-		var nf: float = float(n - 1)
-		var expected_boss_hp: float = roster.boss_base_hp * (1.0 + 0.55 * nf + 0.15 * nf * nf)
+		# Boss HP is WAVE-anchored: tier = wave/10 - 1 (independent of the cadence).
+		var tier: float = director.compute_boss_tier(wave_num)
+		var expected_boss_hp: float = roster.boss_base_hp * (1.0 + 0.55 * tier + 0.15 * tier * tier)
 		assert(
 			is_equal_approx(roster.boss_hp, expected_boss_hp),
 			"Boss wave %d (n=%d) boss_hp must be %.2f, got %.2f" % [

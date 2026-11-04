@@ -7,5 +7,5 @@ script = ExtResource("1_ebl")
 gap_min = 3
 gap_max = 7
 first_boss_wave = 10
-boss_wave_interval = 10
+boss_wave_interval = 5
 max_same_category_run = 3

@@ -84,6 +84,7 @@ var terrain_margin: int = _C.TERRAIN_MARGIN
 var build_zone_distance: int = _C.BUILD_ZONE_DISTANCE
 var preview_lead_waves: int = _C.PREVIEW_LEAD_WAVES
 var boss_wave_interval: int = _C.BOSS_WAVE_INTERVAL
+var first_boss_wave: int = _C.FIRST_BOSS_WAVE
 var max_lanes: int = _C.MAX_LANES
 var fork_min_wave: int = _C.FORK_MIN_WAVE
 var fork_guaranteed_by_wave: int = _C.FORK_GUARANTEED_BY_WAVE
@@ -2027,15 +2028,18 @@ func _refresh_persistent_overlaps() -> void:
 
 # --- Wave & Boss event hooks -------------------------------------------------
 
-## True when [param wave_num] is a boss wave (every 10th wave: 10, 20, 30...).
+## True when [param wave_num] is a boss wave (first_boss_wave, then every boss_wave_interval
+## after it: 10, 20, 30... at the default cadence).
 func is_boss_wave(wave_num: int) -> bool:
-	return wave_num > 0 and (wave_num % boss_wave_interval) == 0
+	var first: int = maxi(1, first_boss_wave)
+	return wave_num >= first and (wave_num - first) % maxi(1, boss_wave_interval) == 0
 
 
 ## True when [param wave_num] triggers a preview of the upcoming boss extension
-## (PREVIEW_LEAD_WAVES = 2 waves before a boss wave: 8, 18, 28...).
+## (PREVIEW_LEAD_WAVES = 2 waves before a boss wave: 8, 13, 18...). Derived from is_boss_wave so
+## any cadence -- including a decoupled first boss -- previews correctly.
 func is_preview_wave(wave_num: int) -> bool:
-	return wave_num > 0 and ((wave_num + preview_lead_waves) % boss_wave_interval) == 0
+	return is_boss_wave(wave_num + preview_lead_waves)
 
 
 ## Starts [param wave_num]. Triggers preview generation on wave 8, 18, 28...

@@ -95,10 +95,11 @@ static func get_preset(name: String) -> Dictionary:
 				"rubber_factor_min": 1.0, "rubber_factor_max": 1.0,
 				"rubber_leak_reduction": 0.0, "rubber_zero_leak_bonus": 0.0,
 			}}
-		# Boss-interval experiment: bosses (and path growths, previews, factions) every 5
-		# waves instead of 10. Propagated to path/events/towers via GameState.sync_derived_interval().
-		"short_interval":
-			return {"director": {"waves_per_interval": 5}}
+		# Boss-cadence comparison: the OLD 10-wave cadence (the shipped default is now 5). Used by
+		# test_interval_experiment to compare the shipped cadence against the wider one. Propagated
+		# to path/events/towers via GameState.sync_derived_interval().
+		"long_interval":
+			return {"director": {"waves_per_interval": 10}}
 		# --- Phase 2 candidate tunings (proposals to TEST, not shipped values) ---
 		"soft_leveling":
 			return {"unit": {

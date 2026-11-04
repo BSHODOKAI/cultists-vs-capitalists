@@ -227,7 +227,8 @@ func get_all_path_hexes() -> Array[Vector2i]:
 # --- Wave type queries -------------------------------------------------------
 
 func is_boss_wave(wave_number: int) -> bool:
-	return wave_number > 0 and (wave_number % balance.boss_wave_interval) == 0
+	var first: int = maxi(1, balance.first_boss_wave)
+	return wave_number >= first and (wave_number - first) % maxi(1, balance.boss_wave_interval) == 0
 
 
 ## Applies the active Run-Event's wave-duration modifiers. Called at wave start.
@@ -1363,13 +1364,14 @@ func spawn_unit_from_data(
 	boss_index: int = 1,
 	rng: RandomNumberGenerator = null,
 	boss_cycle_override: int = -1,
-	lane_id: int = 0
+	lane_id: int = 0,
+	boss_tier: float = -1.0
 ) -> CombatUnit:
 	var def: UnitData = _resolve_unit_def(unit_id_or_def)
 	if def == null:
 		return null
 
-	var snap: Dictionary = leveling.snapshot_spawn_stats(def, boss_index, boss_cycle_override)
+	var snap: Dictionary = leveling.snapshot_spawn_stats(def, boss_index, boss_cycle_override, boss_tier)
 	var pos: float = start_path_pos if start_path_pos >= 0.0 else get_spawn_path_index(lane_id)
 	var unit := _CombatUnit.new(_next_unit_id, float(snap["max_hp"]), def.tags, pos, float(snap["speed"]))
 	_next_unit_id += 1
@@ -1384,6 +1386,7 @@ func spawn_unit_from_data(
 	unit.boss_index = int(snap["boss_index"])
 	unit.boss_cycle = int(snap["boss_cycle"])
 	unit.boss_timing_mult = float(snap["timing_mult"])
+	unit.boss_tier = float(snap.get("boss_tier", -1.0))
 	unit.cost = def.cost
 	unit.offerings_reward = maxi(1, def.cost)
 	unit.scrap_override = def.scrap_value

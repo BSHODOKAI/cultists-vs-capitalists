@@ -8,9 +8,17 @@ class_name DirectorBalanceData
 extends Resource
 
 # --- Schedule & Faction Constants --------------------------------------------
-const WAVES_PER_INTERVAL: int = 10
+## Bosses recur every this many waves (the first at FIRST_BOSS_WAVE). Shortened from 10 to 5:
+## measured to roughly double the bosses a run meets while staying within ~1 wave of the
+## 10-wave cadence's survival -- a denser but still readable ramp, with no early first-boss wall.
+const WAVES_PER_INTERVAL: int = 5
 const INTERVALS_PER_CYCLE: int = 5
 const MIXED_INTERVAL_IN_CYCLE: int = 5
+## The wave of the FIRST boss. Boss waves are `first_boss_wave`, then every `waves_per_interval`
+## after it (10, 20, 30... at the default cadence). Decoupling these lets a shorter interval add
+## MORE bosses without dragging the first boss earlier -- a base-HP boss only 5 waves into a run
+## is an unwinnable wall (a boss leak is an instant GAME_OVER).
+const FIRST_BOSS_WAVE: int = 10
 
 # --- Budget & Wave Cap Constants ---------------------------------------------
 ## B(w) = (10 + 5w + 0.06 w^2) * (1 + 0.10 * completed_cycles) * rubber_factor
@@ -62,6 +70,11 @@ const MAX_BONUS_LEVELS_PER_UNIT: int = 5
 ## Boss HP = base_hp * (1 + 0.55 * (n - 1) + 0.15 * (n - 1)^2)
 const BOSS_HP_SCALING_PER_INDEX: float = 0.55
 const BOSS_HP_QUADRATIC_PER_INDEX: float = 0.15
+## Reference boss cadence for wave-anchored boss scaling. Boss HP and telegraph shortening
+## are derived from the WAVE (not the boss index) against this cadence, so changing
+## waves_per_interval changes how OFTEN bosses appear without inflating each boss's HP at a
+## given wave. See WaveDirector.compute_boss_tier().
+const BOSS_REFERENCE_INTERVAL: int = 10
 
 # --- Scoring, Coverage, Diversity & Noise Constants --------------------------
 const HISTORY_WAVE_WINDOW: int = 5
@@ -118,6 +131,7 @@ const FORK_SECONDARY_FACTION_START_WAVE: int = 50
 @export var waves_per_interval: int = WAVES_PER_INTERVAL
 @export var intervals_per_cycle: int = INTERVALS_PER_CYCLE
 @export var mixed_interval_in_cycle: int = MIXED_INTERVAL_IN_CYCLE
+@export var first_boss_wave: int = FIRST_BOSS_WAVE
 
 @export var budget_base: float = BUDGET_BASE
 @export var budget_linear_per_wave: float = BUDGET_LINEAR_PER_WAVE
@@ -156,6 +170,7 @@ const FORK_SECONDARY_FACTION_START_WAVE: int = 50
 @export var max_bonus_levels_per_unit: int = MAX_BONUS_LEVELS_PER_UNIT
 @export var boss_hp_scaling_per_index: float = BOSS_HP_SCALING_PER_INDEX
 @export var boss_hp_quadratic_per_index: float = BOSS_HP_QUADRATIC_PER_INDEX
+@export var boss_reference_interval: int = BOSS_REFERENCE_INTERVAL
 
 @export var history_wave_window: int = HISTORY_WAVE_WINDOW
 @export var coverage_measurement_wave_window: int = COVERAGE_MEASUREMENT_WAVE_WINDOW

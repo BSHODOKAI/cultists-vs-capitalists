@@ -416,8 +416,11 @@ func test_06_scripted_headless_run_reaches_wave_25() -> void:
 		if target_wave == 10:
 			path_before_wave_10_commit = gs.path_generator.path_hexes.duplicate()
 
-		if target_wave == 11:
+		if target_wave == 6:
+			# First interval boundary (interval 1 -> interval 2 at wave 6 with the 5-wave cadence).
 			interval_2_faction = gs.active_faction
+
+		if target_wave == 11:
 			path_after_wave_10_commit = gs.path_generator.path_hexes.duplicate()
 			# The wave-10 growth must have settled Objectives on the new ground.
 			assert(
@@ -459,10 +462,10 @@ func test_06_scripted_headless_run_reaches_wave_25() -> void:
 		"Committed path after Wave 10 boss must equal exact Wave 8 preview!"
 	)
 
-	# Verify faction changed between Interval 1 and Interval 2
+	# Verify the faction rotated across the first interval boundary (interval 1 -> interval 2).
 	assert(
 		not interval_2_faction.is_empty() and interval_2_faction != interval_1_faction,
-		"Faction must rotate after Wave 10 boss (was %s, now %s)" % [interval_1_faction, interval_2_faction]
+		"Faction must rotate across the interval 1 -> 2 boundary (was %s, now %s)" % [interval_1_faction, interval_2_faction]
 	)
 
 	# Run events are pseudo-random now. Assert the system fired events within 25

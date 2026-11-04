@@ -87,21 +87,35 @@ static func compute_speed_multiplier(level: int, p_balance: UnitBalanceData = nu
 ## Computes Boss max HP for 1-based [param boss_index] n:
 ## HP = base_hp * (1 + 0.55 * (n - 1) + 0.15 * (n - 1)^2).
 static func compute_boss_hp(base_hp: float, boss_index: int, p_balance: UnitBalanceData = null) -> float:
+	return compute_boss_hp_for_tier(base_hp, float(maxi(1, boss_index) - 1), p_balance)
+
+
+## Computes Boss max HP from a wave-anchored [param boss_tier] (0.0 = first boss):
+## HP = base_hp * (1 + 0.55 * tier + 0.15 * tier^2). Using the WAVE-derived tier rather
+## than the boss index keeps each boss's HP tied to the wave it arrives on, so changing the
+## boss interval changes how OFTEN bosses come, not how hard each one is.
+static func compute_boss_hp_for_tier(base_hp: float, boss_tier: float, p_balance: UnitBalanceData = null) -> float:
 	var per_index: float = p_balance.boss_hp_per_index if p_balance != null else _Balance.BOSS_HP_PER_INDEX
 	var quad: float = p_balance.boss_hp_quadratic_per_index if p_balance != null else _Balance.BOSS_HP_QUADRATIC_PER_INDEX
-	var n: float = float(maxi(1, boss_index) - 1)
-	return base_hp * (1.0 + per_index * n + quad * n * n)
+	var t: float = maxf(0.0, boss_tier)
+	return base_hp * (1.0 + per_index * t + quad * t * t)
 
 
 ## Computes completed full boss cycles for 1-based [param boss_index] n (5 bosses per cycle).
 static func compute_boss_cycle(
 	boss_index: int, cycle_length: int = -1, p_balance: UnitBalanceData = null
 ) -> int:
+	return compute_boss_cycle_for_tier(float(maxi(1, boss_index) - 1), cycle_length, p_balance)
+
+
+## Completed boss cycles from a wave-anchored [param boss_tier]: floor(tier / cycle_length).
+static func compute_boss_cycle_for_tier(
+	boss_tier: float, cycle_length: int = -1, p_balance: UnitBalanceData = null
+) -> int:
 	var clen: int = cycle_length
 	if clen < 1:
 		clen = p_balance.boss_cycle_length if p_balance != null else _Balance.BOSS_CYCLE_LENGTH
-	var n: int = maxi(1, boss_index)
-	return floori(float(n - 1) / float(maxi(1, clen)))
+	return floori(maxf(0.0, boss_tier) / float(maxi(1, clen)))
 
 
 ## Computes the telegraph and cooldown multiplier after [param full_cycles] completed cycles.
@@ -169,8 +183,11 @@ func get_rogue_entity_level() -> int:
 
 
 ## Snapshots spawn-time stats for [param unit_data].
-## Regular units scale by kill level; Bosses ignore kill level and scale HP by [param boss_index].
-func snapshot_spawn_stats(unit_data: UnitData, boss_index: int = 1, boss_cycle_override: int = -1) -> Dictionary:
+## Regular units scale by kill level; Bosses ignore kill level and scale HP by the
+## wave-anchored [param boss_tier] (falling back to [param boss_index] - 1 when < 0).
+func snapshot_spawn_stats(
+	unit_data: UnitData, boss_index: int = 1, boss_cycle_override: int = -1, boss_tier: float = -1.0
+) -> Dictionary:
 	if unit_data == null:
 		return {
 			"level": 0,
@@ -181,13 +198,15 @@ func snapshot_spawn_stats(unit_data: UnitData, boss_index: int = 1, boss_cycle_o
 			"speed": 1.0,
 			"boss_index": 1,
 			"boss_cycle": 0,
+			"boss_tier": -1.0,
 			"timing_mult": 1.0,
 		}
 
 	if unit_data.is_boss():
 		var b_idx: int = maxi(1, boss_index)
-		var b_cycle: int = boss_cycle_override if boss_cycle_override >= 0 else compute_boss_cycle(b_idx, -1, balance)
-		var hp_val: float = compute_boss_hp(unit_data.base_hp, b_idx, balance)
+		var tier: float = boss_tier if boss_tier >= 0.0 else float(b_idx - 1)
+		var b_cycle: int = boss_cycle_override if boss_cycle_override >= 0 else compute_boss_cycle_for_tier(tier, -1, balance)
+		var hp_val: float = compute_boss_hp_for_tier(unit_data.base_hp, tier, balance)
 		var t_mult: float = compute_cycle_timing_multiplier(b_cycle, balance)
 		return {
 			"level": 0,
@@ -198,6 +217,7 @@ func snapshot_spawn_stats(unit_data: UnitData, boss_index: int = 1, boss_cycle_o
 			"speed": unit_data.speed,
 			"boss_index": b_idx,
 			"boss_cycle": b_cycle,
+			"boss_tier": tier,
 			"timing_mult": t_mult,
 		}
 
@@ -214,5 +234,6 @@ func snapshot_spawn_stats(unit_data: UnitData, boss_index: int = 1, boss_cycle_o
 		"speed": unit_data.speed * spd_mult,
 		"boss_index": 0,
 		"boss_cycle": 0,
+		"boss_tier": -1.0,
 		"timing_mult": 1.0,
 	}

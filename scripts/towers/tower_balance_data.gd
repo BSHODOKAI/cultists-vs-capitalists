@@ -80,7 +80,10 @@ const MAINTENANCE_SCRAP_COST: int = 15
 const MAINTENANCE_JANK_REDUCTION: int = 10
 
 # --- Special Wave & Synergy constants ----------------------------------------
-const BOSS_WAVE_INTERVAL: int = 10
+const BOSS_WAVE_INTERVAL: int = 5
+## Wave of the FIRST boss; bosses recur every BOSS_WAVE_INTERVAL after it. Kept in sync with
+## DirectorBalanceData.first_boss_wave via GameState.sync_derived_interval().
+const FIRST_BOSS_WAVE: int = 10
 
 const VARIETY_BONUS_RADIUS_HEXES: int = 3
 const VARIETY_BONUS_PER_DISTINCT_TYPE: float = 0.03
@@ -156,6 +159,7 @@ const CC_DR_STEP_3_MULT: float = 0.25
 @export var maintenance_jank_reduction: int = MAINTENANCE_JANK_REDUCTION
 
 @export var boss_wave_interval: int = BOSS_WAVE_INTERVAL
+@export var first_boss_wave: int = FIRST_BOSS_WAVE
 
 @export var variety_bonus_radius_hexes: int = VARIETY_BONUS_RADIUS_HEXES
 @export var variety_bonus_per_distinct_type: float = VARIETY_BONUS_PER_DISTINCT_TYPE

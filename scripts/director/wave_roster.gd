@@ -87,6 +87,9 @@ var boss_id: String = ""
 var boss_display_name: String = ""
 var boss_signature_mechanic: String = ""
 var boss_index: int = 0
+## Wave-anchored boss scaling tier (0.0 = first boss). Drives Boss HP and telegraph
+## shortening so they track the WAVE, not the boss index. See WaveDirector.compute_boss_tier().
+var boss_tier: float = -1.0
 var boss_base_hp: float = 0.0
 var boss_hp: float = 0.0
 
@@ -226,6 +229,7 @@ func to_dict() -> Dictionary:
 		"boss_display_name": boss_display_name,
 		"boss_signature_mechanic": boss_signature_mechanic,
 		"boss_index": boss_index,
+		"boss_tier": boss_tier,
 		"boss_base_hp": boss_base_hp,
 		"boss_hp": boss_hp,
 		"intel": intel.duplicate(true),

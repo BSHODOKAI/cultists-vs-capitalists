@@ -13,8 +13,9 @@ const GAP_MIN: int = 3
 const GAP_MAX: int = 7
 ## Wave number of the first boss; no event ever fires on this wave.
 const FIRST_BOSS_WAVE: int = 10
-## Boss waves recur every N waves.
-const BOSS_WAVE_INTERVAL: int = 10
+## Boss waves recur every N waves after the first (see FIRST_BOSS_WAVE). Must match
+## DirectorBalanceData.waves_per_interval; GameState.sync_derived_interval() derives it at run setup.
+const BOSS_WAVE_INTERVAL: int = 5
 ## Hard cap on consecutive events of the same category (bad-luck protection).
 const MAX_SAME_CATEGORY_RUN: int = 3
 

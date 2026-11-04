@@ -4,7 +4,7 @@
 
 [resource]
 script = ExtResource("1_director_balance")
-waves_per_interval = 10
+waves_per_interval = 5
 intervals_per_cycle = 5
 mixed_interval_in_cycle = 5
 budget_base = 10.0
