@@ -16,8 +16,22 @@ const _TowerLibrary = preload("res://scripts/towers/tower_library.gd")
 const _PlaceholderIcons = preload("res://scripts/ui/placeholder_icons.gd")
 
 const CLOSED_TOP_OFFSET: float = -66.0
+## Fallback open-top offset; the real one is measured from the tallest tower's detail
+## text at runtime so the open frame is ONE fixed size for every tower (see
+## _measure_open_top_offset) instead of growing to fit whichever tower is selected.
 const OPEN_TOP_OFFSET: float = -368.0
 const BOTTOM_OFFSET: float = -8.0
+
+# Fixed detail-pane text sizes. Shared by the labels and by the open-height measurement
+# so the frame is always sized to what the labels actually render.
+const DETAIL_DESC_FONT: int = 14
+const DETAIL_STATS_FONT: int = 12
+const DETAIL_UPGRADES_FONT: int = 11
+## Width (UI px) the detail text wraps within for measurement. Matches the detail pane's
+## actual width (the left grid column plus the action row fix it), narrowed slightly so the
+## measured height is never a hair too short for the fixed frame.
+const DETAIL_MEASURE_WIDTH: float = 300.0
+const BOTTOM_BAR_HEIGHT: float = 40.0
 
 var is_menu_open: bool = false
 var inspected_tower: TowerData = null
@@ -36,6 +50,7 @@ var _detail_cost_label: Label
 var _detail_desc_label: Label
 var _detail_stats_label: Label
 var _detail_upgrades_label: Label
+var _detail_scroll: ScrollContainer
 var _confirm_build_button: Button
 var _close_menu_button: Button
 
@@ -45,6 +60,9 @@ var _active_build_icon: TextureRect
 var _active_build_label: Label
 var _cancel_build_button: Button
 
+## Computed once from the tallest tower's detail text; the single fixed open-frame size.
+var _open_top_offset: float = OPEN_TOP_OFFSET
+
 
 func _ready() -> void:
 	_towers = _TowerLibrary.load_towers()
@@ -52,6 +70,7 @@ func _ready() -> void:
 		inspected_tower = _towers[0]
 	_build_ui()
 	_connect_signals()
+	_open_top_offset = _measure_open_top_offset()
 	_apply_menu_visibility()
 	refresh()
 
@@ -99,7 +118,10 @@ func _build_ui() -> void:
 	list_vbox.add_child(list_header)
 
 	_tower_grid = GridContainer.new()
-	_tower_grid.columns = 3
+	# Two columns so every tower's FULL name fits without truncation. Three columns cannot
+	# (a full-name button with its icon needs ~285 px, which would push the menu near the
+	# screen width).
+	_tower_grid.columns = 2
 	_tower_grid.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_tower_grid.add_theme_constant_override("h_separation", 6)
 	_tower_grid.add_theme_constant_override("v_separation", 5)
@@ -107,7 +129,12 @@ func _build_ui() -> void:
 
 	for i in range(_towers.size()):
 		var btn := Button.new()
-		btn.custom_minimum_size = Vector2(144.0, 46.0)
+		# Fixed width wide enough for the longest full name (with its key prefix and icon),
+		# plus clipping as a safety net, so no name is ever truncated and the selected
+		# "▸ " prefix / " [ACTIVE]" suffix can never widen the grid.
+		btn.custom_minimum_size = Vector2(288.0, 46.0)
+		btn.clip_text = true
+		btn.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		btn.focus_mode = Control.FOCUS_NONE
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -141,6 +168,9 @@ func _build_ui() -> void:
 	_detail_title_label = Label.new()
 	_detail_title_label.name = "DetailTitleLabel"
 	_detail_title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# Single-line with ellipsis: its minimum size is ~0, so a long tower name can never
+	# widen the fixed frame (it just truncates if the header runs out of room).
+	_detail_title_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_detail_title_label.add_theme_font_size_override("font_size", 17)
 	_detail_title_label.add_theme_color_override("font_color", Color(0.96, 0.90, 1.0))
 	header_row.add_child(_detail_title_label)
@@ -154,31 +184,51 @@ func _build_ui() -> void:
 
 	_detail_cost_label = Label.new()
 	_detail_cost_label.name = "DetailCostLabel"
+	# Single-line with ellipsis: min size ~0, so neither "Offerings" vs "Scrap" nor the
+	# "(Need N more)" suffix can vary the frame width per tower.
+	_detail_cost_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_detail_cost_label.add_theme_font_size_override("font_size", 15)
 	_detail_cost_label.add_theme_color_override("font_color", Color(0.80, 0.60, 1.0))
 	header_row.add_child(_detail_cost_label)
 
+	# Variable-height detail text lives in a non-scrolling viewport, NOT directly in the
+	# detail column: a ScrollContainer does not propagate its child's height, so however
+	# much text a tower has, the open frame stays one fixed size. Both scrollbars are
+	# disabled so nothing scrolls; the frame is measured tall enough for the tallest tower.
+	_detail_scroll = ScrollContainer.new()
+	_detail_scroll.name = "DetailScroll"
+	_detail_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_detail_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_detail_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_detail_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	detail_vbox.add_child(_detail_scroll)
+
+	var detail_text_vbox := VBoxContainer.new()
+	detail_text_vbox.name = "DetailTextVBox"
+	detail_text_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	detail_text_vbox.add_theme_constant_override("separation", 6)
+	_detail_scroll.add_child(detail_text_vbox)
+
 	_detail_desc_label = Label.new()
 	_detail_desc_label.name = "DetailDescriptionLabel"
 	_detail_desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_detail_desc_label.add_theme_font_size_override("font_size", 14)
+	_detail_desc_label.add_theme_font_size_override("font_size", DETAIL_DESC_FONT)
 	_detail_desc_label.add_theme_color_override("font_color", Color(0.92, 0.95, 0.98))
-	detail_vbox.add_child(_detail_desc_label)
+	detail_text_vbox.add_child(_detail_desc_label)
 
 	_detail_stats_label = Label.new()
 	_detail_stats_label.name = "DetailStatsLabel"
 	_detail_stats_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_detail_stats_label.add_theme_font_size_override("font_size", 12)
+	_detail_stats_label.add_theme_font_size_override("font_size", DETAIL_STATS_FONT)
 	_detail_stats_label.add_theme_color_override("font_color", Color(0.70, 0.86, 0.96))
-	detail_vbox.add_child(_detail_stats_label)
+	detail_text_vbox.add_child(_detail_stats_label)
 
 	_detail_upgrades_label = Label.new()
 	_detail_upgrades_label.name = "DetailUpgradesLabel"
 	_detail_upgrades_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_detail_upgrades_label. size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_detail_upgrades_label.add_theme_font_size_override("font_size", 11)
+	_detail_upgrades_label.add_theme_font_size_override("font_size", DETAIL_UPGRADES_FONT)
 	_detail_upgrades_label.add_theme_color_override("font_color", Color(0.76, 0.74, 0.86))
-	detail_vbox.add_child(_detail_upgrades_label)
+	detail_text_vbox.add_child(_detail_upgrades_label)
 
 	var action_row := HBoxContainer.new()
 	action_row.add_theme_constant_override("separation", 8)
@@ -188,6 +238,10 @@ func _build_ui() -> void:
 	_confirm_build_button.name = "ConfirmBuildButton"
 	_confirm_build_button.custom_minimum_size = Vector2(210.0, 36.0)
 	_confirm_build_button.focus_mode = Control.FOCUS_NONE
+	# A Button never wraps, so its label must be short and constant — the inspected
+	# tower's name is already shown in the title. A per-tower name here would make the
+	# button (and thus the fixed frame) wider for long names.
+	_confirm_build_button.text = "Select to Build [Enter]"
 	_confirm_build_button.pressed.connect(confirm_build)
 	action_row.add_child(_confirm_build_button)
 
@@ -204,6 +258,9 @@ func _build_ui() -> void:
 	_bottom_bar.name = "BottomBar"
 	_bottom_bar.alignment = BoxContainer.ALIGNMENT_END
 	_bottom_bar.add_theme_constant_override("separation", 10)
+	# Fixed height so the collapsed bar and the building bar are the same height regardless
+	# of the selected tower's description length.
+	_bottom_bar.custom_minimum_size = Vector2(0.0, BOTTOM_BAR_HEIGHT)
 	_root_vbox.add_child(_bottom_bar)
 
 	_active_build_icon = TextureRect.new()
@@ -217,6 +274,10 @@ func _build_ui() -> void:
 	_active_build_label.name = "ActiveBuildLabel"
 	_active_build_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_active_build_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	# Show ONE line (ellipsised) so the bar's height is constant across towers. `.text`
+	# still holds the full description, so the wording check in the tests is unaffected.
+	_active_build_label.max_lines_visible = 1
+	_active_build_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_active_build_label.add_theme_font_size_override("font_size", 13)
 	_active_build_label.add_theme_color_override("font_color", Color(0.86, 0.90, 0.96))
 	_bottom_bar.add_child(_active_build_label)
@@ -305,7 +366,78 @@ func _apply_menu_visibility() -> void:
 	else:
 		offset_left = -178.0
 	offset_bottom = BOTTOM_OFFSET
-	offset_top = OPEN_TOP_OFFSET if is_menu_open else CLOSED_TOP_OFFSET
+	offset_top = _open_top_offset if is_menu_open else CLOSED_TOP_OFFSET
+
+
+## Returns the wrapped detail text (description, stat+ability block, upgrade preview) for
+## [param td]. Shared by refresh() and the open-height measurement so the two can never
+## disagree about how tall the detail pane needs to be.
+func _detail_texts(td: TowerData) -> Dictionary:
+	var stats_text: String = td.get_stats_summary(td.cost, td.get_build_currency_name(false), false)
+	var ability_text: String = td.get_ability_summary()
+	if not ability_text.is_empty():
+		stats_text += "\n" + ability_text
+	return {
+		"desc": td.get_display_description(),
+		"stats": stats_text,
+		"upgrades": td.get_upgrade_preview_summary(),
+	}
+
+
+## Measures the tallest detail pane across ALL towers and returns the open-frame top
+## offset that fits it. The open build menu is then one fixed size for every tower, with
+## no scroll and no per-selection resize. Uses real (hidden) probe Labels so the result
+## includes the theme's line_spacing, exactly as the detail labels render.
+func _measure_open_top_offset() -> float:
+	if _towers.is_empty():
+		return OPEN_TOP_OFFSET
+
+	var holder := Control.new()
+	holder.visible = false
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(holder)
+	var p_desc := _make_probe(holder, DETAIL_DESC_FONT)
+	var p_stats := _make_probe(holder, DETAIL_STATS_FONT)
+	var p_upg := _make_probe(holder, DETAIL_UPGRADES_FONT)
+
+	var max_text_h: float = 0.0
+	for td: TowerData in _towers:
+		var t: Dictionary = _detail_texts(td)
+		var h: float = 0.0
+		h += _probe_height(p_desc, String(t["desc"]))
+		h += _probe_height(p_stats, String(t["stats"]))
+		h += _probe_height(p_upg, String(t["upgrades"]))
+		max_text_h = maxf(max_text_h, h)
+	holder.queue_free()
+
+	# Detail column: header row (44) + 2 gaps around the text viewport (12) + the text
+	# block (with its own two inter-label gaps) + action row (36).
+	var detail_h: float = 44.0 + 12.0 + max_text_h + 2.0 * 6.0 + 36.0
+	# Left tower list must also fit: header (~30) + rows of ~54 with 5px gaps (2 columns).
+	var rows: int = int(ceil(float(_towers.size()) / 2.0))
+	var list_h: float = 30.0 + float(rows) * 54.0 + float(maxi(0, rows - 1)) * 5.0
+	# Chrome: panel margins (16) + drawer margins (20) + vbox gap (8) + bottom bar + 10 pad.
+	var chrome: float = 16.0 + 20.0 + 8.0 + BOTTOM_BAR_HEIGHT + 10.0
+	var open_height: float = maxf(detail_h, list_h) + chrome
+	return BOTTOM_OFFSET - open_height
+
+
+## A hidden autowrap Label used only to measure wrapped text height for one font size.
+## Its width is pinned via custom_minimum_size so the wrap happens at the real pane width.
+func _make_probe(parent: Control, font_size: int) -> Label:
+	var probe := Label.new()
+	probe.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	probe.custom_minimum_size = Vector2(DETAIL_MEASURE_WIDTH, 0.0)
+	probe.add_theme_font_size_override("font_size", font_size)
+	probe.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(probe)
+	return probe
+
+
+## Wrapped height of [param text] in [param probe] at the measurement width.
+func _probe_height(probe: Label, text: String) -> float:
+	probe.text = text if not text.is_empty() else " "
+	return probe.get_combined_minimum_size().y
 
 
 ## Selects a tower in the menu to inspect its description and details before building.
@@ -388,13 +520,10 @@ func refresh() -> void:
 		var curr_short: String = td.get_build_currency_name(true)
 		var is_inspected: bool = (inspected_tower == td)
 		var is_building: bool = (selected == td)
-		var short_name: String = td.display_name
-		if short_name.length() > 16:
-			short_name = short_name.substr(0, 15) + "."
 		var prefix: String = "\u25b8 " if is_inspected else ""
 		var active_tag: String = " [ACTIVE]" if is_building else ""
 		var key_label: String = "0" if i == 9 else str(i + 1)
-		btn.text = "%s[%s] %s\n%d %s%s" % [prefix, key_label, short_name, cost, curr_short, active_tag]
+		btn.text = "%s[%s] %s\n%d %s%s" % [prefix, key_label, td.display_name, cost, curr_short, active_tag]
 		if is_inspected:
 			btn.modulate = Color(0.72, 1.0, 0.82)
 		elif is_building:
@@ -426,15 +555,13 @@ func refresh() -> void:
 			Color(0.75, 0.95, 0.65) if can_afford else Color(1.0, 0.50, 0.50)
 		)
 		_detail_desc_label.text = inspected_tower.get_display_description()
+		_detail_desc_label.text = inspected_tower.get_display_description()
 		# Cost lives in the header (with its currency icon), so the stat block omits it and
 		# instead spells out the tower's actual abilities in plain language.
-		var stats_text: String = inspected_tower.get_stats_summary(insp_cost, insp_curr_name, false)
-		var ability_text: String = inspected_tower.get_ability_summary()
-		if not ability_text.is_empty():
-			stats_text += "\n" + ability_text
-		_detail_stats_label.text = stats_text
-		_detail_upgrades_label.text = inspected_tower.get_upgrade_preview_summary()
-		_confirm_build_button.text = "Select to Build: %s [Enter]" % inspected_tower.display_name
+		var texts: Dictionary = _detail_texts(inspected_tower)
+		_detail_desc_label.text = String(texts["desc"])
+		_detail_stats_label.text = String(texts["stats"])
+		_detail_upgrades_label.text = String(texts["upgrades"])
 		_confirm_build_button.modulate = Color(0.68, 1.0, 0.78) if can_afford else Color(0.95, 0.65, 0.65)
 
 	# Update persistent bottom bar

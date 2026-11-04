@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "the_ledger_holds_its_breath"
+display_name = "The Ledger Holds Its Breath"
+description = "+0.7% slow per Corruption, +1 range, and each kill feeds 2 Corruption. THE LEDGER HOLDS ITS BREATH: the meter is a lung, and every grounded drone is one less breath it has to take."
+tower_id = "dead_air_altar"
+tier = 4
+branch = 3
+currency = 2
+cost = 2
+prerequisite_id = "tithe_of_stillness"
+corruption_delta = 0
+jank_set = 0
+range_add = 1
+corruption_scaled_stat = {
+"slow_aura": 0.007
+}
+behaviors = Array[String](["the_ledger_holds_its_breath"])
+behavior_params = {
+"corruption_per_kill": 2
+}

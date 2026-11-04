@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "blackout_rig"
+display_name = "Blackout Rig"
+description = "A 75% slow aura, and the discharge fires harder and more often (20 Electric every 4 s). BLACKOUT RIG: the block browns out and every grounded rotor is the dead wire."
+tower_id = "dead_air_altar"
+tier = 4
+branch = 2
+currency = 1
+cost = 81
+prerequisite_id = "salvaged_compressor"
+corruption_delta = 0
+jank_set = 25
+slow_aura_override = 0.75
+behaviors = Array[String](["blackout_rig"])
+behavior_params = {
+"discharge_damage": 20.0,
+"discharge_interval": 4.0
+}

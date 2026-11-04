@@ -1027,6 +1027,10 @@ func calculate_hit_damage(
 		unit, damage_tag, ignore_resistance_fraction, ignore_armor_fraction
 	)
 	var debuff_mult: float = get_unit_damage_taken_multiplier(unit, is_gutter_pulse)
+	# Grounding: air pulled out of the sky by a dead_air_altar's cold column take extra
+	# ELECTRIC damage -- the slow and the shock are the same bargain.
+	if damage_tag == _C.DamageTag.ELECTRIC and unit.grounded_by_dead_air:
+		debuff_mult *= 1.0 + unit.grounded_electric_bonus
 	return outgoing * res_mult * debuff_mult
 
 
@@ -1936,6 +1940,8 @@ func step(delta: float, rng: RandomNumberGenerator) -> void:
 		u.drain_slow_strength = 0.0
 		u.flood_slow_strength = 0.0
 		u.conduct_electric_wet = false
+		u.grounded_by_dead_air = false
+		u.grounded_electric_bonus = 0.0
 		if u.root_timer <= 0.0:
 			u.entangled_by_drain = false
 
@@ -2006,6 +2012,52 @@ func _step_tower(tower: TowerInstance, delta: float, rng: RandomNumberGenerator)
 			_step_tithe_box_tower(tower, delta)
 		TowerData.TargetingMode.CHAIN_ARC:
 			_step_chain_arc_tower(tower, delta)
+		TowerData.TargetingMode.AIR_CONTROL:
+			_step_dead_air_tower(tower, delta)
+
+
+## 11. dead_air_altar -- anti-air control: a continuous slow aura over Air units only that
+## marks them Grounded (extra ELECTRIC damage taken). No attack of its own; the Rigged branch
+## adds a periodic Electric discharge, and the Rite branch scales the slow with Corruption.
+func _step_dead_air_tower(tower: TowerInstance, delta: float) -> void:
+	var r: int = get_effective_tower_range_hexes(tower)
+	var slow_str: float = tower.get_slow_aura_strength() * get_rite_stat_multiplier(tower, "slow_aura")
+	var grounding: float = tower.get_grounding_bonus()
+
+	# Continuous slow aura & Grounded mark on Air units in range only.
+	for u: CombatUnit in units:
+		if not u.is_alive() or not u.is_air():
+			continue
+		if _HexGrid.hex_distance(tower.hex, get_unit_hex(u)) > r:
+			continue
+		u.drain_slow_strength = maxf(u.drain_slow_strength, slow_str)
+		if grounding > 0.0:
+			u.grounded_by_dead_air = true
+			u.grounded_electric_bonus = maxf(u.grounded_electric_bonus, grounding)
+
+	# Rigged branch: every interval, an Electric discharge into Grounded air in range.
+	var discharge_id: String = ""
+	if tower.has_behavior("blackout_rig"):
+		discharge_id = "blackout_rig"
+	elif tower.has_behavior("salvaged_compressor"):
+		discharge_id = "salvaged_compressor"
+	if discharge_id != "":
+		var interval: float = maxf(1.0, float(tower.get_behavior_param(discharge_id, "discharge_interval", 6.0)))
+		var dmg: float = float(tower.get_behavior_param(discharge_id, "discharge_damage", 12.0))
+		tower.special_cooldown -= delta
+		if tower.special_cooldown <= 0.0:
+			var hit_any: bool = false
+			for u: CombatUnit in units.duplicate():
+				if not u.is_alive() or not u.is_air():
+					continue
+				if _HexGrid.hex_distance(tower.hex, get_unit_hex(u)) > r:
+					continue
+				var hit: float = calculate_hit_damage(tower, u, dmg, _C.DamageTag.ELECTRIC)
+				deal_damage_from_tower(tower, u, hit, _C.DamageTag.ELECTRIC)
+				hit_any = true
+			if hit_any:
+				tower.special_cooldown = interval
+				tower_cooldown_used.emit(tower.tower_id, tower.get_type_id(), discharge_id, tower.hex)
 
 
 ## 1. hexed_nail_gun

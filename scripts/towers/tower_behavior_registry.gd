@@ -27,6 +27,7 @@ static func _ensure_initialized() -> void:
 	_register("the_congregation", {"type": "base_tower", "tower_id": "the_congregation"})
 	_register("tithe_box", {"type": "base_tower", "tower_id": "tithe_box"})
 	_register("substation_effigy", {"type": "base_tower", "tower_id": "substation_effigy"})
+	_register("dead_air_altar", {"type": "base_tower", "tower_id": "dead_air_altar"})
 
 	# --- 1. hexed_nail_gun upgrades ------------------------------------------
 	_register("rapid_cycling", {"type": "upgrade", "tower_id": "hexed_nail_gun", "tier": 2})
@@ -130,6 +131,16 @@ static func _ensure_initialized() -> void:
 
 	_register("metered_current", {"type": "upgrade", "tower_id": "substation_effigy", "tier": 3, "branch": "rite"})
 	_register("the_grid_forecloses", {"type": "upgrade", "tower_id": "substation_effigy", "tier": 4, "branch": "rite"})
+
+	# --- 11. dead_air_altar upgrades -----------------------------------------
+	_register("colder_current", {"type": "upgrade", "tower_id": "dead_air_altar", "tier": 2})
+	_register("the_sky_is_closed", {"type": "upgrade", "tower_id": "dead_air_altar", "tier": 3})
+	_register("heaven_under_glass", {"type": "upgrade", "tower_id": "dead_air_altar", "tier": 4})
+	_register("salvaged_compressor", {"type": "upgrade", "tower_id": "dead_air_altar", "tier": 3, "discharge_damage": 12.0, "discharge_interval": 6.0})
+	_register("blackout_rig", {"type": "upgrade", "tower_id": "dead_air_altar", "tier": 4, "discharge_damage": 20.0, "discharge_interval": 4.0})
+
+	_register("tithe_of_stillness", {"type": "upgrade", "tower_id": "dead_air_altar", "tier": 3, "branch": "rite"})
+	_register("the_ledger_holds_its_breath", {"type": "upgrade", "tower_id": "dead_air_altar", "tier": 4, "branch": "rite"})
 
 
 static func _register(behavior_id: String, descriptor: Dictionary) -> void:

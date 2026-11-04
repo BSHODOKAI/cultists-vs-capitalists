@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "colder_current"
+display_name = "Colder Current"
+description = "Deepens the drop: the slow aura rises to 55% and reaches 1 hex further."
+tower_id = "dead_air_altar"
+tier = 2
+branch = 0
+currency = 0
+cost = 27
+prerequisite_id = ""
+corruption_delta = 0
+jank_set = 0
+slow_aura_override = 0.55
+range_add = 1
+behaviors = Array[String](["colder_current"])

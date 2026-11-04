@@ -20,6 +20,7 @@ const TOWER_PATHS: Array[String] = [
 	"res://data/towers/the_congregation.tres",
 	"res://data/towers/tithe_box.tres",
 	"res://data/towers/substation_effigy.tres",
+	"res://data/towers/dead_air_altar.tres",
 ]
 
 ## All 70 upgrade node resources under res://data/upgrades/ (10 T2 + 30 T3 + 30 T4).
@@ -106,6 +107,14 @@ const UPGRADE_PATHS: Array[String] = [
 	"res://data/upgrades/breaker_cascade.tres",
 	"res://data/upgrades/metered_current.tres",
 	"res://data/upgrades/the_grid_forecloses.tres",
+	# 11. dead_air_altar
+	"res://data/upgrades/colder_current.tres",
+	"res://data/upgrades/the_sky_is_closed.tres",
+	"res://data/upgrades/heaven_under_glass.tres",
+	"res://data/upgrades/salvaged_compressor.tres",
+	"res://data/upgrades/blackout_rig.tres",
+	"res://data/upgrades/tithe_of_stillness.tres",
+	"res://data/upgrades/the_ledger_holds_its_breath.tres",
 ]
 
 

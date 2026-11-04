@@ -20,6 +20,8 @@ enum TargetingMode {
 	SUMMON_CONGREGATION = 7,
 	ECONOMY_TITHE = 8,
 	CHAIN_ARC = 9,
+	## Anti-air control: a continuous slow aura over Air units only (dead_air_altar).
+	AIR_CONTROL = 10,
 }
 
 ## Unique snake_case identifier (e.g. "hexed_nail_gun").
@@ -62,6 +64,10 @@ enum TargetingMode {
 @export var pulse_max_ring: int = 0
 ## Continuous slow aura strength in range (0.35 for tentacle_storm_drain).
 @export var slow_aura_strength: float = 0.0
+## Extra ELECTRIC damage taken (fraction) by units slowed by this tower's aura while
+## `targeting_mode == AIR_CONTROL` (0.25 for dead_air_altar). Ties the slow to the
+## Electric damage tag so grounded air become a synergy target for substation_effigy.
+@export var grounding_bonus: float = 0.0
 ## Periodic root duration in seconds (1.5 for tentacle_storm_drain).
 @export var root_duration: float = 0.0
 ## Periodic root interval in seconds (8.0 for tentacle_storm_drain).
@@ -162,6 +168,10 @@ func get_display_description() -> String:
 			return "Summons up to %d blockers (%d HP, %.1f DPS) onto adjacent path hexes." % [
 				summon_count, roundi(summon_hp), summon_dps
 			]
+		TargetingMode.AIR_CONTROL:
+			return "Slows Air enemies within %d hexes by %d%% and grounds them (+%d%% Electric damage taken)." % [
+				range_val, roundi(slow_aura_strength * 100.0), roundi(grounding_bonus * 100.0)
+			]
 		_:
 			return "Deals %.1f %s damage at %.2f/s within %d hexes." % [
 				damage, get_damage_tag_name(), fire_rate, range_val
@@ -201,6 +211,18 @@ func get_target_domain_text() -> String:
 	return "None"
 
 
+## Domain noun for the slow-aura ability line, derived from [member target_tags] so a
+## slow tower never claims to affect the wrong domain (e.g. an AIR_CONTROL tower).
+func _slow_domain_noun() -> String:
+	var has_ground: bool = target_tags.has(_C.UnitTag.GROUND)
+	var has_air: bool = target_tags.has(_C.UnitTag.AIR)
+	if has_ground and has_air:
+		return "Ground & Air"
+	if has_air:
+		return "Air"
+	return "Ground"
+
+
 ## Builds a formatted multi-line stat block for build menus and tooltips. When
 ## [param include_cost] is false the leading "Cost:" line is omitted, so a caller that
 ## shows the price as its own icon+number chip does not print it twice.
@@ -222,6 +244,10 @@ func get_stats_summary(
 	elif targeting_mode == TargetingMode.SUMMON_CONGREGATION:
 		lines.append("Range: %d hex | Blockers: %d (%d HP, %.1f DPS)" % [
 			range_val, summon_count, roundi(summon_hp), summon_dps
+		])
+	elif targeting_mode == TargetingMode.AIR_CONTROL:
+		lines.append("Range: %d hex | Slow: %d%% (Air) | Grounded: +%d%% Electric" % [
+			range_val, roundi(slow_aura_strength * 100.0), roundi(grounding_bonus * 100.0)
 		])
 	else:
 		lines.append("Range: %d hex | Damage: %.1f %s | Rate: %.2f/s" % [
@@ -273,6 +299,8 @@ func get_ability_lines() -> PackedStringArray:
 				"Summons up to %d blockers (%d HP, %.1f DPS) onto the adjacent path hex, resummoned %.0f s after death"
 				% [summon_count, roundi(summon_hp), summon_dps, resummon_time]
 			)
+		TargetingMode.AIR_CONTROL:
+			lines.append("Anti-air control aura: slows Air enemies within %d hexes, no attack of its own" % range_hexes)
 		_:
 			pass
 
@@ -291,6 +319,8 @@ func get_ability_lines() -> PackedStringArray:
 				lines.append("Chain lightning arcs to up to %d enemies" % max_targets)
 		TargetingMode.CONTROL_DRAIN:
 			lines.append("Primarily a control tower: it slows and roots foes more than it kills")
+		TargetingMode.AIR_CONTROL:
+			pass
 		TargetingMode.DOT_CENSER:
 			lines.append("Primarily a damage-over-time tower: it stacks a burn rather than burst damage")
 		_:
@@ -302,7 +332,11 @@ func get_ability_lines() -> PackedStringArray:
 	if pulse_reveal_duration > 0.0:
 		lines.append("Reveals Cloaked enemies hit for %.0f s" % pulse_reveal_duration)
 	if slow_aura_strength > 0.0:
-		lines.append("Slows every Ground enemy in range by %d%%" % roundi(slow_aura_strength * 100.0))
+		lines.append("Slows every %s enemy in range by %d%%" % [
+			_slow_domain_noun(), roundi(slow_aura_strength * 100.0)
+		])
+	if grounding_bonus > 0.0:
+		lines.append("Slowed enemies become Grounded and take +%d%% ELECTRIC damage" % roundi(grounding_bonus * 100.0))
 	if root_duration > 0.0 and root_interval > 0.0:
 		lines.append("Roots a target for %.1f s every %.1f s" % [root_duration, root_interval])
 	if applies_entangled:

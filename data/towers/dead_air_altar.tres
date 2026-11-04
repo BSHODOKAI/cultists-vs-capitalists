@@ -1,0 +1,38 @@
+[gd_resource type="Resource" script_class="TowerData" load_steps=9 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/tower_data.gd" id="1_td"]
+[ext_resource type="Resource" path="res://data/upgrades/colder_current.tres" id="2_t2"]
+[ext_resource type="Resource" path="res://data/upgrades/the_sky_is_closed.tres" id="3_rev3"]
+[ext_resource type="Resource" path="res://data/upgrades/heaven_under_glass.tres" id="4_rev4"]
+[ext_resource type="Resource" path="res://data/upgrades/salvaged_compressor.tres" id="5_rig3"]
+[ext_resource type="Resource" path="res://data/upgrades/blackout_rig.tres" id="6_rig4"]
+[ext_resource type="Resource" path="res://data/upgrades/tithe_of_stillness.tres" id="7_rite3"]
+[ext_resource type="Resource" path="res://data/upgrades/the_ledger_holds_its_breath.tres" id="8_rite4"]
+
+[resource]
+script = ExtResource("1_td")
+id = "dead_air_altar"
+display_name = "Dead Air Altar"
+description = "Anti-air control: slows Air enemies within 3 hexes by 45% and grounds them (+25% Electric damage taken); no attack of its own."
+cost = 45
+build_currency = 0
+range_hexes = 3
+damage = 0.0
+damage_tag = 0
+fire_rate = 0.0
+target_tags = Array[int]([1])
+targeting_mode = 10
+detects_cloaked = false
+pulse_reveal_duration = 0.0
+starting_members = 1
+max_targets = 1
+slow_aura_strength = 0.45
+grounding_bonus = 0.25
+base_behaviors = Array[String](["dead_air_altar"])
+t2_upgrade = ExtResource("2_t2")
+revealed_t3_upgrade = ExtResource("3_rev3")
+revealed_t4_upgrade = ExtResource("4_rev4")
+rigged_t3_upgrade = ExtResource("5_rig3")
+rigged_t4_upgrade = ExtResource("6_rig4")
+rite_t3_upgrade = ExtResource("7_rite3")
+rite_t4_upgrade = ExtResource("8_rite4")

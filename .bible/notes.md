@@ -10,3 +10,4 @@ Wave 43 hit absolutely massive performance lag (could be related to rite based t
 need a better alert when rogue entities are spawning to let the player know the danger they are in
 better feednack to the player of where the currency is coming from, right now they are just numbers that 'go up' arbitrarily as the user plays the game
 rites should be next to other currencies on title bar hud. We need mouseovers for corruption and reckoning to explain to the player what those mean.
+blank defaults to the same seed instead of random.

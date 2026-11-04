@@ -54,6 +54,8 @@ enum Currency {
 @export var targets_add: int = 0
 ## If > 0, overrides the tower's slow aura strength (e.g. 0.45 for more_grates).
 @export var slow_aura_override: float = -1.0
+## If > 0, overrides the AIR_CONTROL tower's grounding bonus (extra ELECTRIC damage taken).
+@export var grounding_bonus_override: float = -1.0
 ## If > 0, overrides the tower's DoT duration in seconds (e.g. 6.0 for heavier_incense).
 @export var dot_duration_override: float = -1.0
 ## If > 0, raises the Armor Shred stack cap applied by this tower (8 or 10).
@@ -77,7 +79,7 @@ enum Currency {
 ## Additive bonus per point of CURRENT Corruption, keyed by stat name. The Rite branch exists
 ## on ALL towers, but damage is meaningless on a tower that never attacks -- this is how the
 ## branch scales the stats a SUPPORT tower actually has. Supported keys: `"aura_fire_rate"`,
-## `"income"`, `"summon_hp"`. `"damage"` is also accepted here and folds into
+## `"income"`, `"summon_hp"`, `"slow_aura"`. `"damage"` is also accepted here and folds into
 ## `corruption_scaled_damage`, so both spellings work.
 @export var corruption_scaled_stat: Dictionary = {}
 

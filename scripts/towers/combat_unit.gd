@@ -136,6 +136,11 @@ var drain_slow_strength: float = 0.0
 var flood_slow_strength: float = 0.0
 var conduct_electric_wet: bool = false
 
+## Set each tick by a dead_air_altar whose slow aura covers this unit: it is Grounded,
+## taking extra ELECTRIC damage. Re-applied every tick and cleared when out of aura.
+var grounded_by_dead_air: bool = false
+var grounded_electric_bonus: float = 0.0
+
 var timed_slow_strength: float = 0.0
 var timed_slow_timer: float = 0.0
 

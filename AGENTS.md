@@ -31,7 +31,7 @@
 All player currency spending must route through the single choke point `GameState.spend(currency, amount, reason)`.
 
 - **Offerings (`Start: 150`):**
-- Used to build Offerings-cost base towers (7 of the 10 archetypes), unlock `REVEALED` T3/T4 upgrades, perform global **Penance** (`40 Offerings -> -5 Corruption`), and cleanse enemy tower conversions early (`50%` of base tower cost).
+- Used to build Offerings-cost base towers (8 of the 11 archetypes), unlock `REVEALED` T3/T4 upgrades, perform global **Penance** (`40 Offerings -> -5 Corruption`), and cleanse enemy tower conversions early (`50%` of base tower cost).
 - Earned from enemy kills (`round(unit.cost * 1.0)`, boosted by `dark_patron` up to +30%) and `tithe_box` passive income.
 - **Scrap (`Start: 40`):**
 - Used to build Scrap-cost base towers (`watcher_in_the_billboard` [70 Scrap], `substation_effigy` [50 Scrap], and `rust_censer` [40 Scrap]), unlock `RIGGED` T3/T4 upgrades, perform tower **Maintenance** (`15 Scrap -> -10 Jank`), and pay `solvent_tank` wave upkeep (`4 Scrap/wave`).
@@ -85,14 +85,14 @@ All player currency spending must route through the single choke point `GameStat
 
 ## 5. Towers, Upgrade Trees, Corruption & Jank
 
-All 10 cult towers live in `res://data/towers/*.tres` and their 50 upgrades (`10 x [1 T2 + 2 T3 + 2 T4]`) live in `res://data/upgrades/*.tres`.
+All 11 cult towers live in `res://data/towers/*.tres` and their upgrade resources (`11 x [1 T2 + 2 T3 + 2 T4]`, plus the optional Rite branch below, for 77 total) live in `res://data/upgrades/*.tres`.
 
 - **Placement & Adjacency Rules:**
 - 1 hex per tower on a `BUILDABLE`, non-path, non-reserved, unoccupied hex within hex distance `<= 2` of the committed path.
 - **Exception:** `the_congregation` (`range_hexes = 1`) **must be placed directly adjacent (`hex_distance == 1`)** to a committed path hex.
 - **Upgrade Tree & Branch Locking:**
 - `T1 (base) -> T2 (shared, 0.6x base cost) -> fork: REVEALED T3 (1.0x) -> T4 Capstone (1.8x) OR RIGGED T3 (1.0x) -> T4 Capstone (1.8x)`.
-- **All 10** towers carry a **third, optional RITE branch** (`rite_t3_upgrade` / `rite_t4_upgrade`, `UpgradeNode.Branch.RITE = 3`) locked to the other two exactly the same way. Damage is meaningless on the three towers with no attack of their own (`fever_shrine`, `the_congregation`, `tithe_box`), so the branch scales whatever stat the tower actually has: `UpgradeNode.corruption_scaled_stat` is a dictionary of additive per-point-Corruption bonuses keyed by stat name (`"damage"` folds into the older `corruption_scaled_damage` field; `"aura_fire_rate"`, `"income"` and `"summon_hp"` cover the support towers). `TowerSystem.get_rite_stat_multiplier(tower, key)` returns `1.0` when a tower carries no such scaling, so every call site multiplies unconditionally.
+- **All 11** towers carry a **third, optional RITE branch** (`rite_t3_upgrade` / `rite_t4_upgrade`, `UpgradeNode.Branch.RITE = 3`) locked to the other two exactly the same way. Damage is meaningless on the towers with no attack of their own (`fever_shrine`, `the_congregation`, `tithe_box`, `dead_air_altar`), so the branch scales whatever stat the tower actually has: `UpgradeNode.corruption_scaled_stat` is a dictionary of additive per-point-Corruption bonuses keyed by stat name (`"damage"` folds into the older `corruption_scaled_damage` field; `"aura_fire_rate"`, `"income"`, `"summon_hp"` and `"slow_aura"` cover the support/control towers). `TowerSystem.get_rite_stat_multiplier(tower, key)` returns `1.0` when a tower carries no such scaling, so every call site multiplies unconditionally.
 - The T3 fork is **exclusive**: choosing any one branch permanently locks the other **two** for that tower. The lock is checked **before** the tier-order guards so a locked branch reports `branch_locked_to_<branch>` rather than a misleading `requires_t2_first` (the player would otherwise be told to buy a T2 they already own).
 - **Revealed Upgrades:** Paid in **Offerings**; add global **Corruption** (`T3 +4`, `T4 +8`).
 - **Rigged Upgrades:** Paid in **Scrap**; set that tower's **Jank** (`T3 -> 10%`, `T4 -> 25%`).
@@ -139,12 +139,13 @@ All 10 cult towers live in `res://data/towers/*.tres` and their 50 upgrades (`10
 | 8 | `the_congregation` | 45 Offerings | 1 (adj) | Summons 2 blockers (60 HP, 2 Kinetic/s, 10s resummon) | `bigger_flock` -> `devoted` -> `martyrs_chorus` | `picket_line` -> `union_strike` |
 | 9 | `tithe_box` | 35 Offerings | 0 | No attack; +4 Offerings every 5s | `bigger_plate` -> `blood_tithe` -> `dark_patron` | `scrap_collector` -> `chop_shop` |
 | 10 | `substation_effigy` | 50 **Scrap** | 3 | 14 Electric, 0.85/s, Ground+Air (Air prio), chains 3 targets | `copper_thieves` -> `astral_conduction` -> `voice_in_the_static` | `substation_tap` -> `breaker_cascade` |
+| 11 | `dead_air_altar` | 45 Offerings | 3 | No attack; continuous 45% **Air-only** slow aura, **Grounds** slowed air (+25% Electric damage taken) | `colder_current` -> `the_sky_is_closed` -> `heaven_under_glass` | `salvaged_compressor` -> `blackout_rig` |
 
 ---
 
 ### Rite Branch Roster (optional third branch, paid in Rites)
 
-All ten towers carry it. Each scales **the stat it actually has** — damage for attackers, aura fire rate / income / summoned HP for the three support towers — and every node also converts kills into Corruption to feed the meter it draws on:
+All eleven towers carry it. Each scales **the stat it actually has** — damage for attackers, aura fire rate / income / summoned HP / slow-aura strength for the four support & control towers — and every node also converts kills into Corruption to feed the meter it draws on:
 
 | Tower | Rite T3 (1 Rite) | Rite T4 (2 Rites) |
 |---|---|---|
@@ -158,6 +159,7 @@ All ten towers carry it. Each scales **the stat it actually has** — damage for
 | `fever_shrine` | `candles_for_the_ledger` (aura +35% rate, +0.4%/Corruption aura, +1 Corruption/kill) | `the_vigil_pays_interest` (aura +50% rate, +1 hex, +0.7%/Corruption aura, +2 Corruption/kill) |
 | `the_congregation` | `paid_in_flesh` (+1 blocker, +0.4%/Corruption blocker HP, +1 Corruption/kill) | `audit_of_the_flock` (+1 blocker, +60% blocker HP, +0.7%/Corruption blocker HP, +2 Corruption/kill) |
 | `tithe_box` | `the_plate_never_empties` (+40% income, +0.4%/Corruption income, +1 Corruption/kill) | `the_till_audits_itself` (+75% income, +0.7%/Corruption income, +2 Corruption and +1 Offering/kill) |
+| `dead_air_altar` | `tithe_of_stillness` (+0.4%/Corruption slow aura, +1 Corruption/kill) | `the_ledger_holds_its_breath` (+0.7%/Corruption slow aura, +1 hex, +2 Corruption/kill) |
 
 ## 6. Factions, Enemy Units, Bosses & Leveling
 
@@ -334,7 +336,7 @@ counts, guaranteeing claimability).
 - `IntelPanel` & `TelegraphLayer`: Pre-wave Intel preview; post-boss "BOSS SLAIN / Next Faction" banners automatically clear when the next wave starts.
 - `CameraRig`: Orthographic (`size 7..48`, default `18`), WASD/arrow pan, middle-mouse drag pan, single-finger touchscreen drag pan, mouse-wheel & two-finger pinch zoom, `Home` (focus base), `End` (focus spawn/preview).
 - **HUD window consistency (rules — keep them):**
-- **One fixed frame per window.** A HUD window has a single size for its whole life, set by constants (`TowerPanel.PANEL_WIDTH` x `PANEL_HEIGHT`), never derived from its content, so it cannot resize as the player interacts with it. `TowerPanel` is the same size for all 10 towers and every state (build preview, T1, T2 fork, T3, T4).
+- **One fixed frame per window.** A HUD window has a single size for its whole life, set by constants (`TowerPanel.PANEL_WIDTH` x `PANEL_HEIGHT`), never derived from its content, so it cannot resize as the player interacts with it. `TowerPanel` is the same size for all 11 towers and every state (build preview, T1, T2 fork, T3, T4).
 - **Variable content scrolls vertically, never horizontally.** Anything whose height can grow (readouts, the upgrade ladder, site auras) lives in a `ScrollContainer` inside the fixed frame with `horizontal_scroll_mode = SCROLL_MODE_DISABLED`; overflow scrolls up/down instead of growing or clipping the window. A HUD window never shows a horizontal scrollbar — wide content is wrapped, not scrolled sideways.
 - **Text never sets width.** A `Button` does not wrap and its minimum width is the full width of its longest line, so buttons carry only short, pre-broken labels and never a description; all variable text is a wrapping `Label`. A side-by-side pair (the T3 fork) gives each column half the inner width and its buttons must fit that half. Enforced by `test_build_menu_ui.gd::test_04`.
 - **HUD scale is bounded.** The whole UI is authored at `DisplaySettings.UI_BASE_SIZE` (1152x648) and scaled by `clampf(window_height / 648, UI_MIN_SCALE, UI_MAX_SCALE)` via the `UiScale` autoload; never set `content_scale_size` from the chosen resolution.
@@ -372,8 +374,8 @@ res://
 │   ├── unit_balance.tres
 │   ├── visual_theme.tres
 │   ├── biomes/         # BiomeData resources (urban_center.tres)
-│   ├── towers/         # 9 TowerData resources
-│   ├── upgrades/       # 45 UpgradeNode resources
+│   ├── towers/         # 11 TowerData resources
+│   ├── upgrades/       # 77 UpgradeNode resources
 │   └── units/          # 16 regular UnitData + rogue_entity.tres + bosses/ (5 Boss UnitData)
 ├── scenes/
 │   ├── main_menu.tscn              # Main entry scene (MainMenu + SettingsMenu)

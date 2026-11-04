@@ -411,6 +411,22 @@ static func get_tower_icon(tower_id: String, size: int = 40) -> ImageTexture:
 			_draw_line(img, 23 * f, 9 * f, 31 * f, 13 * f, 2.2 * f, Color.WHITE)
 			_draw_line(img, 31 * f, 13 * f, 34 * f, 8 * f, 2.0 * f, arc)
 
+		"dead_air_altar":
+			var pallor := Color(0.62, 0.80, 0.92)
+			var frost := Color(0.86, 0.95, 1.0)
+			_draw_frame(img, pallor, bg)
+			# Rooftop air-handler cabinet + louvered blower intake
+			_draw_rect(img, roundi(9 * f), roundi(23 * f), roundi(22 * f), roundi(11 * f), Color(0.44, 0.46, 0.50))
+			_draw_rect(img, roundi(9 * f), roundi(23 * f), roundi(22 * f), roundi(2 * f), pallor)
+			_draw_circle(img, 13 * f, 29 * f, 4.0 * f, Color(0.30, 0.33, 0.38))
+			# Downward funnel of dead air: three descending chevrons above the cabinet
+			for ci in range(3):
+				var cy: float = (8.0 + ci * 5.0) * f
+				var half: float = (10.0 - ci * 2.0) * f
+				_draw_line(img, 20 * f - half, cy, 20 * f, cy + 3.5 * f, 2.0 * f, frost)
+				_draw_line(img, 20 * f + half, cy, 20 * f, cy + 3.5 * f, 2.0 * f, frost)
+			_draw_circle(img, 20 * f, 6 * f, 2.0 * f, frost)
+
 		_:
 			var fallback_col := Color(0.65, 0.82, 1.0)
 			_draw_frame(img, fallback_col, bg)

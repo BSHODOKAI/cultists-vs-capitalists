@@ -112,6 +112,15 @@ const EXPECTED_TOWERS: Dictionary = {
 		"rig_t3": "substation_tap",
 		"rig_t4": "breaker_cascade",
 	},
+	"dead_air_altar": {
+		"cost": 45,
+		"range": 3,
+		"t2": "colder_current",
+		"rev_t3": "the_sky_is_closed",
+		"rev_t4": "heaven_under_glass",
+		"rig_t3": "salvaged_compressor",
+		"rig_t4": "blackout_rig",
+	},
 }
 
 
@@ -195,24 +204,25 @@ const RITE_TOWERS: Dictionary = {
 	"the_congregation": {"rite_t3": "paid_in_flesh", "rite_t4": "audit_of_the_flock"},
 	"tithe_box": {"rite_t3": "the_plate_never_empties", "rite_t4": "the_till_audits_itself"},
 	"substation_effigy": {"rite_t3": "metered_current", "rite_t4": "the_grid_forecloses"},
+	"dead_air_altar": {"rite_t3": "tithe_of_stillness", "rite_t4": "the_ledger_holds_its_breath"},
 }
 ## Rite costs are flat (1 then 2), NOT base-cost multiples: Rites are a scarce
 ## Corruption-derived currency, so scaling them by a Tower's Offering cost is meaningless.
 const RITE_T3_COST: int = 1
 const RITE_T4_COST: int = 2
 
-# --- Test 1: Data validation: 10 towers, 56 nodes, all references valid, costs correct
+# --- Test 1: Data validation: 11 towers, 77 nodes, all references valid, costs correct
 
-func test_01_data_validation_10_towers_70_nodes_references_and_costs() -> void:
+func test_01_data_validation_11_towers_77_nodes_references_and_costs() -> void:
 	var balance: TowerBalanceData = _Library.load_balance()
 	assert(balance != null, "TowerBalanceData must load from res://data/tower_balance.tres")
 
 	var towers: Array[TowerData] = _Library.load_towers()
 	var upgrades: Array[UpgradeNode] = _Library.load_upgrades()
-	assert(towers.size() == 10, "Must have exactly 10 TowerData resources, got %d" % towers.size())
+	assert(towers.size() == 11, "Must have exactly 11 TowerData resources, got %d" % towers.size())
 	assert(
-		upgrades.size() == 70,
-		"Must have exactly 70 UpgradeNode resources (50 + 10 towers x 2 Rite nodes), got %d" % upgrades.size()
+		upgrades.size() == 77,
+		"Must have exactly 77 UpgradeNode resources (55 + 11 towers x 2 Rite nodes), got %d" % upgrades.size()
 	)
 
 	var seen_node_ids: Dictionary = {}
@@ -343,7 +353,7 @@ func test_01_data_validation_10_towers_70_nodes_references_and_costs() -> void:
 			for b_id: String in node.behaviors:
 				assert(_Registry.has_behavior(b_id), "Upgrade behavior '%s' on %s must exist in TowerBehaviorRegistry" % [b_id, node.id])
 
-	assert(seen_node_ids.size() == 70, "All 70 unique upgrade node IDs must be validated")
+	assert(seen_node_ids.size() == 77, "All 77 unique upgrade node IDs must be validated")
 
 
 # --- Test 10: Rite branch: spends Rites, locks both other branches, scales with Corruption
@@ -1012,7 +1022,7 @@ func test_12_rite_kill_effects_are_declared_and_reach_the_tower() -> void:
 			rate4 > rate3,
 			"%s Rite T4 must feed the meter faster than its T3 (%d vs %d)" % [td.id, rate4, rate3]
 		)
-	assert(rite_towers == 10, "Expected all 10 towers carrying a Rite branch, got %d" % rite_towers)
+	assert(rite_towers == 11, "Expected all 11 towers carrying a Rite branch, got %d" % rite_towers)
 
 	# The accessor the kill code reads must surface each node's rate and sum across them.
 	var sys := _make_test_system()
@@ -1050,6 +1060,7 @@ func test_06_deterministic_headless_combat_sim_for_each_tower() -> void:
 		"the_congregation",
 		"tithe_box",
 		"substation_effigy",
+		"dead_air_altar",
 	]
 
 	for tid: String in all_tower_ids:
@@ -1072,6 +1083,10 @@ func test_06_deterministic_headless_combat_sim_for_each_tower() -> void:
 			assert(int(res_a["offerings_gained"]) >= 8, "tithe_box must generate Offerings over a 10 s sim, got %d" % int(res_a["offerings_gained"]))
 		elif tid == "fever_shrine":
 			assert(float(res_a["shrine_buffed_rate"]) > float(res_a["unbuffed_rate"]), "fever_shrine must buff nearby tower fire rate")
+		elif tid == "dead_air_altar":
+			# Pure control tower: no attack of its own, so its base sim deals no damage. Its
+			# slow/grounding behaviour is asserted in the dedicated anti-air test below.
+			pass
 		else:
 			assert(float(res_a["damage_dealt"]) > 0.0, "Attacking tower %s must deal > 0 damage in headless sim, got %.2f" % [tid, float(res_a["damage_dealt"])])
 			assert(int(res_a["hits_count"]) > 0, "Attacking tower %s must emit tower_damaged_enemy at least once" % tid)
@@ -1149,7 +1164,14 @@ static func _run_upgraded_branch_sim(tower_id: String, revealed_branch: bool, se
 	if tower_id == "fever_shrine":
 		sys.place_tower(Vector2i(4, 1), "hexed_nail_gun")
 
-	sys.spawn_unit(2500.0, [_C.UnitTag.GROUND, _C.UnitTag.ARMORED, _C.UnitTag.CYBERNETIC], 0.0, 5.0)
+	var dummy_tags: Array[int] = []
+	if tower_id == "dead_air_altar":
+		dummy_tags.append(_C.UnitTag.AIR)
+	else:
+		dummy_tags.append(_C.UnitTag.GROUND)
+		dummy_tags.append(_C.UnitTag.ARMORED)
+		dummy_tags.append(_C.UnitTag.CYBERNETIC)
+	sys.spawn_unit(2500.0, dummy_tags, 0.0, 5.0)
 	return sys.simulate(8.0, 0.25, rng)
 
 
@@ -1174,7 +1196,12 @@ static func _run_single_tower_sim(tower_id: String, seed_val: int) -> Dictionary
 		unbuffed_rate = partner.def.fire_rate
 		buffed_rate = sys.get_effective_tower_fire_rate(partner)
 
-	var dummy: CombatUnit = sys.spawn_unit(2000.0, [_C.UnitTag.GROUND], 0.0, 5.0)
+	var dummy_tags: Array[int] = []
+	if tower_id == "dead_air_altar":
+		dummy_tags.append(_C.UnitTag.AIR)
+	else:
+		dummy_tags.append(_C.UnitTag.GROUND)
+	var dummy: CombatUnit = sys.spawn_unit(2000.0, dummy_tags, 0.0, 5.0)
 	var sim_res: Dictionary = sys.simulate(10.0, 0.25, rng)
 	sim_res["signal_count"] = signal_hits[0]
 	sim_res["dummy_remaining_hp"] = dummy.hp
@@ -1406,5 +1433,67 @@ func test_10_knockback_has_dr_and_skips_displacement_immune_targets() -> void:
 	assert(back.is_displacement_immune(), "After 3 knockbacks the unit must be permanently displacement-immune")
 	sys.step(2.5, rng)
 	assert(is_equal_approx(back.path_position, 6.75), "4th knockback must be rejected (no further movement)")
+
+
+# --- Test 14: dead_air_altar anti-air slow aura -------------------------------
+
+func test_14_dead_air_altar_slows_air_only_grounds_for_electric_and_scales_with_rite() -> void:
+	var sys := _make_test_system()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 4242
+
+	var tower: TowerInstance = sys.place_tower(Vector2i(5, 1), "dead_air_altar")
+	assert(tower != null, "dead_air_altar must place within 2 hexes of the path")
+	assert(
+		tower.def.targeting_mode == TowerData.TargetingMode.AIR_CONTROL,
+		"dead_air_altar must use the AIR_CONTROL targeting mode"
+	)
+
+	# One Air unit and one Ground unit sit at the same path position, inside the aura.
+	var air: CombatUnit = sys.spawn_unit(5000.0, [_C.UnitTag.AIR], 0.0, 5.0)
+	var ground: CombatUnit = sys.spawn_unit(5000.0, [_C.UnitTag.GROUND], 0.0, 5.0)
+	sys.step(0.05, rng)
+
+	assert(
+		is_equal_approx(air.drain_slow_strength, 0.45),
+		"Air in range must be slowed 45%%, got %.3f" % air.drain_slow_strength
+	)
+	assert(
+		air.grounded_by_dead_air and is_equal_approx(air.grounded_electric_bonus, 0.25),
+		"Air in range must be Grounded at +25%% Electric taken"
+	)
+	assert(
+		is_zero_approx(ground.drain_slow_strength),
+		"The air-only aura must NOT slow Ground units, got %.3f" % ground.drain_slow_strength
+	)
+	assert(not ground.grounded_by_dead_air, "Ground units must NOT be Grounded by the air-only aura")
+
+	# Grounding IS the Electric synergy: +25% Electric taken, every other tag untouched.
+	air.grounded_by_dead_air = true
+	air.grounded_electric_bonus = 0.25
+	var elec: float = sys.calculate_hit_damage(tower, air, 100.0, _C.DamageTag.ELECTRIC)
+	var kin: float = sys.calculate_hit_damage(tower, air, 100.0, _C.DamageTag.KINETIC)
+	assert(is_equal_approx(elec, 125.0), "Grounded air must take +25%% Electric (125.0), got %.2f" % elec)
+	assert(is_equal_approx(kin, 100.0), "Grounding must not alter Kinetic damage, got %.2f" % kin)
+
+	# Air Bosses take the slow at 50% strength (0.45 -> 0.225).
+	var boss: CombatUnit = sys.spawn_unit(5000.0, [_C.UnitTag.AIR, _C.UnitTag.BOSS], 0.0, 5.0)
+	sys.step(0.05, rng)
+	assert(
+		is_equal_approx(boss.get_effective_speed_multiplier(), 0.775),
+		"Air Boss must take the slow at 50%% strength (0.775x), got %.4f" % boss.get_effective_speed_multiplier()
+	)
+
+	# Rite branch scales the slow with Corruption (0.4%/pt): the T2 55% aura at 50
+	# Corruption becomes 0.55 * (1 + 50*0.004) = 0.66.
+	sys.rites = 5
+	assert(sys.upgrade_tower(tower, "colder_current"), "T2 colder_current must be buyable")
+	assert(sys.upgrade_tower(tower, "tithe_of_stillness"), "Rite T3 tithe_of_stillness must be buyable")
+	sys.set_corruption(50)
+	var eff_slow: float = tower.get_slow_aura_strength() * sys.get_rite_stat_multiplier(tower, "slow_aura")
+	assert(
+		is_equal_approx(eff_slow, 0.66),
+		"Rite slow must scale with Corruption (0.55 * 1.20 = 0.66), got %.4f" % eff_slow
+	)
 
 

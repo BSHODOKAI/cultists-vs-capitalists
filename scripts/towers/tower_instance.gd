@@ -286,6 +286,18 @@ func get_slow_aura_strength() -> float:
 	return val
 
 
+## Extra ELECTRIC damage-taken fraction this tower applies to air it grounds (AIR_CONTROL).
+## Resolves the upgrade override, then adds any Rite-branch per-Corruption scaling.
+func get_grounding_bonus() -> float:
+	if def == null:
+		return 0.0
+	var val: float = def.grounding_bonus
+	for node: UpgradeNode in unlocked_nodes:
+		if node.grounding_bonus_override > 0.0:
+			val = node.grounding_bonus_override
+	return val
+
+
 func get_dot_duration() -> float:
 	var val: float = def.dot_duration if def != null else 0.0
 	for node: UpgradeNode in unlocked_nodes:

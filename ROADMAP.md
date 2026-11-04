@@ -83,3 +83,28 @@ Ideas to ponder — **not** a mandate to replace systems that work:
   turn on them. Worth pondering whether a future mode leans into that.
 - **Multiplayer?** Out of scope here, but if co-op is ever considered, the faction/cult split and
   the deterministic seeded systems are assets — note it and move on.
+
+---
+
+## 6. Air Control: Beyond the Dead Air Altar
+
+`dead_air_altar` (see `AGENTS.md` §5) shipped as the first tower to reach **Air** at all — a
+continuous slow aura with an Electric "Grounding" synergy. Two further air-control designs were
+scoped and deliberately deferred:
+
+- **Skyline Anchor — hard-CC anti-air.** A bolas / harpoon / net emplacement that pins drones:
+  periodic `root` / `stun` and, most interestingly, **path displacement against Air** (dragging
+  drones *backward* along the skyway). Displacement against air is engine-supported today
+  (`CombatUnit.displace_along_path` carries no ground restriction) but no tower uses it —
+  `propane_pulse` and `deep_grasp` are both ground-only. Subject to the usual 3× DR budget and
+  Boss immunity, so a boss fight is unaffected. Distinct niche: a burst "stop the swarm now"
+  answer rather than an attrition slow.
+- **Weather Modification Array — full hybrid air-control tower.** A flagship rig pairing a slow
+  aura with a periodic AoE hard CC, branching Revealed (mass root, "the sky is commanded") vs
+  Rigged (overvolted Electric static-stun), plus a Rite branch. Reuses the `dead_air_altar`
+  groundwork (the `AIR_CONTROL` mode and grounding plumbing) and would be the most content-heavy
+  option (7 nodes, new models / icons / cues).
+
+Both were set aside so v1 could ship the smallest change that closes the air-control gap without
+overlapping `tentacle_storm_drain` (ground-only control) or `jammer_choir` (stun byproduct).
+Revisit if air ever needs a harder counter than a slow.

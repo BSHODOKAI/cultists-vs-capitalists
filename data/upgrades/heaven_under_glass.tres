@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "heaven_under_glass"
+display_name = "Heaven Under Glass"
+description = "An 80% slow aura, +50% Electric damage to grounded air, and +1 range. HEAVEN UNDER GLASS: the whole sky is pressed flat beneath the cult's cold lid."
+tower_id = "dead_air_altar"
+tier = 4
+branch = 1
+currency = 0
+cost = 81
+prerequisite_id = "the_sky_is_closed"
+corruption_delta = 8
+jank_set = 0
+slow_aura_override = 0.80
+grounding_bonus_override = 0.50
+range_add = 1
+behaviors = Array[String](["heaven_under_glass"])

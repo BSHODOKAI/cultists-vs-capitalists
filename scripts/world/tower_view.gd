@@ -24,6 +24,7 @@ const TOWER_LETTERS: Dictionary = {
 	"the_congregation": "M",
 	"tithe_box": "$",
 	"substation_effigy": "E",
+	"dead_air_altar": "D",
 }
 
 var tower_instance: TowerInstance

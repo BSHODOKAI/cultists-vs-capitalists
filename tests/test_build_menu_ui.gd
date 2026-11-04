@@ -103,7 +103,7 @@ func test_01_main_build_palette_menu_inspect_before_build_and_description_displa
 
 func test_02_placeholder_models_and_icons_for_all_towers_units_and_bosses() -> void:
 	var towers: Array[TowerData] = _TowerLibrary.load_towers()
-	assert(towers.size() == 10, "Must load all 10 cult towers")
+	assert(towers.size() == 11, "Must load all 11 cult towers")
 
 	for td: TowerData in towers:
 		var icon: ImageTexture = _PlaceholderIcons.get_tower_icon(td.id, 40)

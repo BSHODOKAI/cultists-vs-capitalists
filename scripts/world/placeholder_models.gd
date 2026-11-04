@@ -203,6 +203,8 @@ static func get_tower_signature_color(tower_id: String) -> Color:
 			return Color(0.98, 0.84, 0.24, 1.0) # Offering gold
 		"substation_effigy":
 			return Color(0.28, 0.88, 1.0, 1.0) # High-voltage Tesla arc cyan
+		"dead_air_altar":
+			return Color(0.62, 0.80, 0.92, 1.0) # Cold dead-air pallor
 		_:
 			return Color(0.65, 0.82, 1.0, 1.0)
 
@@ -555,6 +557,34 @@ static func _build_tower_meshes(tower_id: String, tier: int) -> Dictionary:
 					Vector3(cos(hang) * 0.16, 1.24, sin(hang) * 0.16),
 					Color.WHITE,
 					Vector3(cos(hang) * 28.0, 0.0, -sin(hang) * 28.0),
+					6
+				)
+
+		"dead_air_altar":
+			# Rooftop air-handler: a salvaged HVAC cabinet bleeding a cold, heavy column of
+			# dead air down the flight lane. Cabinet + intake stack + a downward funnel of
+			# cold vapour; accent is the frozen pressure column. (< 1.45 height)
+			base.add_box(Vector3(0.56, 0.36, 0.44), Vector3(0.0, 0.28, 0.0), scrap_iron)
+			base.add_box(Vector3(0.50, 0.06, 0.38), Vector3(0.0, 0.47, 0.0), mid_stone)
+			# Intake stack rising to the right, with a cowl
+			base.add_cyl(0.10, 0.12, 0.42, Vector3(0.20, 0.62, 0.0), rust_metal, Vector3.ZERO, 8)
+			base.add_cone(0.14, 0.16, Vector3(0.20, 0.88, 0.0), mid_stone, Vector3.ZERO, 8)
+			# Blower housing on the left with a louvered grille
+			base.add_cyl(0.16, 0.16, 0.20, Vector3(-0.22, 0.40, 0.0), Color(0.42, 0.44, 0.48), Vector3(0.0, 0.0, 90.0), 10)
+			for gy in [-0.06, 0.0, 0.06]:
+				base.add_box(Vector3(0.03, 0.02, 0.30), Vector3(-0.31, 0.40 + gy, 0.0), dark_stone)
+			# Accent: a downward funnel of cold vapour + drifting frozen motes
+			accent.add_cone(0.30, 0.34, Vector3(0.0, 0.86, 0.0), Color.WHITE, Vector3(180.0, 0.0, 0.0), 10)
+			accent.add_torus(0.20, 0.26, Vector3(0.0, 0.72, 0.0), Color.WHITE, Vector3.ZERO, 10, 6)
+			accent.add_torus(0.30, 0.35, Vector3(0.0, 1.05, 0.0), Color.WHITE, Vector3.ZERO, 12, 6)
+			for m_i in range(3):
+				var m_ang: float = float(m_i) * TAU / 3.0
+				accent.add_cone(
+					0.035,
+					0.14,
+					Vector3(cos(m_ang) * 0.24, 1.20, sin(m_ang) * 0.24),
+					Color.WHITE,
+					Vector3(180.0, 0.0, 0.0),
 					6
 				)
 

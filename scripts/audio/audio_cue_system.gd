@@ -203,6 +203,8 @@ static func resolve_tower_cooldown_cue(tower_type: String, ability_id: String) -
 			return _AudioBalance.CUE_TOWER_CD_SHRINE_BURST
 		"substation_effigy":
 			return _AudioBalance.CUE_TOWER_CD_STATIC_STORM
+		"dead_air_altar":
+			return _AudioBalance.CUE_TOWER_CD_STATIC_STORM
 		_:
 			return _AudioBalance.CUE_TOWER_CD_DEFAULT
 

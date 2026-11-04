@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "salvaged_compressor"
+display_name = "Salvaged Compressor"
+description = "A 65% slow aura, plus a periodic 12 Electric discharge into grounded air."
+tower_id = "dead_air_altar"
+tier = 3
+branch = 2
+currency = 1
+cost = 45
+prerequisite_id = "colder_current"
+corruption_delta = 0
+jank_set = 10
+slow_aura_override = 0.65
+behaviors = Array[String](["salvaged_compressor"])
+behavior_params = {
+"discharge_damage": 12.0,
+"discharge_interval": 6.0
+}

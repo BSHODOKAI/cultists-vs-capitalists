@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "tithe_of_stillness"
+display_name = "Tithe of Stillness"
+description = "The air grows heavier with every point of Corruption: +0.4% slow per Corruption, and each kill feeds 1 Corruption into the meter it draws on."
+tower_id = "dead_air_altar"
+tier = 3
+branch = 3
+currency = 2
+cost = 1
+prerequisite_id = "colder_current"
+corruption_delta = 0
+jank_set = 0
+corruption_scaled_stat = {
+"slow_aura": 0.004
+}
+behaviors = Array[String](["tithe_of_stillness"])
+behavior_params = {
+"corruption_per_kill": 1
+}

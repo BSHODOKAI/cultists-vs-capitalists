@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="UpgradeNode" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/towers/upgrade_node.gd" id="1_up"]
+
+[resource]
+script = ExtResource("1_up")
+id = "the_sky_is_closed"
+display_name = "The Sky Is Closed"
+description = "A 70% slow aura, and grounded air take +35% Electric damage. THE SKY IS CLOSED: the cult reads the forecast and cancels the flight."
+tower_id = "dead_air_altar"
+tier = 3
+branch = 1
+currency = 0
+cost = 45
+prerequisite_id = "colder_current"
+corruption_delta = 4
+jank_set = 0
+slow_aura_override = 0.70
+grounding_bonus_override = 0.35
+behaviors = Array[String](["the_sky_is_closed"])
