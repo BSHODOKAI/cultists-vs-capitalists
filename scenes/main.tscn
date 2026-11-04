@@ -74,14 +74,12 @@ grow_horizontal = 2
 script = ExtResource("7_topbar")
 
 [node name="IntelPanel" type="PanelContainer" parent="HUD"]
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -332.0
+anchors_preset = 0
+offset_left = 12.0
 offset_top = 54.0
-offset_right = -12.0
+offset_right = 332.0
 offset_bottom = 220.0
-grow_horizontal = 0
+grow_horizontal = 1
 script = ExtResource("10_intel")
 
 [node name="TowerPanel" type="PanelContainer" parent="HUD"]
@@ -89,10 +87,10 @@ visible = false
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -330.0
-offset_top = 226.0
+offset_left = -332.0
+offset_top = 58.0
 offset_right = -12.0
-offset_bottom = 260.0
+offset_bottom = 636.0
 grow_horizontal = 0
 script = ExtResource("9_tpanel")
 

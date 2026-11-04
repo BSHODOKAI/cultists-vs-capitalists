@@ -11,6 +11,14 @@ static var _tower_icon_cache: Dictionary = {}
 static var _unit_icon_cache: Dictionary = {}
 static var _faction_icon_cache: Dictionary = {}
 static var _objective_icon_cache: Dictionary = {}
+static var _cost_icon_cache: Dictionary = {}
+
+## Currency codes for [method get_cost_icon]. Kept in step with UpgradeNode.Currency and
+## TowerData.build_currency so a cost icon can be requested from either a build cost or an
+## upgrade node with the same integer.
+const COST_OFFERINGS = 0
+const COST_SCRAP = 1
+const COST_RITES = 2
 
 
 static func _draw_rect(img: Image, x0: int, y0: int, w: int, h: int, col: Color) -> void:
@@ -188,6 +196,71 @@ static func _draw_frame(img: Image, border_col: Color, bg_col: Color) -> void:
 	_draw_rect(img, 0, s - 2, s, 2, border_col)
 	_draw_rect(img, 0, 0, 2, s, border_col)
 	_draw_rect(img, s - 2, 0, 2, s, border_col)
+
+
+## Returns a cached [ImageTexture] glyph for one of the three currencies, drawn on a
+## TRANSPARENT background so it reads INLINE beside a cost number (top-bar HUD, TowerPanel
+## buttons, BuildPalette cost). One clear motif per currency -- a violet flame-coin for
+## Offerings, an orange cog for Scrap, a gold star-rune for Rites -- so the icon alone tells
+## the player what a price is paid in. [param currency] uses the same codes as
+## [UpgradeNode.Currency]: 0 Offerings, 1 Scrap, 2 Rites.
+static func get_cost_icon(currency: int, size: int = 16) -> ImageTexture:
+	var key: String = "cost_%d_%d" % [currency, size]
+	if _cost_icon_cache.has(key):
+		return _cost_icon_cache[key] as ImageTexture
+
+	var img: Image = Image.create(size, size, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var f: float = float(size) / 16.0
+	var c: float = float(size) * 0.5
+
+	match currency:
+		COST_SCRAP:
+			# Scrap: an orange cog/washer -- salvaged metal, the currency that buys Rigged towers.
+			var body := Color(0.98, 0.62, 0.20)
+			var hole := Color(0.32, 0.17, 0.05)
+			_draw_circle(img, c, c, 6.9 * f, hole)
+			_draw_circle(img, c, c, 5.6 * f, body)
+			_draw_circle(img, c, c, 2.1 * f, hole)
+			for i in range(4):
+				var a: float = PI * 0.5 * float(i) + PI * 0.25
+				_draw_rect(
+					img,
+					roundi(c + cos(a) * 6.4 * f - 1.3 * f),
+					roundi(c + sin(a) * 6.4 * f - 1.3 * f),
+					roundi(2.6 * f),
+					roundi(2.6 * f),
+					body
+				)
+		COST_RITES:
+			# Rites: a gold star-rune in a ring -- Corruption drawn into a resource.
+			var gold := Color(0.97, 0.81, 0.36)
+			_draw_circle(img, c, c, 7.2 * f, Color(0.30, 0.21, 0.05))
+			_draw_ring(img, c, c, 5.5 * f, 6.9 * f, gold)
+			_draw_circle(img, c, c, 1.7 * f, gold)
+			for i in range(4):
+				var a2: float = PI * 0.5 * float(i)
+				_draw_line(img, c, c, c + cos(a2) * 5.4 * f, c + sin(a2) * 5.4 * f, 1.6 * f, gold)
+			for i in range(4):
+				var a3: float = PI * 0.5 * float(i) + PI * 0.25
+				_draw_line(img, c, c, c + cos(a3) * 3.6 * f, c + sin(a3) * 3.6 * f, 1.0 * f, gold)
+		_:
+			# Offerings: a violet flame fixed in a coin -- the cult's tithe of power.
+			var col := Color(0.82, 0.58, 1.0)
+			_draw_circle(img, c, c, 6.9 * f, Color(0.26, 0.13, 0.38))
+			_draw_ring(img, c, c, 5.2 * f, 6.9 * f, col)
+			_draw_triangle(
+				img,
+				Vector2(c, c - 4.6 * f),
+				Vector2(c - 2.9 * f, c + 2.2 * f),
+				Vector2(c + 2.9 * f, c + 2.2 * f),
+				col
+			)
+			_draw_rect(img, roundi(c - 2.2 * f), roundi(c + 2.2 * f), roundi(4.4 * f), roundi(2.0 * f), col)
+
+	var tex := ImageTexture.create_from_image(img)
+	_cost_icon_cache[key] = tex
+	return tex
 
 
 ## Returns a cached [ImageTexture] icon for the given [param tower_id] at [param size]x[param size].

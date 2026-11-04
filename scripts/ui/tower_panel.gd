@@ -38,6 +38,9 @@ const _PlaceholderIcons = preload("res://scripts/ui/placeholder_icons.gd")
 
 var _icon_rect: TextureRect
 var _title_label: Label
+var _cost_chip: HBoxContainer
+var _cost_icon: TextureRect
+var _cost_label: Label
 var _stats_label: Label
 var _tier_container: VBoxContainer
 var _scroll: ScrollContainer
@@ -54,12 +57,13 @@ const PANEL_MARGIN = 12.0
 ## lifecycle state; it never grows or shrinks as the player upgrades. The content
 ## below the header scrolls, so this never clips.
 const PANEL_WIDTH = 320.0
-## Sized to the tallest normal state -- the T2 fork with a Rite row -- so the common
-## case does not scroll. Kept <= 648 - PANEL_MARGIN - PANEL_PREFERRED_TOP so the panel
-## always fits BELOW the IntelPanel on the 1152x648 minimum layout.
-const PANEL_HEIGHT = 400.0
-## Where the panel prefers to sit: directly under the IntelPanel on the right edge.
-const PANEL_PREFERRED_TOP = 226.0
+## The IntelPanel now docks to the TOP-LEFT (see main.tscn), so the right edge is the
+## TowerPanel's alone: it fills the column from just under the top bar to the bottom
+## margin, 648 - PANEL_SAFE_TOP(58) - PANEL_MARGIN(12) = 578. That is enough for the
+## densest state (a T2 fork with a Rite row) to fit WITHOUT scrolling.
+const PANEL_HEIGHT = 578.0
+## Where the panel prefers to sit: directly under the top bar, using the full right column.
+const PANEL_PREFERRED_TOP = 58.0
 ## The panel must never rise above this: it is the bottom of the top bar, whose Corruption /
 ## Rites / Reckoning readouts are exactly what the player needs while choosing an upgrade.
 const PANEL_SAFE_TOP = 58.0
@@ -106,7 +110,7 @@ func _build_ui() -> void:
 
 	var vbox := VBoxContainer.new()
 	vbox.name = "Root"
-	vbox.add_theme_constant_override("separation", 5)
+	vbox.add_theme_constant_override("separation", 4)
 	add_child(vbox)
 
 	var title_hbox := HBoxContainer.new()
@@ -127,6 +131,27 @@ func _build_ui() -> void:
 	_title_label.add_theme_color_override("font_color", Color(0.95, 0.88, 1.0))
 	title_hbox.add_child(_title_label)
 
+	# Build-cost chip: the price of the tower currently being placed, as an icon + number
+	# (the currency glyph, not the word). Sits in the header so the price is always beside the
+	# name; hidden when an already-built tower is selected, because its price is already paid.
+	_cost_chip = HBoxContainer.new()
+	_cost_chip.name = "CostChip"
+	_cost_chip.add_theme_constant_override("separation", 4)
+	_cost_chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_cost_chip.visible = false
+	title_hbox.add_child(_cost_chip)
+
+	_cost_icon = TextureRect.new()
+	_cost_icon.custom_minimum_size = Vector2(18.0, 18.0)
+	_cost_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_cost_icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_cost_chip.add_child(_cost_icon)
+
+	_cost_label = Label.new()
+	_cost_label.add_theme_font_size_override("font_size", 15)
+	_cost_label.add_theme_color_override("font_color", Color(0.90, 0.82, 1.0))
+	_cost_chip.add_child(_cost_label)
+
 	# Rule R4: only this middle section scrolls (VERTICALLY only), so the header and the
 	# pinned action buttons never move and the action buttons are always reachable.
 	# Horizontal scrolling is deliberately DISABLED: width is solved by wrapping text to the
@@ -144,12 +169,12 @@ func _build_ui() -> void:
 	_detail_vbox = VBoxContainer.new()
 	_detail_vbox.name = "Detail"
 	_detail_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_detail_vbox.add_theme_constant_override("separation", 6)
+	_detail_vbox.add_theme_constant_override("separation", 4)
 	_scroll.add_child(_detail_vbox)
 
 	_stats_label = Label.new()
 	_stats_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_stats_label.add_theme_font_size_override("font_size", 12)
+	_stats_label.add_theme_font_size_override("font_size", 11)
 	_detail_vbox.add_child(_stats_label)
 
 	_tier_container = VBoxContainer.new()
@@ -159,13 +184,16 @@ func _build_ui() -> void:
 	# Pinned actions. Labels are broken so no single line exceeds PANEL_INNER_WIDTH
 	# (rule R3): a Button does not wrap, so its longest line sets its minimum width.
 	_maintenance_button = Button.new()
-	_maintenance_button.text = "Maintenance: -10 Jank\n[15 Scrap]"
+	_maintenance_button.text = "Maintenance: -10 Jank\nCost: 15"
+	_maintenance_button.icon = _PlaceholderIcons.get_cost_icon(_PlaceholderIcons.COST_SCRAP, 16)
+	_maintenance_button.tooltip_text = "Spend 15 Scrap to lower this Rigged tower's Jank by 10."
 	_maintenance_button.focus_mode = Control.FOCUS_NONE
 	_maintenance_button.pressed.connect(_on_maintenance_pressed)
 	vbox.add_child(_maintenance_button)
 
 	_cleanse_button = Button.new()
 	_cleanse_button.text = "Cleanse Conversion"
+	_cleanse_button.icon = _PlaceholderIcons.get_cost_icon(_PlaceholderIcons.COST_OFFERINGS, 16)
 	_cleanse_button.focus_mode = Control.FOCUS_NONE
 	_cleanse_button.pressed.connect(_on_cleanse_pressed)
 	vbox.add_child(_cleanse_button)
@@ -181,6 +209,7 @@ func _build_ui() -> void:
 
 	_penance_button = Button.new()
 	_penance_button.text = "Global Penance (-5 Corruption)"
+	_penance_button.icon = _PlaceholderIcons.get_cost_icon(_PlaceholderIcons.COST_OFFERINGS, 16)
 	_penance_button.focus_mode = Control.FOCUS_NONE
 	_penance_button.pressed.connect(_on_penance_pressed)
 	vbox.add_child(_penance_button)
@@ -216,7 +245,7 @@ func refresh() -> void:
 	var inst: TowerInstance = gs.get("selected_placed_tower") as TowerInstance
 
 	_penance_button.disabled = (tsys == null or not tsys.can_perform_penance())
-	_penance_button.text = "Global Penance (-5 Corruption)\n[40 Offerings] · Now: %d" % int(gs.get("corruption"))
+	_penance_button.text = "Global Penance (-5 Corruption)\nCost: 40 · Now: %d" % int(gs.get("corruption"))
 
 	for child: Node in _tier_container.get_children():
 		_tier_container.remove_child(child)
@@ -227,17 +256,24 @@ func refresh() -> void:
 		if build_td != null:
 			visible = true
 			var build_cost: int = tsys.get_tower_build_cost(build_td) if tsys != null else build_td.cost
-			var curr_short: String = build_td.get_build_currency_name(true)
 			var curr_full: String = build_td.get_build_currency_name(false)
 			if _icon_rect != null:
 				_icon_rect.texture = _PlaceholderIcons.get_tower_icon(build_td.id, 38)
 				_icon_rect.visible = true
-			_title_label.text = "Building: %s (%d %s)" % [build_td.display_name, build_cost, curr_short]
+			_title_label.text = "Building: %s" % build_td.display_name
+			var chip_currency: int = build_td.build_currency
+			_cost_icon.texture = _PlaceholderIcons.get_cost_icon(chip_currency, 18)
+			_cost_label.text = str(build_cost)
+			_cost_chip.tooltip_text = "Cost: %d %s" % [build_cost, curr_full]
+			_cost_chip.visible = true
 			var upg_text: String = build_td.get_upgrade_preview_summary()
 			var details: String = "%s\n%s" % [
 				build_td.get_display_description(),
-				build_td.get_stats_summary(build_cost, curr_full)
+				build_td.get_stats_summary(build_cost, curr_full, false)
 			]
+			var build_ability_text: String = build_td.get_ability_summary()
+			if not build_ability_text.is_empty():
+				details += "\n" + build_ability_text
 			if not upg_text.is_empty():
 				details += "\n" + upg_text
 			details += "\nLeft-Click hex to place | Right-Click/Esc: cancel"
@@ -251,6 +287,8 @@ func refresh() -> void:
 				_icon_rect.visible = false
 			_title_label.text = ""
 			_stats_label.text = ""
+			if _cost_chip != null:
+				_cost_chip.visible = false
 			if _sep != null:
 				_sep.visible = false
 			_penance_button.visible = false
@@ -264,6 +302,8 @@ func refresh() -> void:
 	if _sep != null:
 		_sep.visible = true
 	_penance_button.visible = true
+	if _cost_chip != null:
+		_cost_chip.visible = false
 
 	var branch_str: String = "Shared"
 	if inst.is_revealed():
@@ -282,10 +322,16 @@ func refresh() -> void:
 	var eff_rate: float = tsys.get_effective_tower_fire_rate(inst)
 	var var_bonus: int = roundi(tsys.get_variety_bonus(inst) * 100.0)
 	var rev_bonus: int = roundi(tsys.get_revealed_additive_bonus(inst) * 100.0)
-	_stats_label.text = "%s\nHex: (%d, %d) | Range: %d hex | Rate: %.2f/s\nBase Dmg: %.1f | Variety: +%d%% | Cult Bonus: +%d%%" % [
+	_stats_label.text = "%s\nRange: %d hex | Rate: %.2f/s\nBase Dmg: %.1f | Variety: +%d%% | Cult Bonus: +%d%%" % [
 		inst.def.get_display_description(),
-		inst.hex.x, inst.hex.y, eff_range, eff_rate, inst.def.damage, var_bonus, rev_bonus
+		eff_range, eff_rate, inst.def.damage, var_bonus, rev_bonus
 	]
+
+	# Abilities: the reference a player reaches for when they have forgotten what this tower
+	# on the field actually does. Derived from the tower's own data, so it always matches it.
+	var ability_text: String = inst.def.get_ability_summary()
+	if not ability_text.is_empty():
+		_stats_label.text += "\n" + ability_text
 
 	# Objective site aura readout. A tower standing inside a claimed site IS being buffed, and
 	# nothing else on this panel says so -- which turns "this tower feels strong" into "this
@@ -329,13 +375,13 @@ func refresh() -> void:
 
 	_maintenance_button.visible = inst.is_rigged()
 	_maintenance_button.disabled = not tsys.can_perform_maintenance(inst)
-	_maintenance_button.text = "Maintenance: -10 Jank\n(Now %d%%) · [15 Scrap]" % inst.jank
+	_maintenance_button.text = "Maintenance: -10 Jank\nNow %d%% · Cost: 15" % inst.jank
 
 	var needs_cleanse: bool = (inst.converted_by_enemy or inst.being_channeled_by_unit_id >= 0)
 	_cleanse_button.visible = needs_cleanse
 	if needs_cleanse:
 		var c_cost: int = inst.get_cleanse_cost()
-		_cleanse_button.text = "Cleanse Conversion\n[%d Offerings]" % c_cost
+		_cleanse_button.text = "Cleanse Conversion\nCost: %d" % c_cost
 		_cleanse_button.disabled = (int(gs.get("offerings")) < c_cost)
 
 	_sell_button.visible = true
@@ -420,7 +466,7 @@ static func site_effect_summary(data: ObjectiveData, held: bool) -> String:
 
 ## Re-applies the panel's fixed rect. The SIZE never changes (rules R1/R2) -- only the
 ## top may slide down from PANEL_PREFERRED_TOP when the viewport is too short to fit the
-## panel below the IntelPanel. Safe to call on refresh and on every viewport resize.
+## panel. Safe to call on refresh and on every viewport resize.
 func _sync_right_aligned_rect() -> void:
 	_apply_panel_rect()
 
@@ -438,8 +484,9 @@ func _apply_panel_rect() -> void:
 ## The fixed panel rect for a viewport of [param view_size]: right-justified and exactly
 ## PANEL_WIDTH x PANEL_HEIGHT. Independent of content by construction (rules R1/R2), so the
 ## window cannot resize as the player upgrades or when a different tower is selected. It
-## prefers [param preferred_top] (just under the IntelPanel) and never rises above
-## PANEL_SAFE_TOP (the bottom of the top bar). Static so the rule is testable headlessly.
+## prefers [param preferred_top] (just under the top bar, the full right column) and never
+## rises above PANEL_SAFE_TOP (the bottom of the top bar). Static so the rule is testable
+## headlessly.
 static func compute_panel_rect(view_size: Vector2, preferred_top: float) -> Rect2:
 	var top: float = clampf(
 		preferred_top,
@@ -486,12 +533,32 @@ func _build_upgrade_ladder(inst: TowerInstance, tsys: TowerSystem) -> void:
 		if cap_node != null:
 			_tier_container.add_child(_create_upgrade_card(inst, tsys, cap_node))
 	else:
+		# Fully upgraded. The old line listed the tower's raw unlocked node IDs
+		# ("rapid_cycling, drone_feeder, ..."), which is developer-facing noise with no
+		# meaning to a player who has already bought all of it. Say the thing that matters --
+		# nothing left to buy -- and name the capstone they own with what it gives them.
+		var top_node: UpgradeNode = def.revealed_t4_upgrade if inst.is_revealed() else def.rigged_t4_upgrade
+		if inst.branch == _UpgradeNode.Branch.RITE:
+			top_node = def.rite_t4_upgrade
 		var maxed := Label.new()
-		maxed.text = "T4 Capstone Unlocked (" + ", ".join(inst.unlocked_upgrade_ids) + ")"
+		maxed.text = "FULLY UPGRADED — no further tiers."
 		maxed.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		maxed.add_theme_font_size_override("font_size", 12)
 		maxed.add_theme_color_override("font_color", Color(0.55, 0.95, 0.65))
 		_tier_container.add_child(maxed)
+		if top_node != null:
+			var cap_name := Label.new()
+			cap_name.text = "Capstone: %s" % top_node.display_name
+			cap_name.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			cap_name.add_theme_font_size_override("font_size", 13)
+			cap_name.add_theme_color_override("font_color", Color(0.95, 0.88, 1.0))
+			_tier_container.add_child(cap_name)
+			var cap_desc := Label.new()
+			cap_desc.text = top_node.description
+			cap_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			cap_desc.add_theme_font_size_override("font_size", 10)
+			cap_desc.add_theme_color_override("font_color", Color(0.74, 0.74, 0.80))
+			_tier_container.add_child(cap_desc)
 
 
 ## One upgrade option: a branch heading, a wrapped NAME label, a SHORT clickable cost
@@ -571,7 +638,12 @@ func _create_upgrade_button(inst: TowerInstance, tsys: TowerSystem, node: Upgrad
 	elif node.jank_set > 0:
 		impact_str = "\nSets %d%% Jank" % node.jank_set
 
-	btn.text = "Cost: %d %s%s" % [node.cost, curr_name, impact_str]
+	# The price is shown as the currency ICON plus the number (the branch tag already names
+	# the branch, and the icon says what it costs). The full currency word stays in the
+	# tooltip for anyone who does not yet read the icon.
+	btn.icon = _PlaceholderIcons.get_cost_icon(node.currency, 16)
+	btn.tooltip_text = "Cost: %d %s" % [node.cost, curr_name]
+	btn.text = "Cost: %d%s" % [node.cost, impact_str]
 	btn.pressed.connect(_on_upgrade_pressed.bind(inst, node.id))
 	return btn
 

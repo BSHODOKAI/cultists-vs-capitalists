@@ -201,11 +201,16 @@ func get_target_domain_text() -> String:
 	return "None"
 
 
-## Builds a formatted multi-line stat block for build menus and tooltips.
-func get_stats_summary(effective_cost: int = -1, currency_label: String = "Offerings") -> String:
+## Builds a formatted multi-line stat block for build menus and tooltips. When
+## [param include_cost] is false the leading "Cost:" line is omitted, so a caller that
+## shows the price as its own icon+number chip does not print it twice.
+func get_stats_summary(
+	effective_cost: int = -1, currency_label: String = "Offerings", include_cost: bool = true
+) -> String:
 	var shown_cost: int = effective_cost if effective_cost >= 0 else cost
 	var lines: PackedStringArray = PackedStringArray()
-	lines.append("Cost: %d %s" % [shown_cost, currency_label])
+	if include_cost:
+		lines.append("Cost: %d %s" % [shown_cost, currency_label])
 
 	var range_val: int = range_hexes if range_hexes > 0 else aura_radius_hexes
 	if targeting_mode == TargetingMode.ECONOMY_TITHE:
@@ -241,6 +246,98 @@ func get_stats_summary(effective_cost: int = -1, currency_label: String = "Offer
 		lines.append("Traits: %s" % ", ".join(traits))
 
 	return "\n".join(lines)
+
+
+## Fragments describing the tower's ACTUAL distinguishing abilities, built entirely from its
+## own fields. The short [member description] sells the theme; this is the reference a player
+## reaches for when they have forgotten what a tower on the field does. Because every fragment
+## is derived from data rather than hand-written per tower, retuning a tower can never leave
+## the panel describing an ability it no longer has (or omitting one it gained). The generic
+## "deals X damage" case is deliberately OMITTED: it merely repeats the stat line above it.
+func get_ability_lines() -> PackedStringArray:
+	var lines: PackedStringArray = PackedStringArray()
+
+	# 1. Role / primary effect -- only for towers whose whole point is not damage (an attacker
+	#    already has its damage spelled out in the stat line, so it is not repeated here).
+	match targeting_mode:
+		TargetingMode.ECONOMY_TITHE:
+			lines.append("Economy: +%d Offerings every %.1f s (no attack)" % [
+				income_offerings, income_interval
+			])
+		TargetingMode.BUFF_SHRINE:
+			lines.append("Support aura: +%d%% fire rate to towers within %d hexes, not stacking (no attack)" % [
+				roundi(aura_fire_rate_bonus * 100.0), aura_radius_hexes
+			])
+		TargetingMode.SUMMON_CONGREGATION:
+			lines.append(
+				"Summons up to %d blockers (%d HP, %.1f DPS) onto the adjacent path hex, resummoned %.0f s after death"
+				% [summon_count, roundi(summon_hp), summon_dps, resummon_time]
+			)
+		_:
+			pass
+
+	# 2. Targeting behaviour that makes the archetype distinct.
+	match targeting_mode:
+		TargetingMode.HIGHEST_HP:
+			lines.append("Always fires at the highest-HP enemy in range")
+		TargetingMode.CHANNELED_CHOIR:
+			if starting_members > 1:
+				lines.append("%d members each deal the damage above, independently" % starting_members)
+		TargetingMode.PULSE_AOE:
+			if pulse_max_ring > 0:
+				lines.append("Each pulse also hits every enemy within %d hex of the target" % pulse_max_ring)
+		TargetingMode.CHAIN_ARC:
+			if max_targets > 1:
+				lines.append("Chain lightning arcs to up to %d enemies" % max_targets)
+		TargetingMode.CONTROL_DRAIN:
+			lines.append("Primarily a control tower: it slows and roots foes more than it kills")
+		TargetingMode.DOT_CENSER:
+			lines.append("Primarily a damage-over-time tower: it stacks a burn rather than burst damage")
+		_:
+			pass
+
+	# 3. Shared mechanics, each shown only when the tower actually carries it.
+	if detects_cloaked:
+		lines.append("Detects Cloaked enemies continuously in range, letting other towers target them")
+	if pulse_reveal_duration > 0.0:
+		lines.append("Reveals Cloaked enemies hit for %.0f s" % pulse_reveal_duration)
+	if slow_aura_strength > 0.0:
+		lines.append("Slows every Ground enemy in range by %d%%" % roundi(slow_aura_strength * 100.0))
+	if root_duration > 0.0 and root_interval > 0.0:
+		lines.append("Roots a target for %.1f s every %.1f s" % [root_duration, root_interval])
+	if applies_entangled:
+		lines.append("Slowed or rooted enemies become Entangled (+25% damage from Gutter Ritual Circle pulses)")
+	if dot_damage > 0.0:
+		lines.append("Applies a %.1f/s %s burn for %.0f s, stacking up to %d times" % [
+			dot_damage, get_damage_tag_name(), dot_duration, dot_max_stacks
+		])
+	if shred_per_hit > 0:
+		lines.append("Each hit adds %d Armor Shred (+5%% damage taken per stack)" % shred_per_hit)
+	if aura_fire_rate_bonus > 0.0 and targeting_mode != TargetingMode.BUFF_SHRINE:
+		lines.append("Boosts friendly towers within %d hexes by +%d%% fire rate" % [
+			aura_radius_hexes, roundi(aura_fire_rate_bonus * 100.0)
+		])
+	if income_offerings > 0 and targeting_mode != TargetingMode.ECONOMY_TITHE:
+		lines.append("Generates +%d Offerings every %.1f s" % [income_offerings, income_interval])
+	if summon_count > 0 and targeting_mode != TargetingMode.SUMMON_CONGREGATION:
+		lines.append("Summons %d blockers (%d HP, %.1f DPS)" % [
+			summon_count, roundi(summon_hp), summon_dps
+		])
+	if max_targets > 1 and targeting_mode != TargetingMode.CHAIN_ARC:
+		lines.append("Strikes up to %d enemies at once" % max_targets)
+
+	return lines
+
+
+## The ability fragments as ONE compact wrapped "ABILITIES: a; b; c." sentence, or "" when the
+## tower has no distinguishing abilities to call out (e.g. a plain single-target gun). A single
+## wrapped sentence packs far tighter than one bullet per line, which keeps the fixed-height
+## tower panel from scrolling.
+func get_ability_summary() -> String:
+	var lines: PackedStringArray = get_ability_lines()
+	if lines.is_empty():
+		return ""
+	return "ABILITIES: " + "; ".join(lines) + "."
 
 
 ## Returns a compact summary of the tower's upgrade branches when defined.

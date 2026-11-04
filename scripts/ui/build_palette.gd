@@ -31,6 +31,7 @@ var _tower_grid: GridContainer
 
 var _detail_icon_rect: TextureRect
 var _detail_title_label: Label
+var _detail_cost_icon: TextureRect
 var _detail_cost_label: Label
 var _detail_desc_label: Label
 var _detail_stats_label: Label
@@ -143,6 +144,13 @@ func _build_ui() -> void:
 	_detail_title_label.add_theme_font_size_override("font_size", 17)
 	_detail_title_label.add_theme_color_override("font_color", Color(0.96, 0.90, 1.0))
 	header_row.add_child(_detail_title_label)
+
+	_detail_cost_icon = TextureRect.new()
+	_detail_cost_icon.name = "DetailCostIcon"
+	_detail_cost_icon.custom_minimum_size = Vector2(20.0, 20.0)
+	_detail_cost_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_detail_cost_icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	header_row.add_child(_detail_cost_icon)
 
 	_detail_cost_label = Label.new()
 	_detail_cost_label.name = "DetailCostLabel"
@@ -405,6 +413,8 @@ func refresh() -> void:
 		var can_afford: bool = (gs == null or insp_funds >= insp_cost)
 		if _detail_icon_rect != null:
 			_detail_icon_rect.texture = _PlaceholderIcons.get_tower_icon(inspected_tower.id, 44)
+		if _detail_cost_icon != null:
+			_detail_cost_icon.texture = _PlaceholderIcons.get_cost_icon(inspected_tower.build_currency, 20)
 		_detail_title_label.text = inspected_tower.display_name
 		_detail_cost_label.text = "Cost: %d %s%s" % [
 			insp_cost,
@@ -416,7 +426,13 @@ func refresh() -> void:
 			Color(0.75, 0.95, 0.65) if can_afford else Color(1.0, 0.50, 0.50)
 		)
 		_detail_desc_label.text = inspected_tower.get_display_description()
-		_detail_stats_label.text = inspected_tower.get_stats_summary(insp_cost, insp_curr_name)
+		# Cost lives in the header (with its currency icon), so the stat block omits it and
+		# instead spells out the tower's actual abilities in plain language.
+		var stats_text: String = inspected_tower.get_stats_summary(insp_cost, insp_curr_name, false)
+		var ability_text: String = inspected_tower.get_ability_summary()
+		if not ability_text.is_empty():
+			stats_text += "\n" + ability_text
+		_detail_stats_label.text = stats_text
 		_detail_upgrades_label.text = inspected_tower.get_upgrade_preview_summary()
 		_confirm_build_button.text = "Select to Build: %s [Enter]" % inspected_tower.display_name
 		_confirm_build_button.modulate = Color(0.68, 1.0, 0.78) if can_afford else Color(0.95, 0.65, 0.65)

@@ -43,8 +43,20 @@ func _build_ui() -> void:
 	_lives_label = _make_stat_label(hbox, "Lives: 20/20", Color(1.0, 0.45, 0.45))
 	_wave_label = _make_stat_label(hbox, "Wave: 0 (Int 1)", Color(0.85, 0.90, 1.0))
 	_faction_label = _make_stat_label(hbox, "Faction: SWARM SYNDICATE", Color(0.98, 0.82, 0.25))
-	_offerings_label = _make_stat_label(hbox, "Offerings: 150", Color(0.75, 0.50, 1.0))
-	_scrap_label = _make_stat_label(hbox, "Scrap: 40", Color(1.0, 0.65, 0.25))
+	_offerings_label = _make_currency_chip(
+		hbox,
+		PlaceholderIcons.COST_OFFERINGS,
+		"150",
+		Color(0.75, 0.50, 1.0),
+		"Offerings -- build Revealed towers and upgrades, pay Penance, cleanse conversions."
+	)
+	_scrap_label = _make_currency_chip(
+		hbox,
+		PlaceholderIcons.COST_SCRAP,
+		"40",
+		Color(1.0, 0.65, 0.25),
+		"Scrap -- build scavenged towers, buy Rigged upgrades, pay tower Maintenance."
+	)
 
 	var corr_box := HBoxContainer.new()
 	corr_box.add_theme_constant_override("separation", 6)
@@ -73,7 +85,13 @@ func _build_ui() -> void:
 
 	# Rites / Corporate Attention: Corruption is spendable, and every Rite drawn
 	# leaves permanent Attention behind -- so the two must be read together.
-	_rites_label = _make_stat_label(hbox, "Rites: 0", RITES_COLOR)
+	_rites_label = _make_currency_chip(
+		hbox,
+		PlaceholderIcons.COST_RITES,
+		"0",
+		RITES_COLOR,
+		"Rites -- Corruption drawn into a resource. Spend them on the Rite upgrade branch."
+	)
 	_rites_label.add_theme_font_size_override("font_size", 13)
 
 	_attention_label = Label.new()
@@ -109,6 +127,32 @@ func _make_stat_label(parent: Node, text: String, col: Color) -> Label:
 	return lbl
 
 
+## A currency readout as an icon + number chip: the glyph says WHICH currency, the number says
+## how much. Reading the same glyph next to tower costs on the TowerPanel is what makes a price
+## legible at a glance. Returns the value Label so [method refresh] can keep updating it.
+func _make_currency_chip(
+	parent: Node, currency: int, text: String, col: Color, tooltip: String
+) -> Label:
+	var chip := HBoxContainer.new()
+	chip.add_theme_constant_override("separation", 5)
+	chip.tooltip_text = tooltip
+	parent.add_child(chip)
+
+	var icon := TextureRect.new()
+	icon.texture = PlaceholderIcons.get_cost_icon(currency, 18)
+	icon.custom_minimum_size = Vector2(18.0, 18.0)
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	chip.add_child(icon)
+
+	var lbl := Label.new()
+	lbl.text = text
+	lbl.add_theme_font_size_override("font_size", 15)
+	lbl.add_theme_color_override("font_color", col)
+	chip.add_child(lbl)
+	return lbl
+
+
 func _connect_signals() -> void:
 	var gs: Node = get_node_or_null("/root/GameState")
 	if gs == null:
@@ -140,8 +184,8 @@ func refresh() -> void:
 	_lives_label.text = "Lives: %d/%d" % [l, ml]
 	_wave_label.text = "Wave: %d (Interval %d)" % [w, inter]
 	_faction_label.text = "[%s]" % fac
-	_offerings_label.text = "Offerings: %d" % off
-	_scrap_label.text = "Scrap: %d" % scr
+	_offerings_label.text = "%d" % off
+	_scrap_label.text = "%d" % scr
 	_corruption_label.text = "Corruption: %d/%d" % [corr, corr_cap]
 	_corruption_bar.max_value = float(corr_cap)
 	_corruption_bar.value = float(corr)
@@ -157,7 +201,7 @@ func refresh() -> void:
 			tsys2.get_rogue_entity_threshold() if tsys2 != null else 100
 		)
 		var severity: int = tsys2.get_rite_debt_severity() if tsys2 != null else 0
-		_rites_label.text = "Rites: %d" % rites_n
+		_rites_label.text = "%d" % rites_n
 		# "Reckoning +N" is how much the next Rogue wave is amplified by debt drawn
 		# since the last one. Shown hot once Corruption is actually at the line.
 		_attention_label.text = "Reckoning: +%d" % severity

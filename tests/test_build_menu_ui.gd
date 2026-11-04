@@ -622,3 +622,114 @@ func test_07_selling_requires_a_confirming_second_press_and_warns_about_rites() 
 	clock.manual_mode = false
 
 
+## Tower detail must EXPLAIN a tower's abilities (not just its theme blurb), and every price
+## must be shown with the currency ICON rather than the currency word -- so a player who has
+## forgotten what a tower on the field does can read it off, and a returning eye can price an
+## upgrade at a glance. The ability block is derived from the tower's own data, so it can never
+## describe an ability the tower does not have.
+func test_08_tower_detail_explains_abilities_and_shows_cost_icons() -> void:
+	var gs: GameStateNode = _get_game_state()
+	var clock: SimClockNode = _get_sim_clock()
+	clock.manual_mode = true
+
+	# 1. The ability block is data-driven: a control tower names its slow/root/entangled,
+	#    a detector names cloak detection, an economy tower names its income.
+	var drain: TowerData = _TowerLibrary.get_tower("tentacle_storm_drain")
+	var drain_text: String = drain.get_ability_summary()
+	assert(drain_text.contains("ABILITIES"), "A tower with abilities must render an ABILITIES header")
+	assert(drain_text.contains("Slows"), "The control tower must spell out its slow")
+	assert(drain_text.contains("Roots"), "The control tower must spell out its root")
+	assert(drain_text.contains("Entangled"), "The control tower must spell out Entangled")
+	assert(
+		_TowerLibrary.get_tower("chanting_choir").get_ability_summary().contains("Detects Cloaked"),
+		"A detector must spell out cloak detection"
+	)
+	assert(
+		_TowerLibrary.get_tower("tithe_box").get_ability_summary().contains("Offerings"),
+		"An economy tower must spell out its income"
+	)
+
+	var main_packed := load("res://scenes/main.tscn") as PackedScene
+	var main_inst: Node = main_packed.instantiate()
+	add_child(main_inst)
+	var tower_panel: TowerPanel = main_inst.get_node("HUD/TowerPanel") as TowerPanel
+	gs.add_currency(0, 100000, "test")
+	gs.add_currency(1, 100000, "test")
+
+	var placed: TowerInstance = null
+	for h: Vector2i in gs.path_generator.get_buildable_hexes():
+		placed = gs.request_place_tower(h, "gutter_ritual_circle")
+		if placed != null:
+			break
+	assert(placed != null, "Must place a tower")
+	gs.tower_system.set_corruption(60)
+	assert(gs.tower_system.draw_rites(1), "Draw a Rite so the Rite branch is offered at the fork")
+	assert(gs.request_upgrade_tower(placed, placed.def.t2_upgrade.id), "T2 must purchase")
+	gs.select_placed_tower(placed)
+	tower_panel.refresh()
+
+	# 2. The selected tower's panel explains its abilities.
+	assert(
+		tower_panel._stats_label.text.contains("ABILITIES"),
+		"The examined tower's readout must include an ABILITIES block"
+	)
+
+	# 3. Every upgrade cost button carries the currency ICON, never the currency word.
+	var buttons: Array[Button] = []
+	_collect_buttons_into(tower_panel._tier_container, buttons)
+	assert(buttons.size() >= 3, "The fork must offer at least Revealed/Rigged/Rite")
+	for b: Button in buttons:
+		assert(b.icon != null, "Every upgrade cost button must carry a currency icon ('%s')" % b.text)
+		assert(
+			not b.text.contains("Off") and not b.text.contains("Scrap") and not b.text.contains("Rite"),
+			"The currency word must be replaced by the icon ('%s')" % b.text
+		)
+
+	# 4. The pinned cost buttons carry an icon too.
+	for pinned: Button in [tower_panel._maintenance_button, tower_panel._cleanse_button, tower_panel._penance_button]:
+		assert(pinned.icon != null, "Pinned cost button '%s' must carry a currency icon" % pinned.name)
+
+	# 5. The three currency glyphs are distinct textures.
+	var icons: Array[ImageTexture] = [
+		_PlaceholderIcons.get_cost_icon(0, 16),
+		_PlaceholderIcons.get_cost_icon(1, 16),
+		_PlaceholderIcons.get_cost_icon(2, 16),
+	]
+	for i in range(icons.size()):
+		for j in range(i + 1, icons.size()):
+			assert(
+				icons[i].get_image() != icons[j].get_image(),
+				"Currency icons %d and %d must be different glyphs" % [i, j]
+			)
+
+	# 6. The stats readout must not print the tower's hex coordinates -- they mean nothing to
+	#    the player and only add noise to the fixed panel.
+	assert(
+		not tower_panel._stats_label.text.contains("Hex:"),
+		"The tower readout must not show hex coordinates"
+	)
+
+	# 7. A FULLY upgraded (T4) tower must read as maxed, in player words -- never the raw
+	#    underscore node IDs the old panel dumped ("rapid_cycling, drone_feeder, ...").
+	assert(gs.request_upgrade_tower(placed, placed.def.revealed_t3_upgrade.id), "Revealed T3 must buy")
+	assert(gs.request_upgrade_tower(placed, placed.def.revealed_t4_upgrade.id), "Revealed T4 must buy")
+	assert(placed.tier == 4, "Setup: the tower must reach T4")
+	tower_panel.refresh()
+	assert(_tier_text_contains(tower_panel, "FULLY UPGRADED"), "A maxed tower must say it is fully upgraded")
+	assert(
+		not _tier_text_contains(tower_panel, "_"),
+		"A maxed tower must not dump raw underscore upgrade IDs"
+	)
+	assert(_tier_text_contains(tower_panel, "Capstone:"), "A maxed tower should name the capstone it owns")
+
+	main_inst.queue_free()
+	clock.manual_mode = false
+
+
+func _collect_buttons_into(node: Node, out: Array[Button]) -> void:
+	for c: Node in node.get_children():
+		if c is Button:
+			out.append(c as Button)
+		_collect_buttons_into(c, out)
+
+
