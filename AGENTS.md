@@ -114,7 +114,7 @@ All 11 cult towers live in `res://data/towers/*.tres` and their upgrade resource
   3. **Debt RESETS to 0 when they come.** This is load-bearing: *without* it a single spending spree compounds into a permanent, unrecoverable Rogue spiral. The reckoning happens, and then it is over.
 - A held Reservoir raises `get_rogue_entity_threshold()` **alongside** the Corruption cap, so the site genuinely buys "more rot before it wakes" rather than letting the cult climb past its own danger line.
 - **Penance** (`40 Offerings -> -5 Corruption`) reduces the *gate*, so it still helps you duck the next reckoning even when debt is high.
-- The top bar shows `Rites: N` and `Reckoning: +N` (severity of the next wave), the latter hot once Corruption is at the line.
+- The top bar shows Rites as a currency chip beside Offerings and Scrap (the three read as one resource set), then `Reckoning: +N` (severity of the next wave), the latter hot once Corruption is at the line. The Corruption and Reckoning readouts carry hover tooltips explaining the danger meter, and the Draw Rite button names its Corruption price in its own label (read from balance, never hardcoded).
 - **Jank (Per Rigged Tower `0..60%`):**
 - At each wave start, each Rigged tower rolls `min(jank, 60)%` chance to jam at a seeded random moment during the wave, disabling it for `10s`.
 - **Maintenance:** Pay `15 Scrap` to lower one Rigged tower's Jank by `10`.
