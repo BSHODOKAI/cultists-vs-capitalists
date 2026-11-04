@@ -292,6 +292,13 @@ func is_cc_immune(category: String) -> bool:
 	return get_cc_lock_count(category) >= _Balance.CC_MAX_LOCKS_PER_CATEGORY
 
 
+## True when this unit can no longer be knocked back or dragged: a Boss, or a unit that
+## has exhausted its 3x displacement diminishing-returns budget. Knockback/drag attacks
+## use this to avoid aiming a displacement at a unit the effect cannot move.
+func is_displacement_immune() -> bool:
+	return is_cc_immune(CC_CATEGORY_DISPLACEMENT)
+
+
 ## Consumes 1 lock in [param category] and returns its diminishing-returns multiplier
 ## (1st = 1.00, 2nd = 0.50, 3rd = 0.25, 4th+ = 0.0 immune).
 func _consume_cc_dr_multiplier(category: String) -> float:
@@ -342,7 +349,7 @@ func apply_timed_slow(strength: float, duration: float) -> void:
 ## subject to per-category 3x diminishing returns ("displacement").
 ## Bosses are immune to displacement; after 3 displacements, the unit becomes permanently immune.
 func displace_along_path(delta_hexes: float, max_path_index: float) -> bool:
-	if is_boss() or is_cc_immune(CC_CATEGORY_DISPLACEMENT):
+	if is_displacement_immune():
 		return false
 	var mult: float = _consume_cc_dr_multiplier(CC_CATEGORY_DISPLACEMENT)
 	if mult <= 0.0:

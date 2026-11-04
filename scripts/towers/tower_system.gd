@@ -1541,13 +1541,24 @@ func can_tower_target_unit(tower: TowerInstance, unit: CombatUnit) -> bool:
 
 
 ## Selects the primary target for [param tower] based on its targeting_mode.
-func select_target_for_tower(tower: TowerInstance) -> CombatUnit:
+## When [param prefer_displaceable] is true, candidates immune to displacement (Bosses, or
+## units past their 3x DR budget) are set aside so a knockback/drag attack aims at a mob it
+## can actually move; those immune units are still eligible if nothing displaceable is in range.
+func select_target_for_tower(tower: TowerInstance, prefer_displaceable: bool = false) -> CombatUnit:
 	var candidates: Array[CombatUnit] = []
 	for u: CombatUnit in units:
 		if can_tower_target_unit(tower, u):
 			candidates.append(u)
 	if candidates.is_empty():
 		return null
+
+	if prefer_displaceable:
+		var displaceable: Array[CombatUnit] = []
+		for u: CombatUnit in candidates:
+			if not u.is_displacement_immune():
+				displaceable.append(u)
+		if not displaceable.is_empty():
+			candidates = displaceable
 
 	if tower.def != null and tower.def.targeting_mode == TowerData.TargetingMode.HIGHEST_HP:
 		candidates.sort_custom(func(a: CombatUnit, b: CombatUnit) -> bool:
@@ -2120,7 +2131,7 @@ func _step_gutter_circle_tower(tower: TowerInstance, delta: float) -> void:
 		return
 
 	# Gutter Ritual Circle pulses when any Ground enemy (even Cloaked) is in range
-	var pulse_center_unit: CombatUnit = select_target_for_tower(tower)
+	var pulse_center_unit: CombatUnit = select_target_for_tower(tower, tower.applies_displacement())
 	if pulse_center_unit == null:
 		for u: CombatUnit in units:
 			if u.is_alive() and u.is_ground() and _HexGrid.hex_distance(tower.hex, get_unit_hex(u)) <= r:
@@ -2171,8 +2182,10 @@ func _step_gutter_circle_tower(tower: TowerInstance, delta: float) -> void:
 		if tower.def.pulse_reveal_duration > 0.0:
 			u.reveal_for(tower.def.pulse_reveal_duration)
 
-		# propane_pulse: knocks back 1 hex along the path (not Bosses)
-		if tower.has_behavior("propane_pulse"):
+		# propane_pulse: knocks back 1 hex along the path. Displacement has 3x diminishing
+		# returns, so a Boss or a unit that has spent its displacement budget cannot be moved
+		# and is not targeted by the knockback (it still takes the pulse's damage).
+		if tower.has_behavior("propane_pulse") and not u.is_displacement_immune():
 			var kb: float = float(tower.get_behavior_param("propane_pulse", "knockback_hexes", 1))
 			u.displace_along_path(kb, get_spawn_path_index(u.lane_id))
 
@@ -2259,7 +2272,7 @@ func _step_storm_drain_tower(tower: TowerInstance, delta: float) -> void:
 			for idx in range(max_t):
 				var tgt: CombatUnit = in_range_targets[idx]
 				tgt.apply_root(root_dur, true)
-				if drag_hexes > 0.0:
+				if drag_hexes > 0.0 and not tgt.is_displacement_immune():
 					tgt.displace_along_path(drag_hexes, get_spawn_path_index(tgt.lane_id))
 			tower_cooldown_used.emit(tower.tower_id, tower.get_type_id(), root_ability_id, tower.hex)
 

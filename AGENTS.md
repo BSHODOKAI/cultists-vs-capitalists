@@ -56,6 +56,7 @@ All player currency spending must route through the single choke point `GameStat
 - Hard CC is tracked per enemy across 4 categories: `"fear"` (flee + confusion reverse-walk), `"root"`, `"stun"`, and `"displacement"` (knockback/drag).
 - Each category allows at most **3 locks** (`CC_MAX_LOCKS_PER_CATEGORY = 3`) with multipliers: **1st = 100%**, **2nd = 50%**, **3rd = 25%**, **4th+ = 0% (permanently immune to that category)**.
 - Continuous and timed movement **slows** (`drain_slow`, `flood_slow`, `timed_slow`, `fear_stacks` slow) are exempt from diminishing returns.
+- **Displacement attacks never waste a knockback on an immune mob.** A tower whose attack displaces (`propane_pulse` knockback, `deep_grasp` drag) is flagged via `TowerBehaviorRegistry` (`applies_displacement`) and `TowerInstance.applies_displacement()`; its primary-target selection prefers a unit that is **not** displacement-immune (`CombatUnit.is_displacement_immune()` — a Boss, or a unit past its 3x budget), falling back to an immune unit only when nothing displaceable is in range. An AoE pulse still damages immune units in its ring; it simply does not attempt to move them.
 
 ---
 

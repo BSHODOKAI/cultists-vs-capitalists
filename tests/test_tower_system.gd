@@ -1354,3 +1354,57 @@ func test_09_substation_effigy_chain_arc_air_priority_and_upgrades() -> void:
 	assert(a_unit1.timed_slow_strength > 0.30, "voice_in_the_static must apply slow to cluster targets")
 
 
+# --- Test 10: Knockback DR + displacement attacks skip immune mobs ------------
+
+func test_10_knockback_has_dr_and_skips_displacement_immune_targets() -> void:
+	var sys := _make_test_system()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 99
+
+	var tower: TowerInstance = sys.place_tower(Vector2i(5, 1), "gutter_ritual_circle")
+	assert(tower != null, "gutter_ritual_circle must place on a buildable hex")
+
+	# A base gutter_circle does not displace; the propane_pulse rig does.
+	assert(not tower.applies_displacement(), "A plain gutter_circle must not be flagged as a displacement tower")
+	assert(sys.upgrade_tower(tower, "wider_circle"), "Must unlock T2 wider_circle")
+	assert(sys.upgrade_tower(tower, "propane_pulse"), "Must unlock Rigged T3 propane_pulse")
+	assert(tower.applies_displacement(), "propane_pulse must flag the tower as a displacement attack")
+
+	# Two stationary ground units: the front one (closest to base) is already spent on
+	# displacement DR, the back one can still be moved.
+	var front: CombatUnit = sys.spawn_unit(500.0, [_C.UnitTag.GROUND], 0.0, 4.0)
+	var back: CombatUnit = sys.spawn_unit(500.0, [_C.UnitTag.GROUND], 0.0, 5.0)
+
+	front.path_position = 5.0
+	for _i in range(_Balance.CC_MAX_LOCKS_PER_CATEGORY):
+		front.displace_along_path(2.0, 20.0)
+	front.path_position = 4.0
+	assert(front.is_displacement_immune(), "A unit past its 3x displacement budget must be displacement-immune")
+	assert(not back.is_displacement_immune(), "A fresh unit must not be displacement-immune")
+
+	# Default selection picks the unit closest to the base (the immune one).
+	assert(
+		sys.select_target_for_tower(tower) == front,
+		"Default targeting must still pick the closest-to-base unit"
+	)
+	# A displacement attack must instead aim at the unit it can actually move.
+	assert(
+		sys.select_target_for_tower(tower, true) == back,
+		"Displacement targeting must skip the immune unit in favour of a displaceable one"
+	)
+
+	# 1st pulse: the displaceable unit is knocked back 1 hex; the immune one is not touched.
+	sys.step(0.05, rng)
+	assert(is_equal_approx(back.path_position, 6.0), "1st knockback must move the unit +1.0 hex, got %.2f" % back.path_position)
+	assert(is_equal_approx(front.path_position, 4.0), "Immune unit must never be knocked back")
+
+	# Knockback inherits the 3x displacement DR: 1.0 -> 0.5 -> 0.25 -> immune.
+	sys.step(2.5, rng)
+	assert(is_equal_approx(back.path_position, 6.5), "2nd knockback must be halved (+0.5 hex), got %.2f" % back.path_position)
+	sys.step(2.5, rng)
+	assert(is_equal_approx(back.path_position, 6.75), "3rd knockback must be quartered (+0.25 hex), got %.2f" % back.path_position)
+	assert(back.is_displacement_immune(), "After 3 knockbacks the unit must be permanently displacement-immune")
+	sys.step(2.5, rng)
+	assert(is_equal_approx(back.path_position, 6.75), "4th knockback must be rejected (no further movement)")
+
+

@@ -121,6 +121,23 @@ func get_behavior_param(behavior_id: String, key: String, default_value: Variant
 	return default_value
 
 
+## True when any of this tower's current behaviors displaces units (knockback / drag).
+## Target selection uses this to aim a displacement attack at mobs the effect can move,
+## rather than at a Boss or a mob that has used up its displacement diminishing returns.
+func applies_displacement() -> bool:
+	if def != null:
+		for b: String in def.base_behaviors:
+			if TowerBehaviorRegistry.behavior_applies_displacement(b):
+				return true
+	for node: UpgradeNode in unlocked_nodes:
+		if node == null:
+			continue
+		for b: String in node.behaviors:
+			if TowerBehaviorRegistry.behavior_applies_displacement(b):
+				return true
+	return false
+
+
 ## Sums [param key] across every unlocked node that declares it. Rite kill effects are read
 ## this way so a new Rite node needs no hardcoded behaviour-id branch in the combat code:
 ## the node's own params are the whole specification.

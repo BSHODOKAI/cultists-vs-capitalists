@@ -1,5 +1,4 @@
-Better ambient music
-knockbacks need dr, dont target mobs with knockback attack that are immune
+
 higher resolutions windows/alerts scale odd (growing to fill screen for no reason), lets make them more consistent and bounded
 need a 'slow' tower that affects air
 rogue entity scaling off... L8 basically unkillable?

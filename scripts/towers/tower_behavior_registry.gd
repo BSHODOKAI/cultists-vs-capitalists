@@ -55,7 +55,7 @@ static func _ensure_initialized() -> void:
 	_register("wider_circle", {"type": "upgrade", "tower_id": "gutter_ritual_circle", "tier": 2, "ring_2_damage_ratio": 0.50})
 	_register("ichor_bloom", {"type": "upgrade", "tower_id": "gutter_ritual_circle", "tier": 3, "puddle_duration": 4.0, "puddle_dps": 8.0})
 	_register("maw_beneath", {"type": "upgrade", "tower_id": "gutter_ritual_circle", "tier": 4, "maw_interval": 12.0, "execute_ratio": 0.30})
-	_register("propane_pulse", {"type": "upgrade", "tower_id": "gutter_ritual_circle", "tier": 3, "knockback_hexes": 1})
+	_register("propane_pulse", {"type": "upgrade", "tower_id": "gutter_ritual_circle", "tier": 3, "knockback_hexes": 1, "applies_displacement": true})
 	_register("chain_detonator", {"type": "upgrade", "tower_id": "gutter_ritual_circle", "tier": 4, "explosion_ratio": 0.40, "explosion_radius": 1})
 
 	_register("the_circle_is_paid", {"type": "upgrade", "tower_id": "gutter_ritual_circle", "tier": 3, "branch": "rite"})
@@ -63,7 +63,7 @@ static func _ensure_initialized() -> void:
 
 	# --- 4. tentacle_storm_drain upgrades ------------------------------------
 	_register("more_grates", {"type": "upgrade", "tower_id": "tentacle_storm_drain", "tier": 2})
-	_register("deep_grasp", {"type": "upgrade", "tower_id": "tentacle_storm_drain", "tier": 3, "root_duration": 2.5, "drag_hexes": 1})
+	_register("deep_grasp", {"type": "upgrade", "tower_id": "tentacle_storm_drain", "tier": 3, "root_duration": 2.5, "drag_hexes": 1, "applies_displacement": true})
 	_register("leviathan_awakens", {"type": "upgrade", "tower_id": "tentacle_storm_drain", "tier": 4, "sweep_interval": 25.0, "sweep_damage": 120.0})
 	_register("flood_pump", {"type": "upgrade", "tower_id": "tentacle_storm_drain", "tier": 3, "flood_slow": 0.40})
 	_register("live_wire_flood", {"type": "upgrade", "tower_id": "tentacle_storm_drain", "tier": 4, "electric_dps": 12.0})
@@ -149,6 +149,13 @@ static func has_behavior(behavior_id: String) -> bool:
 static func get_descriptor(behavior_id: String) -> Dictionary:
 	_ensure_initialized()
 	return _registry.get(behavior_id, {})
+
+
+## True when [param behavior_id] can move a unit along the path (knockback / drag).
+## Target selection consults this so a displacement attack is not aimed at a mob that
+## is immune to displacement (a Boss, or a unit that has spent its 3x DR budget).
+static func behavior_applies_displacement(behavior_id: String) -> bool:
+	return bool(get_descriptor(behavior_id).get("applies_displacement", false))
 
 
 static func get_all_registered_ids() -> Array[String]:
