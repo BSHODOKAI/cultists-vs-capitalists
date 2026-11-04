@@ -2032,11 +2032,6 @@ func is_boss_wave(wave_num: int) -> bool:
 	return wave_num > 0 and (wave_num % boss_wave_interval) == 0
 
 
-## True when [param wave_num] is a "Stars Are Right" wave (5, 15, 25...).
-func is_stars_are_right_wave(wave_num: int) -> bool:
-	return wave_num > 0 and (wave_num % _C.STARS_ARE_RIGHT_INTERVAL) == 0 and not is_boss_wave(wave_num)
-
-
 ## True when [param wave_num] triggers a preview of the upcoming boss extension
 ## (PREVIEW_LEAD_WAVES = 2 waves before a boss wave: 8, 18, 28...).
 func is_preview_wave(wave_num: int) -> bool:

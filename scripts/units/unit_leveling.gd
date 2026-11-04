@@ -2,11 +2,11 @@
 ##
 ## Pure-logic (RefCounted) kill-tracking and stat-scaling system for enemy units.
 ##
-## Leveling formulas (from UnitBalanceData):
-##   level = floor(pow(kills_of_this_unit_type / 3.0, 0.72))
-##   interval_floor = (interval_index - 1) * 2
-##   health_mult = (1 + 0.22 * level) * pow(1.06, max(0, level - 3))
-##   speed_mult = min(1 + 0.025 * level, 1.40)
+## Leveling formulas (read from the UnitBalanceData INSTANCE in [member balance]):
+##   level = floor(pow(kills_of_this_unit_type / level_kills_divisor, level_kills_exponent))
+##   interval_floor = (interval_index - 1) * interval_level_floor_step
+##   health_mult = (1 + level_hp_per_level * level) * level_hp_compound_rate^(level-3)
+##   speed_mult = min(1 + level_speed_per_level * level, level_speed_max_mult)
 ##   Kills are counted per unit id, across all factions.
 ##   Rogue Entities level up +1 per Rogue Entity slain.
 ##   Bosses are not subject to kill leveling.
@@ -23,10 +23,25 @@ const _C = preload("res://scripts/path/path_constants.gd")
 const _Balance = preload("res://scripts/units/unit_balance_data.gd")
 const _UnitData = preload("res://scripts/units/unit_data.gd")
 
+const BALANCE_PATH: String = "res://data/unit_balance.tres"
+
+## Effective balance resource for this instance. Set at construction; reassignable so a
+## harness can install a tuned copy (see BalanceBaseline tuning overrides).
+var balance: UnitBalanceData
+
 ## Per-unit-id kill counts across all factions: unit_id (String) -> kills (int).
 var kills_by_unit_id: Dictionary = {}
 ## Total Rogue Entities slain during the run; each kill adds +1 Rogue Entity level.
 var rogue_entity_kills: int = 0
+
+
+func _init(p_balance: UnitBalanceData = null) -> void:
+	if p_balance != null:
+		balance = p_balance
+	else:
+		balance = load(BALANCE_PATH) as UnitBalanceData
+		if balance == null:
+			balance = UnitBalanceData.new()
 
 
 func reset() -> void:
@@ -35,62 +50,76 @@ func reset() -> void:
 
 
 ## Computes the kill level for [param kills]: floor(pow(kills / 3.0, 0.72)).
-static func compute_level(kills: int) -> int:
+static func compute_level(kills: int, p_balance: UnitBalanceData = null) -> int:
 	if kills <= 0:
 		return 0
-	return floori(pow(float(kills) / _Balance.LEVEL_KILLS_DIVISOR, _Balance.LEVEL_KILLS_EXPONENT))
+	var divisor: float = p_balance.level_kills_divisor if p_balance != null else _Balance.LEVEL_KILLS_DIVISOR
+	var exponent: float = p_balance.level_kills_exponent if p_balance != null else _Balance.LEVEL_KILLS_EXPONENT
+	return floori(pow(float(kills) / maxf(0.0001, divisor), exponent))
 
 
 ## Computes the minimum unit level floor for 1-based [param interval_index].
-static func compute_interval_level_floor(interval_index: int) -> int:
-	return maxi(0, (maxi(1, interval_index) - 1) * _Balance.INTERVAL_LEVEL_FLOOR_STEP)
+static func compute_interval_level_floor(interval_index: int, p_balance: UnitBalanceData = null) -> int:
+	var step: int = p_balance.interval_level_floor_step if p_balance != null else _Balance.INTERVAL_LEVEL_FLOOR_STEP
+	return maxi(0, (maxi(1, interval_index) - 1) * step)
 
 
 ## Computes the HP multiplier for [param level]:
 ## (1 + 0.22 * level) * 1.06^max(0, level - 3).
-static func compute_health_multiplier(level: int) -> float:
+static func compute_health_multiplier(level: int, p_balance: UnitBalanceData = null) -> float:
+	var per_level: float = p_balance.level_hp_per_level if p_balance != null else _Balance.LEVEL_HP_PER_LEVEL
+	var compound_start: int = p_balance.level_hp_compound_start_level if p_balance != null else _Balance.LEVEL_HP_COMPOUND_START_LEVEL
+	var compound_rate: float = p_balance.level_hp_compound_rate if p_balance != null else _Balance.LEVEL_HP_COMPOUND_RATE
 	var lvl: int = maxi(0, level)
-	var mult: float = 1.0 + _Balance.LEVEL_HP_PER_LEVEL * float(lvl)
-	if lvl > _Balance.LEVEL_HP_COMPOUND_START_LEVEL:
-		mult *= pow(_Balance.LEVEL_HP_COMPOUND_RATE, float(lvl - _Balance.LEVEL_HP_COMPOUND_START_LEVEL))
+	var mult: float = 1.0 + per_level * float(lvl)
+	if lvl > compound_start:
+		mult *= pow(compound_rate, float(lvl - compound_start))
 	return mult
 
 
 ## Computes the speed multiplier for [param level]: min(1 + 0.025 * level, 1.40).
-static func compute_speed_multiplier(level: int) -> float:
-	return minf(
-		1.0 + _Balance.LEVEL_SPEED_PER_LEVEL * float(maxi(0, level)),
-		_Balance.LEVEL_SPEED_MAX_MULT
-	)
+static func compute_speed_multiplier(level: int, p_balance: UnitBalanceData = null) -> float:
+	var per_level: float = p_balance.level_speed_per_level if p_balance != null else _Balance.LEVEL_SPEED_PER_LEVEL
+	var max_mult: float = p_balance.level_speed_max_mult if p_balance != null else _Balance.LEVEL_SPEED_MAX_MULT
+	return minf(1.0 + per_level * float(maxi(0, level)), max_mult)
 
 
 ## Computes Boss max HP for 1-based [param boss_index] n:
 ## HP = base_hp * (1 + 0.55 * (n - 1) + 0.15 * (n - 1)^2).
-static func compute_boss_hp(base_hp: float, boss_index: int) -> float:
+static func compute_boss_hp(base_hp: float, boss_index: int, p_balance: UnitBalanceData = null) -> float:
+	var per_index: float = p_balance.boss_hp_per_index if p_balance != null else _Balance.BOSS_HP_PER_INDEX
+	var quad: float = p_balance.boss_hp_quadratic_per_index if p_balance != null else _Balance.BOSS_HP_QUADRATIC_PER_INDEX
 	var n: float = float(maxi(1, boss_index) - 1)
-	return base_hp * (1.0 + _Balance.BOSS_HP_PER_INDEX * n + _Balance.BOSS_HP_QUADRATIC_PER_INDEX * n * n)
+	return base_hp * (1.0 + per_index * n + quad * n * n)
 
 
 ## Computes completed full boss cycles for 1-based [param boss_index] n (5 bosses per cycle).
-static func compute_boss_cycle(boss_index: int, cycle_length: int = _Balance.BOSS_CYCLE_LENGTH) -> int:
+static func compute_boss_cycle(
+	boss_index: int, cycle_length: int = -1, p_balance: UnitBalanceData = null
+) -> int:
+	var clen: int = cycle_length
+	if clen < 1:
+		clen = p_balance.boss_cycle_length if p_balance != null else _Balance.BOSS_CYCLE_LENGTH
 	var n: int = maxi(1, boss_index)
-	var clen: int = maxi(1, cycle_length)
-	return floori(float(n - 1) / float(clen))
+	return floori(float(n - 1) / float(maxi(1, clen)))
 
 
 ## Computes the telegraph and cooldown multiplier after [param full_cycles] completed cycles.
 ## Each full cycle shortens telegraphs and cooldowns by 15% (0.85^cycle).
-static func compute_cycle_timing_multiplier(full_cycles: int) -> float:
+static func compute_cycle_timing_multiplier(full_cycles: int, p_balance: UnitBalanceData = null) -> float:
 	if full_cycles <= 0:
 		return 1.0
-	var mult: float = pow(1.0 - _Balance.BOSS_CYCLE_TIMING_REDUCTION, float(full_cycles))
-	return maxf(_Balance.BOSS_MIN_TIMING_MULTIPLIER, mult)
+	var reduction: float = p_balance.boss_cycle_timing_reduction if p_balance != null else _Balance.BOSS_CYCLE_TIMING_REDUCTION
+	var floor_mult: float = p_balance.boss_min_timing_multiplier if p_balance != null else _Balance.BOSS_MIN_TIMING_MULTIPLIER
+	return maxf(floor_mult, pow(1.0 - reduction, float(full_cycles)))
 
 
 ## Computes the telegraph and cooldown multiplier for 1-based [param boss_index] n.
-static func compute_boss_timing_multiplier(boss_index: int, cycle_length: int = _Balance.BOSS_CYCLE_LENGTH) -> float:
-	var cycles: int = compute_boss_cycle(boss_index, cycle_length)
-	return compute_cycle_timing_multiplier(cycles)
+static func compute_boss_timing_multiplier(
+	boss_index: int, cycle_length: int = -1, p_balance: UnitBalanceData = null
+) -> float:
+	var cycles: int = compute_boss_cycle(boss_index, cycle_length, p_balance)
+	return compute_cycle_timing_multiplier(cycles, p_balance)
 
 
 ## Records [param count] kills for [param unit_id]. Bosses do not accumulate kill levels.
@@ -118,7 +147,7 @@ func get_kills(unit_id: String) -> int:
 func get_level_for_id(unit_id: String, is_boss: bool = false) -> int:
 	if is_boss or unit_id.is_empty():
 		return 0
-	return compute_level(get_kills(unit_id))
+	return compute_level(get_kills(unit_id), balance)
 
 
 ## Returns current kill level for [param unit_data] (always 0 for bosses).
@@ -157,9 +186,9 @@ func snapshot_spawn_stats(unit_data: UnitData, boss_index: int = 1, boss_cycle_o
 
 	if unit_data.is_boss():
 		var b_idx: int = maxi(1, boss_index)
-		var b_cycle: int = boss_cycle_override if boss_cycle_override >= 0 else compute_boss_cycle(b_idx)
-		var hp_val: float = compute_boss_hp(unit_data.base_hp, b_idx)
-		var t_mult: float = compute_cycle_timing_multiplier(b_cycle)
+		var b_cycle: int = boss_cycle_override if boss_cycle_override >= 0 else compute_boss_cycle(b_idx, -1, balance)
+		var hp_val: float = compute_boss_hp(unit_data.base_hp, b_idx, balance)
+		var t_mult: float = compute_cycle_timing_multiplier(b_cycle, balance)
 		return {
 			"level": 0,
 			"kills_snapshot": 0,
@@ -173,9 +202,9 @@ func snapshot_spawn_stats(unit_data: UnitData, boss_index: int = 1, boss_cycle_o
 		}
 
 	var kills_now: int = get_kills(unit_data.id)
-	var lvl: int = compute_level(kills_now)
-	var hp_mult: float = compute_health_multiplier(lvl)
-	var spd_mult: float = compute_speed_multiplier(lvl)
+	var lvl: int = compute_level(kills_now, balance)
+	var hp_mult: float = compute_health_multiplier(lvl, balance)
+	var spd_mult: float = compute_speed_multiplier(lvl, balance)
 	return {
 		"level": lvl,
 		"kills_snapshot": kills_now,

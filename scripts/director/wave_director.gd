@@ -224,14 +224,6 @@ func is_cloaked_allowed_on_wave(wave_number: int) -> bool:
 	return wave_number > balance.waves_per_interval
 
 
-func is_stars_are_right_wave(wave_number: int) -> bool:
-	return (
-		wave_number > 0
-		and (wave_number % balance.stars_are_right_wave_interval) == 0
-		and not is_boss_wave(wave_number)
-	)
-
-
 func compute_boss_index(wave_number: int) -> int:
 	if wave_number <= 0:
 		return 1
@@ -1075,7 +1067,7 @@ func _resolve_unit_levels(inputs: Dictionary, interval_idx: int = 1) -> Dictiona
 	var out: Dictionary = {}
 	var min_floor: int = 0
 	if not inputs.has("unit_levels") and not bool(inputs.get("disable_interval_floor", false)):
-		min_floor = _UnitLeveling.compute_interval_level_floor(interval_idx)
+		min_floor = _UnitLeveling.compute_interval_level_floor(interval_idx, leveling.balance)
 	for u: UnitData in regular_catalog:
 		out[u.id] = maxi(min_floor, leveling.get_level_for_id(u.id, false))
 

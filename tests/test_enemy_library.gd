@@ -508,23 +508,23 @@ func test_04_boss_leaked_triggers_game_over_and_enemy_leaked_reduces_lives() -> 
 # --- Test 5: Leveling math and spawn-time snapshotting
 
 func test_05_leveling_math_and_spawn_time_snapshotting() -> void:
-	# Verify fast leveling formula:
-	# level = floor(pow(kills / 3.0, 0.72))
-	# health_mult = (1 + 0.22 * level) * 1.06^max(0, level - 3)
+	# Verify fast leveling formula (candidate_a values):
+	# level = floor(pow(kills / 3.0, 0.62))
+	# health_mult = (1 + 0.15 * level) * 1.04^max(0, level - 3)
 	# speed_mult = min(1 + 0.025 * level, 1.40)
 	assert(_UnitLeveling.compute_level(0) == 0, "0 kills -> level 0")
 	assert(_UnitLeveling.compute_level(2) == 0, "2 kills -> level 0")
 	assert(_UnitLeveling.compute_level(3) == 1, "3 kills -> level 1")
 	assert(_UnitLeveling.compute_level(7) == 1, "7 kills -> level 1")
-	assert(_UnitLeveling.compute_level(8) == 2, "8 kills -> level 2")
-	assert(_UnitLeveling.compute_level(14) == 3, "14 kills -> level 3")
-	assert(_UnitLeveling.compute_level(21) == 4, "21 kills -> level 4")
-	assert(_UnitLeveling.compute_level(75) == 10, "75 kills -> level 10")
+	assert(_UnitLeveling.compute_level(8) == 1, "8 kills -> level 1")
+	assert(_UnitLeveling.compute_level(14) == 2, "14 kills -> level 2")
+	assert(_UnitLeveling.compute_level(21) == 3, "21 kills -> level 3")
+	assert(_UnitLeveling.compute_level(75) == 7, "75 kills -> level 7")
 
 	assert(is_equal_approx(_UnitLeveling.compute_health_multiplier(0), 1.0), "Level 0 health_mult = 1.0")
-	assert(is_equal_approx(_UnitLeveling.compute_health_multiplier(1), 1.22), "Level 1 health_mult = 1.22")
-	assert(is_equal_approx(_UnitLeveling.compute_health_multiplier(3), 1.66), "Level 3 health_mult = 1.66")
-	assert(is_equal_approx(_UnitLeveling.compute_health_multiplier(4), (1.0 + 0.22 * 4.0) * 1.06), "Level 4 health_mult compounds above level 3")
+	assert(is_equal_approx(_UnitLeveling.compute_health_multiplier(1), 1.15), "Level 1 health_mult = 1.15")
+	assert(is_equal_approx(_UnitLeveling.compute_health_multiplier(3), 1.45), "Level 3 health_mult = 1.45")
+	assert(is_equal_approx(_UnitLeveling.compute_health_multiplier(4), (1.0 + 0.15 * 4.0) * 1.04), "Level 4 health_mult compounds above level 3")
 
 	assert(is_equal_approx(_UnitLeveling.compute_speed_multiplier(0), 1.0), "Level 0 speed_mult = 1.0")
 	assert(is_equal_approx(_UnitLeveling.compute_speed_multiplier(4), 1.10), "Level 4 speed_mult = 1.10")
@@ -556,10 +556,10 @@ func test_05_leveling_math_and_spawn_time_snapshotting() -> void:
 	assert(is_equal_approx(runner_a.max_hp, 30.0), "Already-spawned runner_a max_hp must remain 30.0")
 	assert(is_equal_approx(runner_a.speed, 1.6), "Already-spawned runner_a speed must remain 1.6")
 
-	# Newly spawned runner_b gets level 1 stats (HP = 30 * 1.22 = 36.6, speed = 1.6 * 1.025 = 1.64)
+	# Newly spawned runner_b gets level 1 stats (HP = 30 * 1.15 = 34.5, speed = 1.6 * 1.025 = 1.64)
 	var runner_b: CombatUnit = sys.spawn_unit_from_data("gig_runner", 10.0)
 	assert(runner_b.spawn_level == 1, "Newly spawned runner_b must be level 1")
-	assert(is_equal_approx(runner_b.max_hp, 30.0 * 1.22), "runner_b max_hp must be 36.6")
+	assert(is_equal_approx(runner_b.max_hp, 30.0 * 1.15), "runner_b max_hp must be 34.5")
 	assert(is_equal_approx(runner_b.speed, 1.6 * 1.025), "runner_b speed must be 1.64")
 
 	# Other unit types (even in same faction) have independent kill counts (0 kills -> level 0)

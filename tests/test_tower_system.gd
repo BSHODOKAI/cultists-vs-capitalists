@@ -802,12 +802,14 @@ func test_03_corruption_and_jank_accounting_and_thresholds() -> void:
 	sys.step(0.2, rogue_rng)
 	assert(sys.lives == lives_before_leak - 3, "Leaking Rogue Entity must cost 3 lives")
 
-	# Kill 1 more Rogue Entity (total 2 kills -> Level 2) and verify start_wave spawns multiples (2 Rogue Entities)
-	sys.leveling.record_rogue_entity_kill(1)
-	assert(sys.leveling.get_rogue_entity_level() == 2, "Rogue Entity level must be 2 after 2 kills")
+	# Kill 2 more Rogue Entities (total 3 kills -> Level 3) and verify start_wave spawns multiples.
+	# Rogue spawn cadence is +1 Rogue per rogue_entity_levels_per_extra_spawn (3) levels, so
+	# multiplicity begins at Level 3.
+	sys.leveling.record_rogue_entity_kill(2)
+	assert(sys.leveling.get_rogue_entity_level() == 3, "Rogue Entity level must be 3 after 3 kills")
 	var multi_wave_res: Dictionary = sys.start_wave(3, rogue_rng)
 	var spawned_rogues: Array = multi_wave_res.get("rogue_entities", []) as Array
-	assert(spawned_rogues.size() >= 2, "At Rogue Level 2+, start_wave at 100 Corruption must spawn multiple Rogue Entities, got %d" % spawned_rogues.size())
+	assert(spawned_rogues.size() >= 2, "At Rogue Level 3+, start_wave at 100 Corruption must spawn multiple Rogue Entities, got %d" % spawned_rogues.size())
 	sys.set_corruption(0)
 	sys.units.clear()
 

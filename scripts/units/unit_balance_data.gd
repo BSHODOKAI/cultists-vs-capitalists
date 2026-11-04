@@ -17,11 +17,11 @@ const DEFAULT_STARTING_LIVES: int = 20
 # --- Per-Unit-Type Kill Leveling Constants -----------------------------------
 ## level = floor(pow(kills_of_this_unit_type / LEVEL_KILLS_DIVISOR, LEVEL_KILLS_EXPONENT))
 const LEVEL_KILLS_DIVISOR: float = 3.0
-const LEVEL_KILLS_EXPONENT: float = 0.72
+const LEVEL_KILLS_EXPONENT: float = 0.62
 ## health_mult = (1 + LEVEL_HP_PER_LEVEL * level) * pow(LEVEL_HP_COMPOUND_RATE, max(0, level - LEVEL_HP_COMPOUND_START_LEVEL))
-const LEVEL_HP_PER_LEVEL: float = 0.22
+const LEVEL_HP_PER_LEVEL: float = 0.15
 const LEVEL_HP_COMPOUND_START_LEVEL: int = 3
-const LEVEL_HP_COMPOUND_RATE: float = 1.06
+const LEVEL_HP_COMPOUND_RATE: float = 1.04
 ## speed_mult = min(1 + LEVEL_SPEED_PER_LEVEL * level, LEVEL_SPEED_MAX_MULT)
 const LEVEL_SPEED_PER_LEVEL: float = 0.025
 const LEVEL_SPEED_MAX_MULT: float = 1.40

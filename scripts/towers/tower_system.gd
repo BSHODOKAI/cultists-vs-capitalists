@@ -230,14 +230,6 @@ func is_boss_wave(wave_number: int) -> bool:
 	return wave_number > 0 and (wave_number % balance.boss_wave_interval) == 0
 
 
-func is_stars_are_right_wave(wave_number: int) -> bool:
-	return (
-		wave_number > 0
-		and (wave_number % balance.stars_are_right_wave_interval) == 0
-		and not is_boss_wave(wave_number)
-	)
-
-
 ## Applies the active Run-Event's wave-duration modifiers. Called at wave start.
 func apply_event_modifiers(mods: Dictionary) -> void:
 	active_event_id = String(mods.get("event_id", ""))
@@ -1292,9 +1284,16 @@ func spawn_unit(
 
 func compute_rogue_entity_spawn_count(severity: int = 0) -> int:
 	var r_lvl: int = leveling.get_rogue_entity_level() if leveling != null else 0
-	var wave_extra: int = floori(float(maxi(0, current_wave - 10)) / 15.0)
+	var per_extra: int = maxi(1, balance.rogue_entity_levels_per_extra_spawn)
+	var extras: int = floori(float(r_lvl) / float(per_extra))
+	var period: int = maxi(1, balance.rogue_entity_wave_extra_period)
+	var wave_extra: int = floori(
+		float(maxi(0, current_wave - balance.rogue_entity_wave_extra_start_wave)) / float(period)
+	)
 	var cap: int = maxi(1, balance.max_rogue_entity_spawn_count)
-	return clampi(1 + floori(float(r_lvl) / 2.0) + wave_extra + maxi(0, severity), 1, cap)
+	return clampi(
+		maxi(1, balance.rogue_entity_spawn_base_count) + extras + wave_extra + maxi(0, severity), 1, cap
+	)
 
 
 ## Spawns a Rogue Entity. [param severity] adds Rite-debt levels on top of the
@@ -1303,21 +1302,30 @@ func compute_rogue_entity_spawn_count(severity: int = 0) -> int:
 func spawn_rogue_entity(start_path_pos: float = -1.0, severity: int = 0, lane_id: int = 0) -> CombatUnit:
 	var r_lvl: int = leveling.get_rogue_entity_level() if leveling != null else 0
 	var eff_lvl: int = maxi(0, r_lvl + maxi(0, severity))
-	var wave_mult: float = 1.0 + 0.08 * float(maxi(0, current_wave - 1))
-	var hp_val: float = _Balance.ROGUE_ENTITY_BASE_HP * pow(_Balance.ROGUE_ENTITY_HP_SCALE_PER_KILL, float(eff_lvl)) * wave_mult
-	var spd_val: float = minf(_Balance.ROGUE_ENTITY_BASE_SPEED * (1.0 + 0.04 * float(eff_lvl)), 1.85)
+	var wave_mult: float = 1.0 + balance.rogue_entity_wave_hp_ramp_per_wave * float(maxi(0, current_wave - 1))
+	var hp_val: float = balance.rogue_entity_base_hp * pow(balance.rogue_entity_hp_scale_per_kill, float(eff_lvl)) * wave_mult
+	var spd_val: float = minf(
+		balance.rogue_entity_base_speed * (1.0 + balance.rogue_entity_speed_per_level * float(eff_lvl)),
+		balance.rogue_entity_speed_max
+	)
 	var pos: float = start_path_pos if start_path_pos >= 0.0 else get_spawn_path_index(lane_id)
-	var kill_off: int = balance.rogue_entity_kill_offerings + eff_lvl * 5
+	var kill_off: int = balance.rogue_entity_kill_offerings + eff_lvl * balance.rogue_entity_kill_offerings_per_level
 	var rogue := spawn_unit(hp_val, [_C.UnitTag.GROUND], spd_val, pos, 0, kill_off, lane_id)
 	rogue.unit_name = "Rogue Entity"
 	rogue.unit_type_id = "rogue_entity"
 	rogue.is_rogue_entity = true
 	rogue.spawn_level = eff_lvl
-	rogue.leak_cost = balance.rogue_entity_leak_lives + floori(float(eff_lvl) / 3.0)
+	rogue.leak_cost = balance.rogue_entity_leak_lives + floori(
+		float(eff_lvl) / float(maxi(1, balance.rogue_entity_leak_lives_per_levels))
+	)
 	rogue.scrap_override = 0
 	rogue.has_breakthrough = true
 
-	var res_mult: float = clampf(0.75 - 0.02 * float(eff_lvl), 0.50, 0.75)
+	var res_mult: float = clampf(
+		balance.rogue_entity_resist_base - balance.rogue_entity_resist_per_level * float(eff_lvl),
+		balance.rogue_entity_resist_min,
+		balance.rogue_entity_resist_base
+	)
 	for dt in range(5):
 		rogue.resistances[dt] = res_mult
 

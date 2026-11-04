@@ -1,0 +1,137 @@
+{
+  "baseline_mean_reached": 20.0,
+  "presets": [
+    {
+      "archetypes": [
+        {
+          "archetype": "balanced",
+          "censored": 0,
+          "deaths": 1,
+          "mean_reached": 17.0,
+          "median_wod": 17.0,
+          "stalls": 0
+        },
+        {
+          "archetype": "mono_kinetic",
+          "censored": 0,
+          "deaths": 1,
+          "mean_reached": 23.0,
+          "median_wod": 23.0,
+          "stalls": 0
+        }
+      ],
+      "mean_reached": 20.0,
+      "preset": "baseline"
+    },
+    {
+      "archetypes": [
+        {
+          "archetype": "balanced",
+          "censored": 1,
+          "deaths": 0,
+          "mean_reached": 26.0,
+          "median_wod": -1.0,
+          "stalls": 0
+        },
+        {
+          "archetype": "mono_kinetic",
+          "censored": 1,
+          "deaths": 0,
+          "mean_reached": 26.0,
+          "median_wod": -1.0,
+          "stalls": 0
+        }
+      ],
+      "mean_reached": 26.0,
+      "preset": "no_leveling"
+    },
+    {
+      "archetypes": [
+        {
+          "archetype": "balanced",
+          "censored": 0,
+          "deaths": 1,
+          "mean_reached": 20.0,
+          "median_wod": 20.0,
+          "stalls": 0
+        },
+        {
+          "archetype": "mono_kinetic",
+          "censored": 0,
+          "deaths": 1,
+          "mean_reached": 23.0,
+          "median_wod": 23.0,
+          "stalls": 0
+        }
+      ],
+      "mean_reached": 21.5,
+      "preset": "no_interval_floor"
+    },
+    {
+      "archetypes": [
+        {
+          "archetype": "balanced",
+          "censored": 0,
+          "deaths": 1,
+          "mean_reached": 20.0,
+          "median_wod": 20.0,
+          "stalls": 0
+        },
+        {
+          "archetype": "mono_kinetic",
+          "censored": 0,
+          "deaths": 1,
+          "mean_reached": 24.0,
+          "median_wod": 24.0,
+          "stalls": 0
+        }
+      ],
+      "mean_reached": 22.0,
+      "preset": "no_late_ramp"
+    },
+    {
+      "archetypes": [
+        {
+          "archetype": "balanced",
+          "censored": 0,
+          "deaths": 1,
+          "mean_reached": 24.0,
+          "median_wod": 24.0,
+          "stalls": 0
+        },
+        {
+          "archetype": "mono_kinetic",
+          "censored": 1,
+          "deaths": 0,
+          "mean_reached": 26.0,
+          "median_wod": -1.0,
+          "stalls": 0
+        }
+      ],
+      "mean_reached": 25.0,
+      "preset": "flat_budget"
+    },
+    {
+      "archetypes": [
+        {
+          "archetype": "balanced",
+          "censored": 0,
+          "deaths": 1,
+          "mean_reached": 20.0,
+          "median_wod": 20.0,
+          "stalls": 0
+        },
+        {
+          "archetype": "mono_kinetic",
+          "censored": 0,
+          "deaths": 1,
+          "mean_reached": 23.0,
+          "median_wod": 23.0,
+          "stalls": 0
+        }
+      ],
+      "mean_reached": 21.5,
+      "preset": "no_rogues"
+    }
+  ]
+}

@@ -342,6 +342,7 @@ func start_new_run(seed_val: int = -1) -> void:
 
 	spatial_index = _HexSpatialIndex.new()
 	_wire_system_signals()
+	sync_derived_interval()
 
 	_log_event("run_setup_complete", {
 		"seed": run_seed,
@@ -368,6 +369,43 @@ func _wire_system_signals() -> void:
 	tower_system.ability_telegraphed.connect(_on_tower_system_ability_telegraphed)
 	tower_system.loss_report_generated.connect(_on_tower_system_loss_report)
 	tower_system.lane_bounty_paid.connect(_on_tower_system_lane_bounty_paid)
+
+
+## SINGLE SOURCE OF TRUTH for the boss interval.
+##
+## The interval used to be shadowed by four independent values -- the director's
+## `waves_per_interval`, `EventBalanceData.boss_wave_interval` + `first_boss_wave`,
+## `PathGenerator.boss_wave_interval` (a bare path_constants constant), and
+## `TowerBalanceData.boss_wave_interval` -- none of them derived. Shortening the
+## interval by editing only the director therefore desynced the path previews/commits
+## (still every 10 waves) from the bosses (now every 5): a boss would commit a growth
+## with no preview, breaking the "commit exactly the previewed extension" invariant.
+##
+## This derives the other three from `director.balance.waves_per_interval`. The event
+## and tower balances are DUPLICATED before mutation so the shared .tres instances are
+## never changed. Call this after any change to `waves_per_interval` (it is called for
+## you at run setup, and by the BalanceBaseline tuning path).
+func sync_derived_interval() -> void:
+	if director == null or director.balance == null:
+		return
+	var interval: int = maxi(1, director.balance.waves_per_interval)
+
+	if path_generator != null:
+		path_generator.boss_wave_interval = interval
+
+	if run_event_system != null and run_event_system.balance != null:
+		var eb: EventBalanceData = run_event_system.balance
+		if eb.boss_wave_interval != interval or eb.first_boss_wave != interval:
+			eb = eb.duplicate() as EventBalanceData
+			eb.boss_wave_interval = interval
+			eb.first_boss_wave = interval
+			run_event_system.balance = eb
+
+	if tower_system != null and tower_system.balance != null:
+		if tower_system.balance.boss_wave_interval != interval:
+			var tb: TowerBalanceData = tower_system.balance.duplicate() as TowerBalanceData
+			tb.boss_wave_interval = interval
+			tower_system.balance = tb
 
 
 # --- INTERMISSION, WAVE_ACTIVE, POST_BOSS, GAME_OVER -------------------------
@@ -660,8 +698,8 @@ func _spawn_scheduled_item(item: Dictionary) -> CombatUnit:
 	var target_lvl: int = int(item.get("spawn_level", unit.spawn_level))
 	if not is_boss and target_lvl > unit.spawn_level and unit.unit_data != null:
 		unit.spawn_level = target_lvl
-		var hp_mult: float = _UnitLeveling.compute_health_multiplier(target_lvl)
-		var spd_mult: float = _UnitLeveling.compute_speed_multiplier(target_lvl)
+		var hp_mult: float = _UnitLeveling.compute_health_multiplier(target_lvl, unit_leveling.balance)
+		var spd_mult: float = _UnitLeveling.compute_speed_multiplier(target_lvl, unit_leveling.balance)
 		unit.max_hp = unit.unit_data.base_hp * hp_mult * tower_system.event_enemy_hp_mult
 		unit.hp = unit.max_hp
 		unit.speed = unit.unit_data.speed * spd_mult * tower_system.event_enemy_speed_mult

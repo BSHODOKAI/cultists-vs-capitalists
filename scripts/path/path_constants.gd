@@ -51,8 +51,6 @@ const STARTING_SCRAP: int = 40
 const DEFAULT_SCRAP_RATIO: float = 0.5
 
 const BOSS_WAVE_INTERVAL: int = 10
-const STARS_ARE_RIGHT_INTERVAL: int = 5
-const STARS_ARE_RIGHT_REVEALED_DAMAGE_BONUS: float = 0.20
 const BOSS_SLOW_DOT_STRENGTH: float = 0.50
 
 # --- Hex grid & chunk constants ----------------------------------------------

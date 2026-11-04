@@ -11,16 +11,13 @@ extends Resource
 const WAVES_PER_INTERVAL: int = 10
 const INTERVALS_PER_CYCLE: int = 5
 const MIXED_INTERVAL_IN_CYCLE: int = 5
-const STARS_ARE_RIGHT_WAVE_INTERVAL: int = 5
-const STARS_ARE_RIGHT_REVEALED_DAMAGE_BONUS: float = 0.20
 
 # --- Budget & Wave Cap Constants ---------------------------------------------
-## B(w) = (10 + 5w + 0.12 w^2) * (1 + 0.15 * completed_cycles) * rubber_factor
+## B(w) = (10 + 5w + 0.06 w^2) * (1 + 0.10 * completed_cycles) * rubber_factor
 const BUDGET_BASE: float = 10.0
 const BUDGET_LINEAR_PER_WAVE: float = 5.0
-const BUDGET_QUADRATIC_PER_WAVE: float = 0.12
-const BUDGET_CYCLE_SCALING: float = 0.15
-const STARS_ARE_RIGHT_BUDGET_MULTIPLIER: float = 1.10
+const BUDGET_QUADRATIC_PER_WAVE: float = 0.06
+const BUDGET_CYCLE_SCALING: float = 0.10
 const BOSS_ESCORT_BUDGET_RATIO: float = 0.60
 const BOSS_WITHHELD_BUDGET_RATIO: float = 0.40
 const MAX_UNITS_PER_WAVE: int = 60
@@ -28,8 +25,8 @@ const MAX_BOSS_ESCORT_UNITS: int = 24
 
 ## Late-wave difficulty ramp starting after wave 15 so mid-to-late waves (20..50+) scale sharply.
 const LATE_RAMP_START_WAVE: int = 15
-const LATE_RAMP_LINEAR_PER_WAVE: float = 0.035
-const LATE_RAMP_QUADRATIC_PER_WAVE: float = 0.0018
+const LATE_RAMP_LINEAR_PER_WAVE: float = 0.02
+const LATE_RAMP_QUADRATIC_PER_WAVE: float = 0.0008
 
 # --- Rubber-Banding Constants ------------------------------------------------
 const RUBBER_FACTOR_DEFAULT: float = 1.0
@@ -121,14 +118,11 @@ const FORK_SECONDARY_FACTION_START_WAVE: int = 50
 @export var waves_per_interval: int = WAVES_PER_INTERVAL
 @export var intervals_per_cycle: int = INTERVALS_PER_CYCLE
 @export var mixed_interval_in_cycle: int = MIXED_INTERVAL_IN_CYCLE
-@export var stars_are_right_wave_interval: int = STARS_ARE_RIGHT_WAVE_INTERVAL
-@export var stars_are_right_revealed_damage_bonus: float = STARS_ARE_RIGHT_REVEALED_DAMAGE_BONUS
 
 @export var budget_base: float = BUDGET_BASE
 @export var budget_linear_per_wave: float = BUDGET_LINEAR_PER_WAVE
 @export var budget_quadratic_per_wave: float = BUDGET_QUADRATIC_PER_WAVE
 @export var budget_cycle_scaling: float = BUDGET_CYCLE_SCALING
-@export var stars_are_right_budget_multiplier: float = STARS_ARE_RIGHT_BUDGET_MULTIPLIER
 @export var boss_escort_budget_ratio: float = BOSS_ESCORT_BUDGET_RATIO
 @export var boss_withheld_budget_ratio: float = BOSS_WITHHELD_BUDGET_RATIO
 @export var max_units_per_wave: int = MAX_UNITS_PER_WAVE

@@ -40,7 +40,23 @@ const ROGUE_ENTITY_LEAK_LIVES: int = 3
 const ROGUE_ENTITY_KILL_OFFERINGS: int = 10
 const ROGUE_ENTITY_BASE_HP: float = 550.0
 const ROGUE_ENTITY_BASE_SPEED: float = 1.25
-const ROGUE_ENTITY_HP_SCALE_PER_KILL: float = 1.45
+const ROGUE_ENTITY_HP_SCALE_PER_KILL: float = 1.28
+## Reckoning severity knobs (formerly hardcoded in TowerSystem.spawn_rogue_entity).
+const ROGUE_ENTITY_SPAWN_BASE_COUNT: int = 1
+## Rogue levels required per extra spawned Rogue (floor(level / this)).
+const ROGUE_ENTITY_LEVELS_PER_EXTRA_SPAWN: int = 3
+## First wave past which the per-wave spawn bonus begins, and its period.
+const ROGUE_ENTITY_WAVE_EXTRA_START_WAVE: int = 10
+const ROGUE_ENTITY_WAVE_EXTRA_PERIOD: int = 15
+const ROGUE_ENTITY_SPEED_PER_LEVEL: float = 0.04
+const ROGUE_ENTITY_SPEED_MAX: float = 1.85
+const ROGUE_ENTITY_WAVE_HP_RAMP_PER_WAVE: float = 0.05
+const ROGUE_ENTITY_RESIST_BASE: float = 0.75
+const ROGUE_ENTITY_RESIST_PER_LEVEL: float = 0.02
+const ROGUE_ENTITY_RESIST_MIN: float = 0.50
+## Rogue levels per +1 leak life (floor(level / this)).
+const ROGUE_ENTITY_LEAK_LIVES_PER_LEVELS: int = 3
+const ROGUE_ENTITY_KILL_OFFERINGS_PER_LEVEL: int = 5
 const PENANCE_OFFERINGS_COST: int = 40
 const PENANCE_CORRUPTION_REDUCTION: int = 5
 
@@ -64,9 +80,7 @@ const MAINTENANCE_SCRAP_COST: int = 15
 const MAINTENANCE_JANK_REDUCTION: int = 10
 
 # --- Special Wave & Synergy constants ----------------------------------------
-const STARS_ARE_RIGHT_WAVE_INTERVAL: int = 5
 const BOSS_WAVE_INTERVAL: int = 10
-const STARS_ARE_RIGHT_REVEALED_BONUS: float = 0.20
 
 const VARIETY_BONUS_RADIUS_HEXES: int = 3
 const VARIETY_BONUS_PER_DISTINCT_TYPE: float = 0.03
@@ -119,6 +133,21 @@ const CC_DR_STEP_3_MULT: float = 0.25
 @export var rite_debt_per_rite: int = RITE_DEBT_PER_RITE
 @export var rite_debt_per_rogue_level: int = RITE_DEBT_PER_ROGUE_LEVEL
 @export var max_rogue_entity_spawn_count: int = MAX_ROGUE_ENTITY_SPAWN_COUNT
+@export var rogue_entity_base_hp: float = ROGUE_ENTITY_BASE_HP
+@export var rogue_entity_base_speed: float = ROGUE_ENTITY_BASE_SPEED
+@export var rogue_entity_hp_scale_per_kill: float = ROGUE_ENTITY_HP_SCALE_PER_KILL
+@export var rogue_entity_spawn_base_count: int = ROGUE_ENTITY_SPAWN_BASE_COUNT
+@export var rogue_entity_levels_per_extra_spawn: int = ROGUE_ENTITY_LEVELS_PER_EXTRA_SPAWN
+@export var rogue_entity_wave_extra_start_wave: int = ROGUE_ENTITY_WAVE_EXTRA_START_WAVE
+@export var rogue_entity_wave_extra_period: int = ROGUE_ENTITY_WAVE_EXTRA_PERIOD
+@export var rogue_entity_speed_per_level: float = ROGUE_ENTITY_SPEED_PER_LEVEL
+@export var rogue_entity_speed_max: float = ROGUE_ENTITY_SPEED_MAX
+@export var rogue_entity_wave_hp_ramp_per_wave: float = ROGUE_ENTITY_WAVE_HP_RAMP_PER_WAVE
+@export var rogue_entity_resist_base: float = ROGUE_ENTITY_RESIST_BASE
+@export var rogue_entity_resist_per_level: float = ROGUE_ENTITY_RESIST_PER_LEVEL
+@export var rogue_entity_resist_min: float = ROGUE_ENTITY_RESIST_MIN
+@export var rogue_entity_leak_lives_per_levels: int = ROGUE_ENTITY_LEAK_LIVES_PER_LEVELS
+@export var rogue_entity_kill_offerings_per_level: int = ROGUE_ENTITY_KILL_OFFERINGS_PER_LEVEL
 
 @export var jank_min: int = JANK_MIN
 @export var jank_cap: int = JANK_CAP
@@ -126,9 +155,7 @@ const CC_DR_STEP_3_MULT: float = 0.25
 @export var maintenance_scrap_cost: int = MAINTENANCE_SCRAP_COST
 @export var maintenance_jank_reduction: int = MAINTENANCE_JANK_REDUCTION
 
-@export var stars_are_right_wave_interval: int = STARS_ARE_RIGHT_WAVE_INTERVAL
 @export var boss_wave_interval: int = BOSS_WAVE_INTERVAL
-@export var stars_are_right_revealed_bonus: float = STARS_ARE_RIGHT_REVEALED_BONUS
 
 @export var variety_bonus_radius_hexes: int = VARIETY_BONUS_RADIUS_HEXES
 @export var variety_bonus_per_distinct_type: float = VARIETY_BONUS_PER_DISTINCT_TYPE
