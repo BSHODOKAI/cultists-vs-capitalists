@@ -66,6 +66,7 @@ func test_01_audio_balance_resource_and_all_wav_files_load() -> void:
 		_AudioBalance.CUE_TOWER_MAINTAINED,
 		_AudioBalance.CUE_PENANCE,
 		_AudioBalance.CUE_ENEMY_ABILITY,
+		_AudioBalance.CUE_ROGUE_RECKONING,
 		_AudioBalance.CUE_UI_CLICK,
 		_AudioBalance.CUE_UI_ERROR,
 	]

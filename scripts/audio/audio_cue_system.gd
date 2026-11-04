@@ -23,6 +23,7 @@ const BOSS_ABILITY_IDS: Array[String] = [
 const HIGH_PRIORITY_CUES: Array[String] = [
 	_AudioBalance.CUE_BOSS_DEATH,
 	_AudioBalance.CUE_BOSS_SPECIAL_ABILITY,
+	_AudioBalance.CUE_ROGUE_RECKONING,
 	_AudioBalance.CUE_GAME_OVER,
 	_AudioBalance.CUE_WAVE_STARTED,
 	_AudioBalance.CUE_WAVE_ENDED,
@@ -422,6 +423,16 @@ func on_enemy_died(unit_id: int, is_boss_override: bool = false) -> Dictionary:
 
 func on_boss_died(wave_number: int) -> Dictionary:
 	return request_cue(_AudioBalance.CUE_BOSS_DEATH, {"wave_number": wave_number})
+
+
+## THE RECKONING: Rogue Entities have woken. High-priority so it is never ducked or
+## dropped by the global voice cap during the heavy combat of a late wave -- the moment
+## a player most needs to hear it.
+func on_rogue_reckoning(rogue_count: int = 0, severity: int = 0) -> Dictionary:
+	return request_cue(_AudioBalance.CUE_ROGUE_RECKONING, {
+		"rogue_count": rogue_count,
+		"severity": severity,
+	})
 
 
 func on_ability_telegraphed(event: Dictionary) -> Dictionary:

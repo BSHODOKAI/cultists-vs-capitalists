@@ -143,6 +143,7 @@ func bind_to_game_state(gs: Node) -> void:
 	_connect_once(gs, "wave_started", _on_wave_started)
 	_connect_once(gs, "wave_ended", _on_wave_ended)
 	_connect_once(gs, "event_triggered", _on_event_triggered)
+	_connect_once(gs, "reckoning_started", _on_reckoning_started)
 	_connect_once(gs, "path_extended", _on_path_extended)
 	_connect_once(gs, "fork_preview_ready", _on_fork_preview_ready)
 	_connect_once(gs, "fork_candidate_selected", _on_fork_candidate_selected)
@@ -538,6 +539,12 @@ func play_run_event(event_id: String) -> Dictionary:
 	return _play_approved_cue(cue_system.on_run_event(event_id))
 
 
+## THE RECKONING: the bespoke otherworldly-laugh stinger fired when Rogue Entities wake.
+func play_rogue_reckoning(rogue_count: int = 0, severity: int = 0) -> Dictionary:
+	_ensure_initialized()
+	return _play_approved_cue(cue_system.on_rogue_reckoning(rogue_count, severity))
+
+
 func play_path_extended(growth_result: Dictionary = {}) -> Dictionary:
 	_ensure_initialized()
 	return _play_approved_cue(cue_system.on_path_extended(growth_result))
@@ -665,6 +672,10 @@ func _on_wave_ended(wave_number: int) -> void:
 
 func _on_event_triggered(event_id: String, _display_name: String, _category: int, _banner_text: String, _banner_color: Color) -> void:
 	play_run_event(event_id)
+
+
+func _on_reckoning_started(rogue_count: int, severity: int, _leak_cost: int, _spawn_world_pos: Vector3) -> void:
+	play_rogue_reckoning(rogue_count, severity)
 
 
 func _on_path_extended(growth_result: Dictionary) -> void:

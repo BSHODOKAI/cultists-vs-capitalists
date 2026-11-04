@@ -24,6 +24,12 @@ var _banner_pulse_tween: Tween
 var _arrow_labels: Array[Label] = []
 var _active_offscreen_events: Array[Dictionary] = []
 
+## Full-screen radial vignette used for the RECKONING danger flash. Edges-only so a
+## dire warning is felt even when the player is looking at the other end of the map,
+## without washing out the play area the way a flat full-screen tint would.
+var _flash_rect: TextureRect
+var _flash_tween: Tween
+
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -33,6 +39,9 @@ func _ready() -> void:
 
 
 func _build_ui() -> void:
+	# Danger vignette FIRST, so every banner (added later) draws on top of it.
+	_build_flash_vignette()
+
 	# Full-width banner bar: a tinted panel with a bright accent border and a
 	# bold, outlined, centred label so announcements are legible over any scene.
 	_banner_root = Control.new()
@@ -71,6 +80,30 @@ func _build_ui() -> void:
 	_banner_label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.95))
 	_banner_label.add_theme_constant_override("outline_size", 6)
 	_banner_root.add_child(_banner_label)
+
+
+## Builds the RECKONING danger vignette: a full-rect TextureRect whose radial gradient
+## is transparent in the centre and hot at the edges. Hidden at zero alpha until fired.
+func _build_flash_vignette() -> void:
+	var grad := Gradient.new()
+	grad.set_color(0, Color(0.88, 0.10, 0.72, 0.0))
+	grad.set_color(1, Color(0.88, 0.10, 0.72, 0.9))
+	var tex := GradientTexture2D.new()
+	tex.gradient = grad
+	tex.fill = GradientTexture2D.FILL_RADIAL
+	tex.fill_from = Vector2(0.5, 0.5)
+	tex.fill_to = Vector2(0.5, 0.0)
+	tex.width = 256
+	tex.height = 256
+
+	_flash_rect = TextureRect.new()
+	_flash_rect.texture = tex
+	_flash_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_flash_rect.stretch_mode = TextureRect.STRETCH_SCALE
+	_flash_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_flash_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_flash_rect.modulate.a = 0.0
+	add_child(_flash_rect)
 
 
 func _connect_signals() -> void:
@@ -112,6 +145,7 @@ func _connect_signals() -> void:
 			_banner_timer = 0.0
 	)
 	gs.connect("ability_telegraphed", _on_ability_telegraphed)
+	gs.connect("reckoning_started", _on_reckoning_started)
 
 
 func show_banner(text: String, duration: float = 3.0, col: Color = Color(1.0, 0.85, 0.30), emphasis: bool = false) -> void:
@@ -162,6 +196,59 @@ func _animate_banner_in(emphasis: bool) -> void:
 		_banner_pulse_tween = create_tween().set_loops(3)
 		_banner_pulse_tween.tween_property(_banner_style, "bg_color:a", 0.5, 0.22)
 		_banner_pulse_tween.tween_property(_banner_style, "bg_color:a", 0.9, 0.22)
+
+
+## THE RECKONING: Rogue Entities have woken. Nothing else in the game announces them
+## (they carry no BOSS tag), so this is the player's one warning that a wall of tanky,
+## tower-disabling, 3-lives-a-leak units just entered from the far spawn end. Banner
+## states the number and the per-leak cost; the vignette makes it felt from anywhere;
+## the edge arrow shows WHERE they came in (usually off-camera).
+func _on_reckoning_started(
+	rogue_count: int, severity: int, leak_cost: int, spawn_world_pos: Vector3
+) -> void:
+	var col := Color(0.90, 0.16, 0.78)
+	var noun: String = "ENTITY HAS" if rogue_count == 1 else "ENTITIES HAVE"
+	var lines: Array[String] = [
+		"!! THE RECKONING !!",
+		"%d ROGUE %s WOKEN - EACH LEAK COSTS %d LIVES!" % [rogue_count, noun, leak_cost],
+		"They disable your towers as they pass. Put them down.",
+	]
+	if severity > 0:
+		lines.append("Reckoning +%d - these ones are stronger." % severity)
+	show_banner("\n".join(lines), 6.5, col, true)
+	_flash_danger()
+
+	# Directional marker toward the spawn. Dedup by label so a second Reckoning while
+	# one marker is still alive refreshes it rather than stacking overlapping arrows.
+	var world_pos: Vector3 = spawn_world_pos
+	if world_pos == Vector3.ZERO:
+		world_pos = _HexMath.hex_to_world(Vector2i.ZERO, 0.6)
+	for existing: Dictionary in _active_offscreen_events:
+		if String(existing.get("label", "")) == "ROGUES":
+			existing["world_pos"] = world_pos
+			existing["remaining"] = maxf(float(existing.get("remaining", 0.0)), 6.5)
+			return
+	if _active_offscreen_events.size() < 6:
+		_active_offscreen_events.append({
+			"world_pos": world_pos,
+			"label": "ROGUES",
+			"remaining": 6.5,
+		})
+
+
+## Pulses the danger vignette three times, then fades it out. Kills any in-flight flash
+## first so back-to-back Reckonings restart the pulse cleanly instead of fighting a tween.
+func _flash_danger() -> void:
+	if _flash_rect == null:
+		return
+	if _flash_tween != null and _flash_tween.is_valid():
+		_flash_tween.kill()
+	_flash_rect.modulate.a = 0.0
+	_flash_tween = create_tween()
+	for i in range(3):
+		_flash_tween.tween_property(_flash_rect, "modulate:a", 0.85, 0.16)
+		_flash_tween.tween_property(_flash_rect, "modulate:a", 0.10, 0.22)
+	_flash_tween.tween_property(_flash_rect, "modulate:a", 0.0, 0.5)
 
 
 func _on_ability_telegraphed(ev: Dictionary) -> void:

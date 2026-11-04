@@ -46,6 +46,11 @@ const CUE_TOWER_SOLD: String = "tower_sold"
 const CUE_TOWER_MAINTAINED: String = "tower_maintained"
 const CUE_PENANCE: String = "penance"
 const CUE_ENEMY_ABILITY: String = "enemy_ability"
+## THE RECKONING danger stinger: a bespoke, otherworldly laugh (the cosmic creditor
+## collecting the cult's Rite debt) fired the instant Rogue Entities wake. Unlike the
+## mechanical enemy cues, this is the one sound in the game that means "you are about
+## to lose lives you cannot afford".
+const CUE_ROGUE_RECKONING: String = "rogue_reckoning"
 const CUE_UI_CLICK: String = "ui_click"
 const CUE_UI_ERROR: String = "ui_error"
 
@@ -663,6 +668,16 @@ static func build_default_cues() -> Dictionary:
 			"pitch_min": 0.95,
 			"pitch_max": 1.05,
 			"active_duration": 0.75,
+			"loop": false,
+		},
+		CUE_ROGUE_RECKONING: {
+			"path": "res://assets/generated/audio/rogue_reckoning_v2_amused_presence.mp3",
+			"volume_db": -3.5,
+			"min_interval": 0.50,
+			"max_voices": 1,
+			"pitch_min": 1.0,
+			"pitch_max": 1.0,
+			"active_duration": 5.5,
 			"loop": false,
 		},
 		CUE_UI_CLICK: {

@@ -83,6 +83,11 @@ signal objectives_changed(objective_system: ObjectiveSystem)
 ## Emitted when Rites are drawn; attention is Corruption + cumulative Rite spending.
 signal rites_changed(rites: int, attention: int)
 signal ability_telegraphed(event: Dictionary)
+## Emitted the moment Rogue Entities wake at the Corruption threshold (a RECKONING).
+## Carries everything the danger alert needs so the HUD never has to reach back into
+## TowerSystem: how many, the Rite-debt severity behind them, the per-leak life cost
+## (the actual danger), and where they entered so an off-screen arrow can point at them.
+signal reckoning_started(rogue_count: int, severity: int, leak_cost: int, spawn_world_pos: Vector3)
 signal loss_report_ready(report: LossReport)
 signal tower_placed_on_hex(tower: TowerInstance)
 signal tower_upgraded_on_hex(tower: TowerInstance, node_id: String)
@@ -452,11 +457,15 @@ func start_wave() -> bool:
 		_pending_event.get_duration_modifiers() if _pending_event != null else {}
 	)
 
-	# Emit enemy_spawned for all Rogue Entities spawned at 100 Corruption
+	# Emit enemy_spawned for all Rogue Entities spawned at 100 Corruption, and gather
+	# the data for the RECKONING danger alert (emitted further below).
 	var rogue_list: Array = wave_start_info.get("rogue_entities", []) as Array
 	if rogue_list.is_empty() and wave_start_info.get("rogue_entity") != null:
 		rogue_list = [wave_start_info["rogue_entity"]]
 	var rogue_def := load(ROGUE_ENTITY_PATH) as UnitData
+	var reckoning_count: int = 0
+	var reckoning_leak: int = 0
+	var reckoning_spawn_world: Vector3 = Vector3.ZERO
 	for r_var: Variant in rogue_list:
 		var rogue: CombatUnit = r_var as CombatUnit
 		if rogue == null:
@@ -471,6 +480,11 @@ func start_wave() -> bool:
 			"hp": snappedf(rogue.max_hp, 0.1),
 		})
 		enemy_spawned.emit(rogue)
+		if reckoning_count == 0:
+			var lane_hexes: Array[Vector2i] = tower_system.get_lane_hexes(rogue.lane_id)
+			reckoning_spawn_world = _HexMath.path_position_to_world(lane_hexes, rogue.path_position, 0.6)
+		reckoning_count += 1
+		reckoning_leak = maxi(reckoning_leak, rogue.leak_cost)
 
 	if tower_system.offerings != pre_off or tower_system.scrap != pre_scrap:
 		currencies_changed.emit(tower_system.offerings, tower_system.scrap)
@@ -485,6 +499,18 @@ func start_wave() -> bool:
 	)
 
 	_apply_pending_event()
+
+	# The RECKONING alert fires AFTER the wave's Run Event so that on the rare wave where
+	# both happen, the danger warning is the one left on screen. This is the ONLY moment
+	# the player learns Rogues are on the board -- they carry no BOSS tag, so nothing else
+	# (BossBar included) announces them.
+	if reckoning_count > 0:
+		reckoning_started.emit(
+			reckoning_count,
+			int(wave_start_info.get("rogue_severity", 0)),
+			reckoning_leak,
+			reckoning_spawn_world
+		)
 
 	_log_event("wave_started", {"wave": current_wave})
 	wave_started.emit(current_wave)

@@ -198,6 +198,16 @@ cues = {
 "pitch_min": 0.92,
 "volume_db": -12.5
 },
+"rogue_reckoning": {
+"active_duration": 5.5,
+"loop": false,
+"max_voices": 1,
+"min_interval": 0.5,
+"path": "res://assets/generated/audio/rogue_reckoning_v2_amused_presence.mp3",
+"pitch_max": 1.0,
+"pitch_min": 1.0,
+"volume_db": -3.5
+},
 "stars_are_right": {
 "active_duration": 3.65,
 "loop": false,
