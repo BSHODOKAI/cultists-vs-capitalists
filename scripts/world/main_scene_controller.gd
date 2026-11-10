@@ -95,6 +95,8 @@ func _connect_signals() -> void:
 	gs.connect("tower_damaged_enemy", _on_tower_damaged_enemy)
 	gs.connect("tower_cooldown_used", _on_tower_cooldown_used)
 	gs.connect("currency_earned", _on_currency_earned)
+	if gs.has_signal("currency_flow_recorded"):
+		gs.connect("currency_flow_recorded", _on_currency_flow_recorded)
 	gs.connect("ability_telegraphed", _on_ability_telegraphed)
 	gs.connect("camera_focus_requested", func(wp: Vector3, _lbl: String) -> void:
 		if camera_rig != null:
@@ -428,11 +430,98 @@ func _on_enemy_spawned(unit: CombatUnit) -> void:
 
 func _on_enemy_died(unit_id: int) -> void:
 	if enemy_pool != null and enemy_pool.active_views.has(unit_id):
-		var v: EnemyMoverView = enemy_pool.active_views[unit_id] as EnemyMoverView
-		if is_instance_valid(v) and effects_view != null and _kill_labels_this_frame < 4:
-			_kill_labels_this_frame += 1
-			effects_view.spawn_floating_text(v.get_aim_world_position(), "+Kill", Color(1.0, 0.88, 0.35))
 		enemy_pool.release_unit_view(unit_id)
+
+
+func _on_currency_flow_recorded(
+	source: String,
+	offerings_delta: int,
+	scrap_delta: int,
+	hex: Vector2i,
+	unit_id: int,
+	tower_id: int
+) -> void:
+	if effects_view == null:
+		return
+	match source:
+		"kills":
+			if _kill_labels_this_frame >= 6:
+				return
+			_kill_labels_this_frame += 1
+			var pos: Vector3 = _HexMath.hex_to_world(hex, 0.5)
+			if unit_id >= 0 and enemy_pool != null and enemy_pool.active_views.has(unit_id):
+				var ev: EnemyMoverView = enemy_pool.active_views[unit_id] as EnemyMoverView
+				if is_instance_valid(ev):
+					pos = ev.get_aim_world_position()
+			var parts: PackedStringArray = []
+			if offerings_delta > 0:
+				parts.append("+%d Off" % offerings_delta)
+			if scrap_delta > 0:
+				parts.append("+%d Scrap" % scrap_delta)
+			if not parts.is_empty():
+				var col: Color = Color(1.0, 0.86, 0.36) if (offerings_delta > 0 and scrap_delta > 0) else (
+					Color(0.86, 0.58, 1.0) if offerings_delta > 0 else Color(1.0, 0.65, 0.25)
+				)
+				effects_view.spawn_floating_text(pos, "  ".join(parts), col, 0.90)
+		"tithe_box":
+			var t_pos: Vector3 = _HexMath.hex_to_world(hex, 0.55)
+			if tower_id >= 0 and tower_factory != null and tower_factory.views.has(tower_id):
+				var tv: TowerView = tower_factory.views[tower_id] as TowerView
+				if is_instance_valid(tv):
+					t_pos = tv.global_position + Vector3(0.0, 0.55, 0.0)
+			if offerings_delta > 0:
+				effects_view.spawn_floating_text(t_pos, "+%d Off" % offerings_delta, Color(0.95, 0.78, 1.0), 1.0)
+				effects_view.spawn_telegraph_reticle(hex, 0.45, Color(0.85, 0.55, 1.0, 0.70))
+		"rite_bounties":
+			var r_pos: Vector3 = _HexMath.hex_to_world(hex, 0.75)
+			if unit_id >= 0 and enemy_pool != null and enemy_pool.active_views.has(unit_id):
+				var ev_r: EnemyMoverView = enemy_pool.active_views[unit_id] as EnemyMoverView
+				if is_instance_valid(ev_r):
+					r_pos = ev_r.get_aim_world_position() + Vector3(0.0, 0.32, 0.0)
+			elif tower_id >= 0 and tower_factory != null and tower_factory.views.has(tower_id):
+				var tv_r: TowerView = tower_factory.views[tower_id] as TowerView
+				if is_instance_valid(tv_r):
+					r_pos = tv_r.global_position + Vector3(0.0, 0.75, 0.0)
+			var r_parts: PackedStringArray = []
+			if offerings_delta > 0:
+				r_parts.append("+%d Off" % offerings_delta)
+			if scrap_delta > 0:
+				r_parts.append("+%d Scrap" % scrap_delta)
+			if not r_parts.is_empty():
+				effects_view.spawn_floating_text(
+					r_pos,
+					"RITE %s" % " ".join(r_parts),
+					Color(1.0, 0.52, 0.65),
+					1.0
+				)
+		"upkeep_and_steal":
+			var u_pos: Vector3 = _HexMath.hex_to_world(hex, 0.65)
+			var u_parts: PackedStringArray = []
+			if offerings_delta < 0:
+				u_parts.append("%d Off" % offerings_delta)
+			if scrap_delta < 0:
+				u_parts.append("%d Scrap" % scrap_delta)
+			if not u_parts.is_empty():
+				effects_view.spawn_floating_text(
+					u_pos,
+					" ".join(u_parts),
+					Color(1.0, 0.36, 0.32),
+					1.05
+				)
+		"events":
+			if offerings_delta < 0 or scrap_delta < 0:
+				var e_parts: PackedStringArray = []
+				if offerings_delta < 0:
+					e_parts.append("%d Off" % offerings_delta)
+				if scrap_delta < 0:
+					e_parts.append("%d Scrap" % scrap_delta)
+				if not e_parts.is_empty():
+					effects_view.spawn_floating_text(
+						Vector3(0.0, 1.35, 0.0),
+						" ".join(e_parts),
+						Color(1.0, 0.36, 0.32),
+						1.15
+					)
 
 
 func _on_tower_damaged_enemy(

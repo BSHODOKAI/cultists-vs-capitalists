@@ -21,6 +21,17 @@ var _wave_label: Label
 var _faction_label: Label
 var _offerings_label: Label
 var _scrap_label: Label
+var _offerings_chip: HBoxContainer
+var _scrap_chip: HBoxContainer
+var _rites_chip: HBoxContainer
+var _offerings_delta_label: Label
+var _scrap_delta_label: Label
+var _offerings_delta_tween: Tween
+var _scrap_delta_tween: Tween
+var _offerings_pulse_tween: Tween
+var _scrap_pulse_tween: Tween
+var _last_offerings: int = -1
+var _last_scrap: int = -1
 var _corruption_bar: ProgressBar
 var _corruption_label: Label
 var _penance_button: Button
@@ -40,9 +51,13 @@ var _applying_fit: bool = false
 ## Test hook: forces the width the bar must fit into. -1 (default) measures the viewport.
 var fit_width_override: float = -1.0
 
+const OFFERINGS_BASE_COLOR = Color(0.75, 0.50, 1.0)
+const SCRAP_BASE_COLOR = Color(1.0, 0.65, 0.25)
 const ATTENTION_COLOR = Color(0.74, 0.56, 0.46)
 const ATTENTION_HOT_COLOR = Color(1.0, 0.34, 0.28)
 const RITES_COLOR = Color(0.96, 0.80, 0.36)
+const GAIN_FLASH_COLOR = Color(0.92, 1.0, 0.72)
+const LOSS_FLASH_COLOR = Color(1.0, 0.38, 0.34)
 
 ## Never shrink text below this scale: past it the row is left as-is (an extreme
 ## windowed drag), because unreadable text is worse than a clipped readout.
@@ -100,16 +115,22 @@ func _build_ui() -> void:
 		_hbox,
 		PlaceholderIcons.COST_OFFERINGS,
 		"150",
-		Color(0.75, 0.50, 1.0),
+		OFFERINGS_BASE_COLOR,
 		"Offerings -- build Revealed towers and upgrades, pay Penance, cleanse conversions."
 	)
+	_offerings_chip = _offerings_label.get_parent() as HBoxContainer
+	_offerings_delta_label = _make_delta_badge(_offerings_chip)
+
 	_scrap_label = _make_currency_chip(
 		_hbox,
 		PlaceholderIcons.COST_SCRAP,
 		"40",
-		Color(1.0, 0.65, 0.25),
+		SCRAP_BASE_COLOR,
 		"Scrap -- build scavenged towers, buy Rigged upgrades, pay tower Maintenance."
 	)
+	_scrap_chip = _scrap_label.get_parent() as HBoxContainer
+	_scrap_delta_label = _make_delta_badge(_scrap_chip)
+
 	# Rites is the third currency, so it belongs WITH the other two -- not stranded past the
 	# Corruption meter, where it read as a Corruption readout rather than a resource you hold
 	# and spend like Offerings and Scrap. Same icon+number chip shape keeps the three legible
@@ -124,6 +145,7 @@ func _build_ui() -> void:
 		+ "Reservoir).\n"
 		+ "Spend Rites on a tower's Rite upgrade branch -- they are NEVER refunded."
 	)
+	_rites_chip = _rites_label.get_parent() as HBoxContainer
 	_rites_label.add_theme_font_size_override("font_size", 13)
 	_track_font(_rites_label)
 
@@ -218,6 +240,7 @@ func _make_currency_chip(
 	parent: Node, currency: int, text: String, col: Color, tooltip: String
 ) -> Label:
 	var chip := HBoxContainer.new()
+	chip.mouse_filter = Control.MOUSE_FILTER_STOP
 	chip.tooltip_text = tooltip
 	parent.add_child(chip)
 	_add_box(chip, 5)
@@ -227,6 +250,7 @@ func _make_currency_chip(
 	icon.custom_minimum_size = Vector2(18.0, 18.0)
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	icon.mouse_filter = Control.MOUSE_FILTER_PASS
 	chip.add_child(icon)
 	_track_icon_size(icon)
 
@@ -234,9 +258,31 @@ func _make_currency_chip(
 	lbl.text = text
 	lbl.add_theme_font_size_override("font_size", 15)
 	lbl.add_theme_color_override("font_color", col)
+	lbl.mouse_filter = Control.MOUSE_FILTER_PASS
 	chip.add_child(lbl)
 	_track_font(lbl)
 	return lbl
+
+
+## Builds a non-layout transient "+N" / "-N" delta badge attached to a currency chip via a
+## zero-size Node2D holder so it NEVER contributes to the HBoxContainer's combined minimum width.
+func _make_delta_badge(chip: HBoxContainer) -> Label:
+	var holder := Node2D.new()
+	holder.name = "DeltaHolder"
+	holder.z_index = 10
+	chip.add_child(holder)
+
+	var badge := Label.new()
+	badge.name = "DeltaBadge"
+	badge.text = ""
+	badge.visible = false
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge.add_theme_font_size_override("font_size", 12)
+	badge.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.92))
+	badge.add_theme_constant_override("outline_size", 4)
+	badge.position = Vector2(8.0, 26.0)
+	holder.add_child(badge)
+	return badge
 
 
 ## ---- Responsive one-row fit -------------------------------------------------
@@ -312,6 +358,12 @@ func _connect_signals() -> void:
 	var gs: Node = get_node_or_null("/root/GameState")
 	if gs == null:
 		return
+	gs.connect("state_changed", func(old_s: int, new_s: int) -> void:
+		if new_s == 0 or (old_s == 0 and new_s == 1):
+			_last_offerings = -1
+			_last_scrap = -1
+		refresh()
+	)
 	gs.connect("currencies_changed", func(_o: int, _s: int) -> void: refresh())
 	gs.connect("lives_changed", func(_l: int, _m: int) -> void: refresh())
 	gs.connect("corruption_changed", func(_c: int) -> void: refresh())
@@ -319,6 +371,9 @@ func _connect_signals() -> void:
 	gs.connect("objectives_changed", func(_o: Variant) -> void: refresh())
 	gs.connect("wave_started", func(_w: int) -> void: refresh())
 	gs.connect("intel_updated", func(_i: Dictionary, _r: Variant) -> void: refresh())
+	gs.connect("tower_placed_on_hex", func(_t: Variant) -> void: refresh())
+	gs.connect("tower_upgraded_on_hex", func(_t: Variant, _n: String) -> void: refresh())
+	gs.connect("tower_sold_from_hex", func(_tid: int, _h: Vector2i, _r: Dictionary) -> void: refresh())
 
 
 func refresh() -> void:
@@ -336,11 +391,23 @@ func refresh() -> void:
 	var tsys_row: TowerSystem = gs.get("tower_system") as TowerSystem
 	var corr_cap: int = tsys_row.get_corruption_cap() if tsys_row != null else 100
 
+	if _last_offerings >= 0 and off != _last_offerings:
+		_trigger_currency_feedback(PlaceholderIcons.COST_OFFERINGS, off - _last_offerings)
+	_last_offerings = off
+
+	if _last_scrap >= 0 and scr != _last_scrap:
+		_trigger_currency_feedback(PlaceholderIcons.COST_SCRAP, scr - _last_scrap)
+	_last_scrap = scr
+
 	_lives_label.text = "Lives: %d/%d" % [l, ml]
 	_wave_label.text = "Wave: %d (Interval %d)" % [w, inter]
 	_faction_label.text = "[%s]" % fac
 	_offerings_label.text = "%d" % off
 	_scrap_label.text = "%d" % scr
+	if _offerings_chip != null:
+		_offerings_chip.tooltip_text = build_currency_tooltip(PlaceholderIcons.COST_OFFERINGS, tsys_row)
+	if _scrap_chip != null:
+		_scrap_chip.tooltip_text = build_currency_tooltip(PlaceholderIcons.COST_SCRAP, tsys_row)
 	_corruption_label.text = "Corruption: %d/%d" % [corr, corr_cap]
 	_corruption_bar.max_value = float(corr_cap)
 	_corruption_bar.value = float(corr)
@@ -388,3 +455,160 @@ func _on_penance_pressed() -> void:
 	var gs: Node = get_node_or_null("/root/GameState")
 	if gs != null:
 		gs.call("request_penance")
+
+
+## Pulses the currency chip's value color and shows a transient "+N" / "-N" delta badge below it.
+func _trigger_currency_feedback(currency: int, delta: int) -> void:
+	if delta == 0:
+		return
+	var is_off: bool = (currency == PlaceholderIcons.COST_OFFERINGS)
+	var val_lbl: Label = _offerings_label if is_off else _scrap_label
+	var badge: Label = _offerings_delta_label if is_off else _scrap_delta_label
+	var base_col: Color = OFFERINGS_BASE_COLOR if is_off else SCRAP_BASE_COLOR
+	var flash_col: Color = (Color(0.95, 0.82, 1.0) if is_off else Color(1.0, 0.90, 0.50)) if delta > 0 else LOSS_FLASH_COLOR
+	var badge_col: Color = (Color(0.88, 0.68, 1.0) if is_off else Color(1.0, 0.78, 0.34)) if delta > 0 else LOSS_FLASH_COLOR
+
+	if val_lbl != null and is_inside_tree():
+		if is_off and _offerings_pulse_tween != null and _offerings_pulse_tween.is_valid():
+			_offerings_pulse_tween.kill()
+		elif not is_off and _scrap_pulse_tween != null and _scrap_pulse_tween.is_valid():
+			_scrap_pulse_tween.kill()
+		val_lbl.add_theme_color_override("font_color", flash_col)
+		var p_tw: Tween = create_tween()
+		p_tw.tween_method(
+			func(c: Color) -> void:
+				if is_instance_valid(val_lbl):
+					val_lbl.add_theme_color_override("font_color", c),
+			flash_col,
+			base_col,
+			0.45
+		)
+		if is_off:
+			_offerings_pulse_tween = p_tw
+		else:
+			_scrap_pulse_tween = p_tw
+
+	if badge != null:
+		badge.text = ("+%d" % delta) if delta > 0 else ("%d" % delta)
+		badge.add_theme_color_override("font_color", badge_col)
+		badge.position = Vector2(6.0, 24.0)
+		badge.modulate = Color(1.0, 1.0, 1.0, 1.0)
+		badge.visible = true
+		if is_inside_tree():
+			if is_off and _offerings_delta_tween != null and _offerings_delta_tween.is_valid():
+				_offerings_delta_tween.kill()
+			elif not is_off and _scrap_delta_tween != null and _scrap_delta_tween.is_valid():
+				_scrap_delta_tween.kill()
+			var d_tw: Tween = create_tween()
+			d_tw.set_parallel(true)
+			d_tw.tween_property(badge, "position:y", 34.0, 0.85).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+			d_tw.tween_property(badge, "modulate:a", 0.0, 0.85).set_delay(0.15)
+			d_tw.chain().tween_callback(func() -> void:
+				if is_instance_valid(badge):
+					badge.visible = false
+			)
+			if is_off:
+				_offerings_delta_tween = d_tw
+			else:
+				_scrap_delta_tween = d_tw
+
+
+## Builds a live breakdown tooltip for Offerings or Scrap showing passive rate, active modifiers,
+## and source-by-source earnings for the current wave and total run.
+static func build_currency_tooltip(currency: int, tsys: TowerSystem) -> String:
+	var is_off: bool = (currency == PlaceholderIcons.COST_OFFERINGS)
+	var key: String = "offerings" if is_off else "scrap"
+	var header: String = (
+		"Offerings -- build Revealed towers & upgrades, pay Penance, cleanse conversions."
+		if is_off
+		else "Scrap -- build scavenged towers, buy Rigged upgrades, pay tower Maintenance."
+	)
+	if tsys == null:
+		return header
+
+	var lines: PackedStringArray = [header]
+
+	# 1. Active income rates, bonuses, and wave upkeeps
+	if is_off:
+		var tithe_count: int = 0
+		var tithe_per_sec: float = 0.0
+		var dark_patron_count: int = 0
+		var frenzy_upkeep: int = 0
+		for t: TowerInstance in tsys.towers.values():
+			if t == null:
+				continue
+			if t.get_type_id() == "tithe_box" and t.is_operational() and t.def != null and t.def.income_interval > 0.0:
+				tithe_count += 1
+				var yield_amt: int = roundi(
+					float(t.get_income_offerings()) * tsys.get_rite_stat_multiplier(t, "income")
+				)
+				tithe_per_sec += float(yield_amt) / t.def.income_interval
+			if t.is_operational() and t.has_behavior("dark_patron"):
+				dark_patron_count += 1
+			if t.has_behavior("frenzy_rites"):
+				var rad: int = t.get_effective_range_hexes()
+				var buffed: int = 0
+				for other: TowerInstance in tsys.towers.values():
+					if other != null and other.tower_id != t.tower_id and HexGrid.hex_distance(t.hex, other.hex) <= rad:
+						buffed += 1
+				frenzy_upkeep += buffed * int(t.get_behavior_param("frenzy_rites", "offerings_upkeep_per_buffed_tower", 4))
+		dark_patron_count = mini(dark_patron_count, 3)
+		var mod_parts: PackedStringArray = ["Enemy Kills: 100% of unit cost"]
+		if tithe_count > 0:
+			mod_parts.append("Tithe Boxes (%d): +%.1f/s" % [tithe_count, tithe_per_sec])
+		if dark_patron_count > 0:
+			mod_parts.append("Dark Patron: +%d%% kill Offerings" % (dark_patron_count * 10))
+		if frenzy_upkeep > 0:
+			mod_parts.append("Frenzy Rites Upkeep: -%d/wave" % frenzy_upkeep)
+		lines.append("Sources: " + " · ".join(mod_parts))
+	else:
+		var collector_count: int = 0
+		var solvent_upkeep: int = 0
+		for t: TowerInstance in tsys.towers.values():
+			if t == null:
+				continue
+			if t.is_operational() and t.has_behavior("scrap_collector"):
+				collector_count += 1
+			if t.has_behavior("solvent_tank"):
+				solvent_upkeep += int(t.get_behavior_param("solvent_tank", "scrap_upkeep_per_wave", 4))
+		collector_count = mini(collector_count, 3)
+		var mod_parts_s: PackedStringArray = ["Enemy Kills: ~50% of unit cost"]
+		if collector_count > 0:
+			mod_parts_s.append("Scrap Collector: +%d%% kill Scrap" % (collector_count * 25))
+		if not is_equal_approx(tsys.event_scrap_income_mult, 1.0):
+			mod_parts_s.append("Wave Event: x%.2f Scrap" % tsys.event_scrap_income_mult)
+		if solvent_upkeep > 0:
+			mod_parts_s.append("Solvent Tank Upkeep: -%d/wave" % solvent_upkeep)
+		lines.append("Sources: " + " · ".join(mod_parts_s))
+
+	# 2. Live Wave & Run Ledger breakdown
+	var source_Specs: Array[Dictionary] = [
+		{"id": "kills", "label": "Enemy Kills"},
+		{"id": "tithe_box", "label": "Tithe Boxes"},
+		{"id": "rite_bounties", "label": "Rite Bounties"},
+		{"id": "lane_bounty", "label": "Lane Bounties"},
+		{"id": "events", "label": "Run Events"},
+		{"id": "sell_refund", "label": "Tower Sales"},
+		{"id": "upkeep_and_steal", "label": "Upkeep & Steal"},
+	]
+	var ledger_lines: PackedStringArray = []
+	for spec: Dictionary in source_Specs:
+		var sid: String = String(spec["id"])
+		if not is_off and sid == "tithe_box":
+			continue
+		var w_dic: Dictionary = tsys.wave_currency_ledger.get(sid, {}) as Dictionary
+		var r_dic: Dictionary = tsys.run_currency_ledger.get(sid, {}) as Dictionary
+		var w_val: int = int(w_dic.get(key, 0))
+		var r_val: int = int(r_dic.get(key, 0))
+		if w_val == 0 and r_val == 0 and sid != "kills" and not (is_off and sid == "tithe_box"):
+			continue
+		var w_str: String = ("+%d" % w_val) if w_val >= 0 else ("%d" % w_val)
+		var r_str: String = ("+%d" % r_val) if r_val >= 0 else ("%d" % r_val)
+		ledger_lines.append("  • %s: %s this wave (%s run)" % [String(spec["label"]), w_str, r_str])
+
+	if not ledger_lines.is_empty():
+		lines.append("-- INCOME LEDGER --")
+		for ll: String in ledger_lines:
+			lines.append(ll)
+
+	return "\n".join(lines)

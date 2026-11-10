@@ -745,3 +745,134 @@ func _collect_buttons_into(node: Node, out: Array[Button]) -> void:
 		_collect_buttons_into(c, out)
 
 
+## Currency feedback: killing enemies and stepping Tithe Boxes must attribute their Offerings and
+## Scrap gains by source in the live wave/run ledgers, spawn world-space floating "+N Off / +M Scrap"
+## popups (never the old generic "+Kill"), pulse the TopBar currency chips with transient delta
+## badges, and populate the TopBar hover tooltips with the live income breakdown.
+func test_09_currency_feedback_world_popups_topbar_deltas_and_live_ledger_tooltips() -> void:
+	var gs: GameStateNode = _get_game_state()
+	var clock: SimClockNode = _get_sim_clock()
+	clock.manual_mode = true
+
+	var main_packed := load("res://scenes/main.tscn") as PackedScene
+	var main_inst: MainSceneController = main_packed.instantiate() as MainSceneController
+	add_child(main_inst)
+
+	var top_bar: TopBar = main_inst.get_node("HUD/TopBar") as TopBar
+	var effects_view: CombatEffectsView = main_inst.get_node("GameWorld/Effects") as CombatEffectsView
+	assert(top_bar != null and effects_view != null, "TopBar and CombatEffectsView must exist")
+
+	gs.add_currency(0, 500, "test_setup")
+	gs.add_currency(1, 500, "test_setup")
+
+	var flows: Array[Dictionary] = []
+	gs.currency_flow_recorded.connect(
+		func(source: String, off_d: int, scr_d: int, hex: Vector2i, uid: int, tid: int) -> void:
+			flows.append({
+				"source": source,
+				"off": off_d,
+				"scr": scr_d,
+				"hex": hex,
+				"uid": uid,
+				"tid": tid,
+			})
+	)
+
+	# 1. Place a Tithe Box and verify the TopBar Offerings tooltip immediately reflects its passive rate.
+	var tithe: TowerInstance = null
+	for h: Vector2i in gs.path_generator.get_buildable_hexes():
+		tithe = gs.request_place_tower(h, "tithe_box")
+		if tithe != null:
+			break
+	assert(tithe != null, "Must place a Tithe Box")
+	top_bar.refresh()
+	assert(
+		top_bar._offerings_chip.tooltip_text.contains("Tithe Boxes (1):"),
+		"Offerings tooltip must show active Tithe Box count and passive rate, got:\n%s" % top_bar._offerings_chip.tooltip_text
+	)
+
+	# 2. Spawn an enemy (sponsor_mech: 15 Off, 12 Scrap), register its 3D view, and kill it.
+	var mech: CombatUnit = gs.tower_system.spawn_unit_from_data("sponsor_mech")
+	assert(mech != null, "Must spawn sponsor_mech")
+	mech.offerings_reward = 15
+	gs.enemy_spawned.emit(mech)
+	effects_view.clear_all()
+	flows.clear()
+
+	gs.tower_system.deal_damage_from_tower(null, mech, mech.max_hp + 100.0, 0)
+	gs.currencies_changed.emit(gs.offerings, gs.scrap)
+
+	# Verify kill flow recorded in ledger and signal
+	var kill_flow_found: bool = false
+	for f: Dictionary in flows:
+		if String(f["source"]) == "kills" and int(f["off"]) == 15 and int(f["scr"]) == 12:
+			kill_flow_found = true
+			break
+	assert(kill_flow_found, "Killing sponsor_mech must emit currency_flow_recorded('kills', 15, 12, ...)")
+
+	var w_kills: Dictionary = gs.tower_system.wave_currency_ledger.get("kills", {}) as Dictionary
+	assert(
+		int(w_kills.get("offerings", 0)) == 15 and int(w_kills.get("scrap", 0)) == 12,
+		"wave_currency_ledger['kills'] must record +15 Off and +12 Scrap, got %s" % str(w_kills)
+	)
+
+	# Verify world-space floating text shows "+15 Off  +12 Scrap" and NOT "+Kill"
+	var saw_currency_label: bool = false
+	var saw_old_kill_label: bool = false
+	for l_entry: Dictionary in effects_view._active_labels:
+		var lbl3d: Label3D = l_entry["node"] as Label3D
+		if is_instance_valid(lbl3d):
+			if lbl3d.text.contains("+15 Off") and lbl3d.text.contains("+12 Scrap"):
+				saw_currency_label = true
+			if lbl3d.text == "+Kill":
+				saw_old_kill_label = true
+	assert(saw_currency_label, "Enemy death must spawn a world-space '+15 Off  +12 Scrap' floating popup")
+	assert(not saw_old_kill_label, "Generic '+Kill' label must be replaced by the actual currency amounts")
+
+	# Verify TopBar transient delta badges triggered for both Offerings (+15) and Scrap (+12)
+	assert(
+		top_bar._offerings_delta_label.visible and top_bar._offerings_delta_label.text == "+15",
+		"TopBar Offerings delta badge must show '+15', got '%s'" % top_bar._offerings_delta_label.text
+	)
+	assert(
+		top_bar._scrap_delta_label.visible and top_bar._scrap_delta_label.text == "+12",
+		"TopBar Scrap delta badge must show '+12', got '%s'" % top_bar._scrap_delta_label.text
+	)
+
+	# 3. Step Tithe Box for 5.0s -> must emit 'tithe_box' flow (+4 Off) and spawn a popup over the tower
+	effects_view.clear_all()
+	flows.clear()
+	gs.tower_system._step_tithe_box_tower(tithe, 5.1)
+	gs.currencies_changed.emit(gs.offerings, gs.scrap)
+
+	var tithe_flow_found: bool = false
+	for f2: Dictionary in flows:
+		if String(f2["source"]) == "tithe_box" and int(f2["off"]) == 4 and int(f2["tid"]) == tithe.tower_id:
+			tithe_flow_found = true
+			break
+	assert(tithe_flow_found, "Stepping Tithe Box 5s must emit currency_flow_recorded('tithe_box', 4, 0)")
+
+	var saw_tithe_popup: bool = false
+	for l_entry2: Dictionary in effects_view._active_labels:
+		var lbl3d_2: Label3D = l_entry2["node"] as Label3D
+		if is_instance_valid(lbl3d_2) and lbl3d_2.text == "+4 Off":
+			saw_tithe_popup = true
+	assert(saw_tithe_popup, "Tithe Box payout must spawn a '+4 Off' floating popup above the tower")
+
+	# 4. Verify live ledger tooltip on TopBar includes both Enemy Kills and Tithe Boxes
+	var off_tip: String = top_bar._offerings_chip.tooltip_text
+	var scr_tip: String = top_bar._scrap_chip.tooltip_text
+	assert(
+		off_tip.contains("Enemy Kills: +15 this wave (+15 run)") and off_tip.contains("Tithe Boxes: +4 this wave (+4 run)"),
+		"Offerings tooltip must show live wave & run ledger for Kills and Tithe Boxes, got:\n%s" % off_tip
+	)
+	assert(
+		scr_tip.contains("Enemy Kills: +12 this wave (+12 run)"),
+		"Scrap tooltip must show live wave & run ledger for Kills, got:\n%s" % scr_tip
+	)
+
+	main_inst.queue_free()
+	clock.manual_mode = false
+
+
+

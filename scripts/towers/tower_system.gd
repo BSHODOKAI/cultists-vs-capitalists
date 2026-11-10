@@ -49,6 +49,7 @@ signal tower_cooldown_used(tower_id: int, tower_type: String, ability_id: String
 signal ability_telegraphed(event: Dictionary)
 signal loss_report_generated(report: LossReport)
 signal lane_bounty_paid(lane_id: int, unit_id: int, offerings_paid: int, scrap_paid: int, offerings_remaining: int, scrap_remaining: int)
+signal currency_flow_recorded(source: String, offerings_delta: int, scrap_delta: int, hex: Vector2i, unit_id: int, tower_id: int)
 
 # --- Configuration & Grid state ----------------------------------------------
 var balance: TowerBalanceData
@@ -140,6 +141,52 @@ var telegraph_events: Array[Dictionary] = []
 var last_loss_report: LossReport = null
 ## True while applying continuous 30Hz DoT/puddle sub-ticks so 3D views don't spawn projectiles on sub-ticks.
 var _in_continuous_dot_tick: bool = false
+## Per-wave and per-run currency ledgers keyed by source category:
+## "kills", "tithe_box", "rite_bounties", "lane_bounty", "events", "sell_refund", "upkeep_and_steal".
+## Each entry maps to {"offerings": int, "scrap": int}.
+var wave_currency_ledger: Dictionary = {}
+var run_currency_ledger: Dictionary = {}
+
+
+func _make_empty_currency_ledger() -> Dictionary:
+	return {
+		"kills": {"offerings": 0, "scrap": 0},
+		"tithe_box": {"offerings": 0, "scrap": 0},
+		"rite_bounties": {"offerings": 0, "scrap": 0},
+		"lane_bounty": {"offerings": 0, "scrap": 0},
+		"events": {"offerings": 0, "scrap": 0},
+		"sell_refund": {"offerings": 0, "scrap": 0},
+		"upkeep_and_steal": {"offerings": 0, "scrap": 0},
+	}
+
+
+## Records a source-attributed currency flow into [member wave_currency_ledger] and
+## [member run_currency_ledger] and emits [signal currency_flow_recorded] for world/HUD feedback.
+func record_currency_flow(
+	source: String,
+	offerings_delta: int,
+	scrap_delta: int,
+	hex: Vector2i = Vector2i.ZERO,
+	unit_id: int = -1,
+	tower_id: int = -1
+) -> void:
+	if offerings_delta == 0 and scrap_delta == 0:
+		return
+	if wave_currency_ledger.is_empty():
+		wave_currency_ledger = _make_empty_currency_ledger()
+	if run_currency_ledger.is_empty():
+		run_currency_ledger = _make_empty_currency_ledger()
+	if not wave_currency_ledger.has(source):
+		wave_currency_ledger[source] = {"offerings": 0, "scrap": 0}
+	if not run_currency_ledger.has(source):
+		run_currency_ledger[source] = {"offerings": 0, "scrap": 0}
+	var w_entry: Dictionary = wave_currency_ledger[source] as Dictionary
+	w_entry["offerings"] = int(w_entry.get("offerings", 0)) + offerings_delta
+	w_entry["scrap"] = int(w_entry.get("scrap", 0)) + scrap_delta
+	var r_entry: Dictionary = run_currency_ledger[source] as Dictionary
+	r_entry["offerings"] = int(r_entry.get("offerings", 0)) + offerings_delta
+	r_entry["scrap"] = int(r_entry.get("scrap", 0)) + scrap_delta
+	currency_flow_recorded.emit(source, offerings_delta, scrap_delta, hex, unit_id, tower_id)
 
 
 func _invalidate_all_tower_caches() -> void:
@@ -163,6 +210,8 @@ func _init(
 	offerings = balance.starting_offerings
 	scrap = balance.starting_scrap
 	lives = balance.starting_lives
+	wave_currency_ledger = _make_empty_currency_ledger()
+	run_currency_ledger = _make_empty_currency_ledger()
 	if not p_path_hexes.is_empty():
 		set_path(p_path_hexes)
 
@@ -547,6 +596,7 @@ func sell_tower(tower_or_hex: Variant) -> Dictionary:
 	var scrap_refund: int = roundi(float(inst.total_scrap_spent) * balance.sell_refund_ratio)
 	offerings += off_refund
 	scrap += scrap_refund
+	record_currency_flow("sell_refund", off_refund, scrap_refund, inst.hex, -1, inst.tower_id)
 
 	# Disengage any units blocked by this tower's summons
 	for b: Dictionary in inst.active_blockers:
@@ -1128,6 +1178,7 @@ func start_wave(
 ) -> Dictionary:
 	current_wave = wave_number
 	wave_elapsed_time = 0.0
+	wave_currency_ledger = _make_empty_currency_ledger()
 	apply_event_modifiers(event_modifiers)
 
 	# Reset per-wave disable flags
@@ -1163,7 +1214,11 @@ func start_wave(
 				if other.tower_id != shrine.tower_id and _HexGrid.hex_distance(shrine.hex, other.hex) <= rad:
 					buffed_count += 1
 			var upkeep: int = buffed_count * int(shrine.get_behavior_param("frenzy_rites", "offerings_upkeep_per_buffed_tower", 4))
+			var pre_off: int = offerings
 			offerings = maxi(0, offerings - upkeep)
+			var paid_off: int = pre_off - offerings
+			if paid_off > 0:
+				record_currency_flow("upkeep_and_steal", -paid_off, 0, shrine.hex, -1, shrine.tower_id)
 
 	# 4. Solvent Tank upkeep: consumes 4 Scrap per wave and is disabled at 0 Scrap
 	for censer: TowerInstance in towers.values():
@@ -1172,7 +1227,11 @@ func start_wave(
 			if scrap <= 0:
 				censer.disabled_for_wave_no_scrap = true
 			else:
+				var pre_scr: int = scrap
 				scrap = maxi(0, scrap - req_scrap)
+				var paid_scr: int = pre_scr - scrap
+				if paid_scr > 0:
+					record_currency_flow("upkeep_and_steal", 0, -paid_scr, censer.hex, -1, censer.tower_id)
 
 	# 5. Corruption misfire roll (50+: 10%, 75+: 20% one random Revealed tower disabled that wave)
 	var misfired_tower_id: int = -1
@@ -1685,13 +1744,15 @@ func _handle_unit_death(unit: CombatUnit, killer_tower: TowerInstance, from_gutt
 	# Rite: the ledger collects on kills. The nail gun takes small change from every
 	# kill; the watcher takes a SETTLEMENT scaled by what the target was worth --
 	# two different appetites for the same hook, and neither pays for aux objects.
+	var rite_off_gain: int = 0
+	var rite_scr_gain: int = 0
 	if killer_tower != null and unit.offerings_reward > 0:
 		if killer_tower.has_behavior("the_audit_comes_due"):
 			var bounty: int = int(killer_tower.get_behavior_param("the_audit_comes_due", "offerings_per_kill", 2))
-			offerings += maxi(0, bounty)
+			rite_off_gain += maxi(0, bounty)
 		elif killer_tower.has_behavior("the_debt_collector"):
 			var frac: float = float(killer_tower.get_behavior_param("the_debt_collector", "offerings_per_max_hp", 0.05))
-			offerings += maxi(0, int(floor(unit.max_hp * frac)))
+			rite_off_gain += maxi(0, int(floor(unit.max_hp * frac)))
 
 	# Rite branch: the ledger feeds the meter it profits from. Every Rite tower converts its own
 	# kills into Corruption, so the branch accelerates BOTH its damage and the Reckoning that
@@ -1701,8 +1762,19 @@ func _handle_unit_death(unit: CombatUnit, killer_tower: TowerInstance, from_gutt
 		var corruption_gain: int = int(killer_tower.get_behavior_param_sum("corruption_per_kill"))
 		if corruption_gain > 0:
 			add_corruption(corruption_gain)
-		offerings += maxi(0, int(killer_tower.get_behavior_param_sum("rite_offerings_per_kill")))
-		scrap += maxi(0, int(killer_tower.get_behavior_param_sum("rite_scrap_per_kill")))
+		rite_off_gain += maxi(0, int(killer_tower.get_behavior_param_sum("rite_offerings_per_kill")))
+		rite_scr_gain += maxi(0, int(killer_tower.get_behavior_param_sum("rite_scrap_per_kill")))
+	if rite_off_gain > 0 or rite_scr_gain > 0:
+		offerings += rite_off_gain
+		scrap += rite_scr_gain
+		record_currency_flow(
+			"rite_bounties",
+			rite_off_gain,
+			rite_scr_gain,
+			killer_tower.hex if killer_tower != null else get_unit_hex(unit),
+			unit.unit_id,
+			killer_tower.tower_id if killer_tower != null else -1
+		)
 
 	# Cleanse any tower converted or being channeled by this unit (e.g. killing Acquisitions Rep or Raider)
 	for t: TowerInstance in towers.values():
@@ -1733,6 +1805,14 @@ func _handle_unit_death(unit: CombatUnit, killer_tower: TowerInstance, from_gutt
 	var scrap_gain: int = roundi(float(base_scrap) * (1.0 + 0.25 * float(scrap_collector_boxes)) * event_scrap_income_mult)
 	offerings += off_gain
 	scrap += scrap_gain
+	record_currency_flow(
+		"kills",
+		off_gain,
+		scrap_gain,
+		get_unit_hex(unit),
+		unit.unit_id,
+		killer_tower.tower_id if killer_tower != null else -1
+	)
 
 	# Lane Kill Bounty payout: killing enemies on a fork lane pays back 100% of any towers
 	# crushed when that fork opened.
@@ -1752,6 +1832,14 @@ func _handle_unit_death(unit: CombatUnit, killer_tower: TowerInstance, from_gutt
 			scrap += pay_scr
 			b_pool["offerings"] = rem_off - pay_off
 			b_pool["scrap"] = rem_scr - pay_scr
+			record_currency_flow(
+				"lane_bounty",
+				pay_off,
+				pay_scr,
+				get_unit_hex(unit),
+				unit.unit_id,
+				killer_tower.tower_id if killer_tower != null else -1
+			)
 			lane_bounty_paid.emit(
 				unit.lane_id,
 				unit.unit_id,
@@ -2227,6 +2315,7 @@ func _step_gutter_circle_tower(tower: TowerInstance, delta: float) -> void:
 				heads += 1
 		crowd_mult = 1.0 + per_head * float(mini(maxi(0, heads - 1), max_heads))
 
+	var pulse_maw_tithe: int = 0
 	for u: CombatUnit in units.duplicate():
 		if not u.is_alive() or not u.is_ground():
 			continue
@@ -2260,8 +2349,12 @@ func _step_gutter_circle_tower(tower: TowerInstance, delta: float) -> void:
 		# Rite: communion_of_the_maw -- every soul the circle catches is tithed.
 		# A swarm-driven economy: the more the ring swallows, the more it pays.
 		if tower.has_behavior("communion_of_the_maw"):
-			var tithe: int = int(tower.get_behavior_param("communion_of_the_maw", "offerings_per_hit", 1))
-			offerings += maxi(0, tithe)
+			var tithe: int = maxi(0, int(tower.get_behavior_param("communion_of_the_maw", "offerings_per_hit", 1)))
+			offerings += tithe
+			pulse_maw_tithe += tithe
+
+	if pulse_maw_tithe > 0:
+		record_currency_flow("rite_bounties", pulse_maw_tithe, 0, tower.hex, -1, tower.tower_id)
 
 	# ichor_bloom: each pulse leaves a 4 s puddle dealing 8 Void/s
 	if tower.has_behavior("ichor_bloom"):
@@ -2648,9 +2741,12 @@ func _step_tithe_box_tower(tower: TowerInstance, delta: float) -> void:
 		tower.income_timer -= tower.def.income_interval
 		# Rite: Corruption-scaled income. For the tithe box the branch's power IS the yield, so
 		# this is where its Corruption scaling lands.
-		offerings += roundi(
+		var inc_off: int = roundi(
 			float(tower.get_income_offerings()) * get_rite_stat_multiplier(tower, "income")
 		)
+		offerings += inc_off
+		if inc_off > 0:
+			record_currency_flow("tithe_box", inc_off, 0, tower.hex, -1, tower.tower_id)
 
 
 ## 10. substation_effigy (CHAIN_ARC)
@@ -3407,7 +3503,11 @@ func _handle_unit_leak(unit: CombatUnit) -> void:
 
 	# LeakSteal ability (e.g. gig_runner steals 5 Offerings on leak)
 	if unit.leak_steal_offerings > 0:
+		var pre_off: int = offerings
 		offerings = maxi(0, offerings - unit.leak_steal_offerings)
+		var stolen_off: int = pre_off - offerings
+		if stolen_off > 0:
+			record_currency_flow("upkeep_and_steal", -stolen_off, 0, leak_hex, unit.unit_id, -1)
 		_emit_telegraph(_AbilityData.ID_LEAK_STEAL, "telegraph_leak_steal", unit, 0.0, {"offerings_stolen": unit.leak_steal_offerings})
 
 	if unit.is_boss():

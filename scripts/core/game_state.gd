@@ -69,6 +69,7 @@ signal tower_damaged_enemy(tower_id: int, tower_type: String, unit_id: int, unit
 signal currencies_changed(offerings: int, scrap: int)
 signal currency_spent(currency: int, amount: int, reason: String)
 signal currency_earned(currency: int, amount: int, reason: String)
+signal currency_flow_recorded(source: String, offerings_delta: int, scrap_delta: int, hex: Vector2i, unit_id: int, tower_id: int)
 signal lives_changed(lives: int, max_lives: int)
 signal corruption_changed(corruption: int)
 signal intel_updated(intel: Dictionary, roster: WaveRoster)
@@ -375,6 +376,7 @@ func _wire_system_signals() -> void:
 	tower_system.ability_telegraphed.connect(_on_tower_system_ability_telegraphed)
 	tower_system.loss_report_generated.connect(_on_tower_system_loss_report)
 	tower_system.lane_bounty_paid.connect(_on_tower_system_lane_bounty_paid)
+	tower_system.currency_flow_recorded.connect(_on_tower_system_currency_flow_recorded)
 
 
 ## SINGLE SOURCE OF TRUTH for the boss interval.
@@ -661,8 +663,10 @@ func _drain_currency(currency: int, pct: float, event_id: String) -> void:
 		return
 	if currency == Currency.OFFERINGS:
 		tower_system.offerings = current - amount
+		tower_system.record_currency_flow("events", -amount, 0, Vector2i.ZERO, -1, -1)
 	else:
 		tower_system.scrap = current - amount
+		tower_system.record_currency_flow("events", 0, -amount, Vector2i.ZERO, -1, -1)
 	_log_event("event_currency_drained", {"currency": currency, "amount": amount, "reason": "event:" + event_id})
 	currencies_changed.emit(tower_system.offerings, tower_system.scrap)
 
@@ -883,8 +887,12 @@ func add_currency(currency: int, amount: int, reason: String = "grant") -> void:
 		return
 	if currency == Currency.OFFERINGS:
 		tower_system.offerings += amount
+		if reason.begins_with("event:"):
+			tower_system.record_currency_flow("events", amount, 0, Vector2i.ZERO, -1, -1)
 	elif currency == Currency.SCRAP:
 		tower_system.scrap += amount
+		if reason.begins_with("event:"):
+			tower_system.record_currency_flow("events", 0, amount, Vector2i.ZERO, -1, -1)
 	_log_event("currency_earned", {"currency": currency, "amount": amount, "reason": reason})
 	currency_earned.emit(currency, amount, reason)
 	currencies_changed.emit(tower_system.offerings, tower_system.scrap)
@@ -1324,6 +1332,17 @@ func _on_tower_system_lane_bounty_paid(
 		"scrap_remaining": scrap_remaining,
 	})
 	lane_bounty_claimed.emit(lane_id, unit_id, offerings_paid, scrap_paid)
+
+
+func _on_tower_system_currency_flow_recorded(
+	source: String,
+	offerings_delta: int,
+	scrap_delta: int,
+	hex: Vector2i,
+	unit_id: int,
+	tower_id: int
+) -> void:
+	currency_flow_recorded.emit(source, offerings_delta, scrap_delta, hex, unit_id, tower_id)
 
 
 func _on_tower_system_loss_report(report: LossReport) -> void:

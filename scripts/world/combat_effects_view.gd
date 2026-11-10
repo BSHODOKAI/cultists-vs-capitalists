@@ -563,8 +563,12 @@ func _acquire_label() -> Label3D:
 			return cand
 	var lbl := Label3D.new()
 	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	lbl.font_size = 24
-	lbl.pixel_size = 0.008
+	lbl.no_depth_test = true
+	lbl.render_priority = 8
+	lbl.font_size = 26
+	lbl.outline_size = 8
+	lbl.outline_modulate = Color(0.0, 0.0, 0.0, 0.95)
+	lbl.pixel_size = 0.0085
 	add_child(lbl)
 	return lbl
 
