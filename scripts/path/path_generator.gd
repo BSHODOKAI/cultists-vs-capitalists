@@ -1730,7 +1730,6 @@ func _is_valid_fork_step(
 	join_idx: int,
 	cand_index_map: Dictionary
 ) -> bool:
-	grid.ensure_chunks_around(next_hex, 2)
 	if _path_index_map.has(next_hex) or cand_index_map.has(next_hex):
 		return false
 	# Forks NEVER step on BLOCKED terrain, but ARE allowed to step on tower-occupied hexes (condemning them).
@@ -1819,7 +1818,6 @@ func _is_valid_fork_ext_step(
 	step_in_fork: int,
 	cand_index_map: Dictionary
 ) -> bool:
-	grid.ensure_chunks_around(next_hex, 2)
 	if _path_index_map.has(next_hex) or cand_index_map.has(next_hex):
 		return false
 	if grid.is_blocked(next_hex):

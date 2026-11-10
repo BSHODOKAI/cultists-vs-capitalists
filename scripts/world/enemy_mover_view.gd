@@ -33,6 +33,11 @@ var _last_info_text: String = ""
 var _last_status_text: String = ""
 var _last_cloaked_translucent: int = -1
 var _last_resisted_tag: int = -999
+var _last_hp_int: int = -1
+var _last_max_hp_int: int = -1
+var _last_shield_int: int = -1
+var _last_spawn_lvl: int = -1
+var _last_status_sig: int = -999999
 
 
 func get_aim_world_position() -> Vector3:
@@ -133,6 +138,11 @@ func bind_unit(p_unit: CombatUnit, p_theme: VisualThemeData) -> void:
 	_last_status_text = ""
 	_last_cloaked_translucent = -1
 	_last_resisted_tag = -999
+	_last_hp_int = -1
+	_last_max_hp_int = -1
+	_last_shield_int = -1
+	_last_spawn_lvl = -1
+	_last_status_sig = -999999
 
 	if unit.is_boss():
 		_info_label.position = Vector3(0.0, 1.35, 0.0)
@@ -148,6 +158,11 @@ func unbind_unit() -> void:
 	_last_status_text = ""
 	_last_cloaked_translucent = -1
 	_last_resisted_tag = -999
+	_last_hp_int = -1
+	_last_max_hp_int = -1
+	_last_shield_int = -1
+	_last_spawn_lvl = -1
+	_last_status_sig = -999999
 	visible = false
 
 
@@ -279,9 +294,149 @@ func apply_visual_packet(pkt: Dictionary) -> void:
 		_status_label.modulate = Color(1.0, 0.85, 0.35, 1.0)
 
 
-func update_visual(path_hexes: Array[Vector2i], prev_path_pos: float, alpha: float) -> void:
+func update_visual(path_hexes: Array[Vector2i], prev_path_pos: float, alpha: float, ticks_msec: int = -1) -> void:
 	if unit == null or not unit.is_alive() or path_hexes.is_empty():
 		visible = false
 		return
-	var pkt: Dictionary = compute_visual_packet(unit, path_hexes, prev_path_pos, alpha, Time.get_ticks_msec())
-	apply_visual_packet(pkt)
+	var u: CombatUnit = unit
+	var now_ms: int = ticks_msec if ticks_msec >= 0 else Time.get_ticks_msec()
+	var interp_pos: float = lerpf(prev_path_pos, u.path_position, alpha)
+	var is_air: bool = u.is_air()
+	var altitude: float = _HexMath.AIR_ALTITUDE if is_air else 0.0
+	var ground_world: Vector3 = _HexMath.path_position_to_world(path_hexes, interp_pos, 0.0)
+
+	var look_pos: float = clampf(interp_pos - 0.25, 0.0, float(path_hexes.size() - 1))
+	var target_world: Vector3 = _HexMath.path_position_to_world(path_hexes, look_pos, 0.0)
+	var dir: Vector3 = target_world - ground_world
+	dir.y = 0.0
+	var has_yaw: bool = dir.length_squared() > 0.0001
+
+	var body_pos := Vector3(0.0, altitude, 0.0)
+	if u.engaged_blocker_id >= 0 and not u.has_breakthrough:
+		var lunge: float = sin(float(now_ms) * 0.016 + float(u.unit_id)) * 0.11
+		var lunge_dir: Vector3 = dir.normalized() if has_yaw else Vector3(0.0, 0.0, -1.0)
+		body_pos = Vector3(lunge_dir.x * lunge, altitude + absf(lunge) * 0.25, lunge_dir.z * lunge)
+
+	global_position = ground_world
+	_body_mesh.position = body_pos
+	_shadow_blob.visible = is_air
+	if is_air:
+		_shadow_blob.position = Vector3(0.0, 0.02, 0.0)
+	if has_yaw:
+		_body_mesh.rotation.y = atan2(-dir.x, -dir.z)
+
+	var cloaked_trans: int = 1 if (u.is_cloaked() and not u.is_cloak_revealed()) else 0
+	if cloaked_trans != _last_cloaked_translucent:
+		_last_cloaked_translucent = cloaked_trans
+		if cloaked_trans == 1:
+			_body_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			_body_mat.albedo_color.a = 0.35
+		else:
+			_body_mat.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
+			_body_mat.albedo_color.a = 1.0
+
+	var res_tag: int = u.active_resisted_damage_tag
+	if res_tag != _last_resisted_tag:
+		_last_resisted_tag = res_tag
+		if res_tag >= 0 and theme_data != null:
+			var plate_col: Color = theme_data.get_damage_tag_color(res_tag)
+			_body_mat.emission_enabled = true
+			_body_mat.emission = plate_col * 0.45
+		else:
+			_body_mat.emission_enabled = false
+
+	var hp_i: int = ceili(u.hp)
+	var max_hp_i: int = ceili(u.max_hp)
+	var shield_i: int = ceili(u.shield_hp) if u.shield_hp > 0.0 else 0
+	if (
+		hp_i != _last_hp_int
+		or max_hp_i != _last_max_hp_int
+		or shield_i != _last_shield_int
+		or u.spawn_level != _last_spawn_lvl
+	):
+		_last_hp_int = hp_i
+		_last_max_hp_int = max_hp_i
+		_last_shield_int = shield_i
+		_last_spawn_lvl = u.spawn_level
+		var lvl_pips: String = (" L%d" % u.spawn_level) if u.spawn_level > 0 else ""
+		var hp_str: String = "%d/%d" % [hp_i, max_hp_i]
+		if shield_i > 0:
+			hp_str += " [S:%d]" % shield_i
+		var next_info: String = "%s%s\n%s" % [u.unit_name, lvl_pips, hp_str]
+		if next_info != _last_info_text:
+			_last_info_text = next_info
+			_info_label.text = next_info
+		_info_label.position.y = altitude + (1.30 if u.is_boss() else 0.95)
+
+	var status_bits: int = 0
+	if u.root_timer > 0.0:
+		status_bits |= 1
+	if u.stun_timer > 0.0:
+		status_bits |= 2
+	if u.engaged_blocker_id >= 0 and not u.has_breakthrough:
+		status_bits |= 4
+	if u.flee_timer > 0.0 or u.confuse_timer > 0.0:
+		status_bits |= 8
+	if u.drain_slow_strength > 0.0 or u.flood_slow_strength > 0.0 or u.timed_slow_timer > 0.0:
+		status_bits |= 16
+	if u.entangled_by_drain:
+		status_bits |= 32
+	if u.conduct_electric_wet:
+		status_bits |= 64
+	if u.mark_timer > 0.0:
+		status_bits |= 128
+	var status_sig: int = (
+		status_bits
+		| (u.armor_shred_stacks << 8)
+		| (u.fear_stacks << 12)
+		| (u.dot_stacks.size() << 16)
+		| (u.network_effect_stacks << 20)
+		| ((u.active_resisted_damage_tag + 2) << 24)
+	)
+	if not u.active_holding_mechanic.is_empty():
+		status_sig ^= u.active_holding_mechanic.hash()
+
+	if status_sig != _last_status_sig:
+		_last_status_sig = status_sig
+		if status_sig == (0 | (( -1 + 2) << 24)) and u.active_holding_mechanic.is_empty():
+			_status_label.visible = false
+		else:
+			var badges: Array[String] = []
+			if u.network_effect_stacks > 0:
+				badges.append("NETx%d (-%d%%)" % [u.network_effect_stacks, roundi(u.network_damage_reduction * 100.0)])
+			if u.active_resisted_damage_tag >= 0:
+				badges.append("RES:%d" % u.active_resisted_damage_tag)
+			if not u.active_holding_mechanic.is_empty():
+				badges.append("MECH:%s" % u.active_holding_mechanic.to_upper())
+			if u.armor_shred_stacks > 0:
+				badges.append("SHREDx%d" % u.armor_shred_stacks)
+			if u.fear_stacks > 0:
+				badges.append("FEARx%d" % u.fear_stacks)
+			if (status_bits & 1) != 0:
+				badges.append("ROOT")
+			if (status_bits & 2) != 0:
+				badges.append("STUN")
+			if (status_bits & 4) != 0:
+				badges.append("BLOCKED")
+			if (status_bits & 8) != 0:
+				badges.append("FLEE")
+			if (status_bits & 16) != 0:
+				badges.append("SLOW")
+			if (status_bits & 32) != 0:
+				badges.append("ENTANGLED")
+			if (status_bits & 64) != 0:
+				badges.append("WET")
+			if (status_bits & 128) != 0:
+				badges.append("MARK")
+			if not u.dot_stacks.is_empty():
+				badges.append("DOTx%d" % u.dot_stacks.size())
+			if badges.is_empty():
+				_status_label.visible = false
+			else:
+				_status_label.visible = true
+				var next_status: String = " ".join(badges)
+				if next_status != _last_status_text:
+					_last_status_text = next_status
+					_status_label.text = next_status
+				_status_label.position.y = _info_label.position.y + 0.25
+				_status_label.modulate = Color(1.0, 0.85, 0.35, 1.0)

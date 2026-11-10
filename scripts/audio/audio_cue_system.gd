@@ -246,7 +246,6 @@ func is_background_muted() -> bool:
 ## per-cue concurrency caps (max_voices), polyphony volume ducking, and seeded
 ## pitch variation.
 func request_cue(cue_id: String, metadata: Dictionary = {}) -> Dictionary:
-	_prune_expired_voices()
 	var cfg: Dictionary = balance.get_cue_config(cue_id)
 	if cfg.is_empty():
 		var unknown_res: Dictionary = {
@@ -278,7 +277,23 @@ func request_cue(cue_id: String, metadata: Dictionary = {}) -> Dictionary:
 		_append_log(suppressed_log, fx_muted_res)
 		return fx_muted_res
 
-	var total_active: int = get_total_active_voice_count() if not is_env else 0
+	# Fast-path base min_interval check before pruning active voices across all cues
+	var base_min_interval: float = maxf(0.0, float(cfg.get("min_interval", 0.0)))
+	if base_min_interval > 0.0 and _last_trigger_time.has(cue_id):
+		if (elapsed_time - float(_last_trigger_time[cue_id])) < base_min_interval - 1e-5:
+			return {
+				"played": false,
+				"cue_id": cue_id,
+				"reason": "cooldown",
+				"time": elapsed_time,
+			}
+
+	_prune_expired_voices()
+	var total_active: int = 0
+	if not is_env:
+		for k: String in _active_voices.keys():
+			if k != _AudioBalance.CUE_ENVIRONMENT_URBAN:
+				total_active += (_active_voices[k] as Array).size()
 	var is_high_prio: bool = is_env or HIGH_PRIORITY_CUES.has(cue_id)
 	var global_cap: int = maxi(4, balance.max_global_sfx_voices if balance != null else 8)
 	if not is_high_prio and total_active >= global_cap:
@@ -291,7 +306,7 @@ func request_cue(cue_id: String, metadata: Dictionary = {}) -> Dictionary:
 		_append_log(suppressed_log, gcap_res)
 		return gcap_res
 
-	var min_interval: float = maxf(0.0, float(cfg.get("min_interval", 0.0)))
+	var min_interval: float = base_min_interval
 	if not is_high_prio and (sim_speed_multiplier > 1.05 or total_active >= 4):
 		var speed_scale: float = 1.0 + maxf(0.0, sim_speed_multiplier - 1.0) * 0.45
 		var density_scale: float = 1.0 + float(maxi(0, total_active - 3)) * 0.20
@@ -310,7 +325,7 @@ func request_cue(cue_id: String, metadata: Dictionary = {}) -> Dictionary:
 			return cd_res
 
 	var max_voices: int = maxi(1, int(cfg.get("max_voices", 1)))
-	var active_count: int = get_active_voice_count(cue_id)
+	var active_count: int = (_active_voices[cue_id] as Array).size() if _active_voices.has(cue_id) else 0
 	if active_count >= max_voices:
 		var cap_res: Dictionary = {
 			"played": false,
@@ -391,6 +406,16 @@ func on_tower_upgraded(tower_type: String, node_id: String) -> Dictionary:
 
 func on_unit_hit(unit_id: int, unit_tags: Array, amount: float = 0.0, damage_tag: int = 0) -> Dictionary:
 	var cue_id: String = resolve_hit_cue(unit_tags)
+	if _last_trigger_time.has(cue_id):
+		var cfg: Dictionary = balance.get_cue_config(cue_id)
+		var min_int: float = float(cfg.get("min_interval", 0.0))
+		if min_int > 0.0 and (elapsed_time - float(_last_trigger_time[cue_id])) < min_int - 1e-5:
+			return {
+				"played": false,
+				"cue_id": cue_id,
+				"reason": "cooldown",
+				"time": elapsed_time,
+			}
 	return request_cue(cue_id, {
 		"unit_id": unit_id,
 		"amount": amount,

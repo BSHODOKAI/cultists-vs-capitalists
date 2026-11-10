@@ -134,6 +134,7 @@ var units: Array[CombatUnit] = []
 var puddles: Array[Dictionary] = []
 ## Total damage logged during simulation runs for easy test inspection.
 var total_damage_dealt: float = 0.0
+var total_hits_count: int = 0
 var hit_events: Array[Dictionary] = []
 ## All telegraph events emitted for UI legibility & test assertions.
 var telegraph_events: Array[Dictionary] = []
@@ -141,6 +142,23 @@ var telegraph_events: Array[Dictionary] = []
 var last_loss_report: LossReport = null
 ## True while applying continuous 30Hz DoT/puddle sub-ticks so 3D views don't spawn projectiles on sub-ticks.
 var _in_continuous_dot_tick: bool = false
+## Cached sub-lists of placed towers by role, rebuilt whenever towers change.
+var _tower_role_cache_dirty: bool = true
+var _shrine_towers: Array[TowerInstance] = []
+var _detector_towers: Array[TowerInstance] = []
+var _congregation_towers: Array[TowerInstance] = []
+var _tithe_bounty_towers: Array[TowerInstance] = []
+var _last_shrine_state_sig: int = -999999
+var _step_unit_by_id: Dictionary = {}
+var _step_ground_units: Array[CombatUnit] = []
+var _step_air_units: Array[CombatUnit] = []
+var _step_has_channeling_hacker: bool = false
+const _DEFAULT_SHRINE_BUFFS: Dictionary = {
+	"fire_rate_bonus": 0.0,
+	"range_bonus": 0.0,
+	"ecstatic_multiplier": 1.0,
+	"protected": false,
+}
 ## Per-wave and per-run currency ledgers keyed by source category:
 ## "kills", "tithe_box", "rite_bounties", "lane_bounty", "events", "sell_refund", "upkeep_and_steal".
 ## Each entry maps to {"offerings": int, "scrap": int}.
@@ -190,9 +208,55 @@ func record_currency_flow(
 
 
 func _invalidate_all_tower_caches() -> void:
+	_tower_role_cache_dirty = true
+	_last_shrine_state_sig = -999999
 	for t: TowerInstance in towers.values():
 		if t != null:
 			t.invalidate_stat_cache()
+
+
+func _invalidate_step_tower_caches() -> void:
+	_ensure_tower_role_caches()
+	if _shrine_towers.is_empty():
+		return
+	var sig: int = corruption * 31 + _shrine_towers.size()
+	for shrine: TowerInstance in _shrine_towers:
+		var op_bit: int = 1 if shrine.is_operational() else 0
+		var burst_bit: int = 0
+		if op_bit != 0 and shrine.has_behavior("ecstatic_vigil"):
+			var burst_dur: float = float(shrine.get_behavior_param("ecstatic_vigil", "burst_duration", 3.0))
+			var burst_int: float = float(shrine.get_behavior_param("ecstatic_vigil", "burst_interval", 20.0))
+			if fmod(wave_elapsed_time, burst_int) < burst_dur:
+				burst_bit = 1
+		sig = (sig * 131) ^ (shrine.tower_id * 17 + op_bit * 3 + burst_bit)
+	if sig == _last_shrine_state_sig:
+		return
+	_last_shrine_state_sig = sig
+	for t: TowerInstance in towers.values():
+		if t != null:
+			t.invalidate_step_cache()
+
+
+func _ensure_tower_role_caches() -> void:
+	if not _tower_role_cache_dirty:
+		return
+	_tower_role_cache_dirty = false
+	_shrine_towers.clear()
+	_detector_towers.clear()
+	_congregation_towers.clear()
+	_tithe_bounty_towers.clear()
+	for t: TowerInstance in towers.values():
+		if t == null or t.def == null:
+			continue
+		var tid: String = t.get_type_id()
+		if tid == "fever_shrine":
+			_shrine_towers.append(t)
+		elif tid == "the_congregation":
+			_congregation_towers.append(t)
+		elif tid == "tithe_box":
+			_tithe_bounty_towers.append(t)
+		if t.def.detects_cloaked:
+			_detector_towers.append(t)
 
 
 func _init(
@@ -223,6 +287,7 @@ func set_path(ordered_path: Array[Vector2i]) -> void:
 		lanes.append(path_hexes.duplicate())
 	grid.set_path_hexes(path_hexes)
 	for t: TowerInstance in towers.values():
+		t.invalidate_path_cache()
 		if t.get_type_id() == "the_congregation":
 			_sync_congregation_blockers(t)
 
@@ -242,6 +307,7 @@ func set_lanes(p_lanes: Array) -> void:
 		path_hexes.clear()
 	grid.set_path_hexes(get_all_path_hexes())
 	for t: TowerInstance in towers.values():
+		t.invalidate_path_cache()
 		if t.get_type_id() == "the_congregation":
 			_sync_congregation_blockers(t)
 
@@ -930,14 +996,19 @@ func get_variety_bonus(tower: TowerInstance) -> float:
 
 ## Updates whether each Revealed tower is suppressed by an active Compliance Officer aura.
 func refresh_compliance_suppression() -> void:
+	var officers: Array[CombatUnit] = []
+	for u: CombatUnit in units:
+		if u != null and u.is_alive() and u.compliance_aura_radius > 0:
+			officers.append(u)
+	if officers.is_empty():
+		for t: TowerInstance in towers.values():
+			t.compliance_suppressed = false
+		return
 	for t: TowerInstance in towers.values():
 		var suppressed: bool = false
 		if t.is_revealed():
-			for u: CombatUnit in units:
-				if not u.is_alive() or u.compliance_aura_radius <= 0:
-					continue
-				var u_hex: Vector2i = get_unit_hex(u)
-				if _HexGrid.hex_distance(t.hex, u_hex) <= u.compliance_aura_radius:
+			for u: CombatUnit in officers:
+				if _HexGrid.hex_distance(t.hex, get_unit_hex(u)) <= u.compliance_aura_radius:
 					suppressed = true
 					break
 		t.compliance_suppressed = suppressed
@@ -1083,19 +1154,22 @@ func calculate_hit_damage(
 ## Multiple shrines do NOT stack; the highest active shrine bonus applies.
 func get_shrine_buffs_for_tower(tower: TowerInstance) -> Dictionary:
 	if tower == null:
-		return {"fire_rate_bonus": 0.0, "range_bonus": 0.0, "ecstatic_multiplier": 1.0, "protected": false}
+		return _DEFAULT_SHRINE_BUFFS
 	if not tower.cached_shrine_buffs.is_empty():
 		return tower.cached_shrine_buffs
+	_ensure_tower_role_caches()
+	if _shrine_towers.is_empty():
+		tower.protected_from_enemies = false
+		tower.cached_shrine_buffs = _DEFAULT_SHRINE_BUFFS
+		return _DEFAULT_SHRINE_BUFFS
 
 	var best_fire_rate_bonus: float = 0.0
 	var best_range_bonus: float = 0.0
 	var ecstatic_multiplier: float = 1.0
 	var protected: bool = false
 
-	for shrine: TowerInstance in towers.values():
-		if shrine.tower_id == tower.tower_id or shrine.get_type_id() != "fever_shrine":
-			continue
-		if not shrine.is_operational():
+	for shrine: TowerInstance in _shrine_towers:
+		if shrine.tower_id == tower.tower_id or not shrine.is_operational():
 			continue
 		var radius: int = shrine.get_effective_range_hexes()
 		if _HexGrid.hex_distance(shrine.hex, tower.hex) > radius:
@@ -1107,13 +1181,15 @@ func get_shrine_buffs_for_tower(tower: TowerInstance) -> Dictionary:
 			shrine.get_aura_fire_rate_bonus() * get_rite_stat_multiplier(shrine, "aura_fire_rate")
 		)
 		if shrine.has_behavior("mesh_network"):
-			var distinct_types: Dictionary = {}
-			for other: TowerInstance in towers.values():
-				if _HexGrid.hex_distance(shrine.hex, other.hex) <= radius:
-					distinct_types[other.get_type_id()] = true
-			var per_type: float = float(shrine.get_behavior_param("mesh_network", "rate_per_distinct_type", 0.06))
-			var max_b: float = float(shrine.get_behavior_param("mesh_network", "max_rate_bonus", 0.30))
-			shrine_rate = minf(float(distinct_types.size()) * per_type, max_b)
+			if shrine.cached_mesh_network_rate < 0.0:
+				var distinct_types: Dictionary = {}
+				for other: TowerInstance in towers.values():
+					if _HexGrid.hex_distance(shrine.hex, other.hex) <= radius:
+						distinct_types[other.get_type_id()] = true
+				var per_type: float = float(shrine.get_behavior_param("mesh_network", "rate_per_distinct_type", 0.06))
+				var max_b: float = float(shrine.get_behavior_param("mesh_network", "max_rate_bonus", 0.30))
+				shrine.cached_mesh_network_rate = minf(float(distinct_types.size()) * per_type, max_b)
+			shrine_rate = shrine.cached_mesh_network_rate
 
 		best_fire_rate_bonus = maxf(best_fire_rate_bonus, shrine_rate)
 
@@ -1178,6 +1254,8 @@ func start_wave(
 ) -> Dictionary:
 	current_wave = wave_number
 	wave_elapsed_time = 0.0
+	hit_events.clear()
+	telegraph_events.clear()
 	wave_currency_ledger = _make_empty_currency_ledger()
 	apply_event_modifiers(event_modifiers)
 
@@ -1396,6 +1474,7 @@ func spawn_rogue_entity(start_path_pos: float = -1.0, severity: int = 0, lane_id
 	dis_ab.range_hexes = 2
 	dis_ab.telegraph_event = "telegraph_taser_disable"
 	rogue.abilities.append(dis_ab)
+	rogue.active_step_abilities.append(dis_ab)
 	rogue.disable_timer = 2.5
 	return rogue
 
@@ -1472,25 +1551,34 @@ func spawn_unit_from_data(
 				unit.has_breakthrough = true
 			_AbilityData.ID_SPAWN_ON_TIMER:
 				unit.spawn_timer = ab.interval
+				unit.active_step_abilities.append(ab)
 			_AbilityData.ID_TOWER_DISABLE:
 				unit.disable_timer = ab.interval
+				unit.active_step_abilities.append(ab)
 			_AbilityData.ID_TOWER_CONVERT:
 				unit.convert_cooldown_timer = ab.interval
+				unit.active_step_abilities.append(ab)
 			_AbilityData.ID_SURGE_PRICING:
 				unit.surge_cooldown_timer = ab.interval * unit.boss_timing_mult
 				unit.surge_telegraphed_this_cycle = false
+				unit.active_step_abilities.append(ab)
 			_AbilityData.ID_RESTRUCTURING:
 				unit.restructuring_phase = 1
 				unit.active_resisted_multiplier = ab.pct if ab.pct > 0.0 else _UnitBalance.CHAIRMAN_PHASE_RESIST_MULTIPLIER
 				_pick_next_chairman_resistance(unit, rng, 1.0)
 			_AbilityData.ID_LEVERAGED_BUYOUT:
 				unit.convert_cooldown_timer = ab.interval * unit.boss_timing_mult
+				unit.active_step_abilities.append(ab)
 			_AbilityData.ID_SAME_DAY_DELIVERY:
 				unit.delivery_cooldown_timer = ab.interval * unit.boss_timing_mult
 				unit.delivery_telegraphed_this_cycle = false
+				unit.active_step_abilities.append(ab)
 			_AbilityData.ID_HOLDING_COMPANY:
 				unit.holding_effect_scale = ab.pct if ab.pct > 0.0 else _UnitBalance.HOLDING_COMPANY_EFFECT_SCALE
 				_init_holding_company_mechanics(unit, rng)
+				unit.active_step_abilities.append(ab)
+			_AbilityData.ID_COURIER_PACK, _AbilityData.ID_SPEED_AURA, _AbilityData.ID_RANGED_SUPPRESS, _AbilityData.ID_HEAL, _AbilityData.ID_NETWORK_EFFECT:
+				unit.active_step_abilities.append(ab)
 
 	_apply_event_enemy_scaling(unit)
 	units.append(unit)
@@ -1567,16 +1655,16 @@ func _resolve_placed_tower(tower_or_id: Variant) -> TowerInstance:
 func get_unit_hex(unit: CombatUnit) -> Vector2i:
 	if unit == null:
 		return Vector2i.ZERO
+	if (
+		is_equal_approx(unit.path_position, unit.cached_hex_path_pos)
+		and unit.cached_hex_lane_id == unit.lane_id
+		and unit.cached_hex_path_len > 0
+	):
+		return unit.cached_hex
 	var lh: Array[Vector2i] = get_lane_hexes(unit.lane_id)
 	if lh.is_empty():
 		return Vector2i.ZERO
 	var plen: int = lh.size()
-	if (
-		unit.cached_hex_lane_id == unit.lane_id
-		and unit.cached_hex_path_len == plen
-		and is_equal_approx(unit.path_position, unit.cached_hex_path_pos)
-	):
-		return unit.cached_hex
 	var idx: int = clampi(roundi(unit.path_position), 0, plen - 1)
 	var h: Vector2i = lh[idx]
 	unit.cached_hex = h
@@ -1588,15 +1676,20 @@ func get_unit_hex(unit: CombatUnit) -> Vector2i:
 
 ## Updates continuous detector auras (Chanting Choir and Watcher in the Billboard).
 func update_detection_auras() -> void:
+	var cloaked_units: Array[CombatUnit] = []
 	for u: CombatUnit in units:
-		u.cloak_detected_by_aura = false
-	for t: TowerInstance in towers.values():
+		if u != null:
+			u.cloak_detected_by_aura = false
+			if u.is_alive() and u.is_cloaked():
+				cloaked_units.append(u)
+	if cloaked_units.is_empty():
+		return
+	_ensure_tower_role_caches()
+	for t: TowerInstance in _detector_towers:
 		if not t.is_operational() or t.def == null or not t.def.detects_cloaked:
 			continue
 		var r: int = get_effective_tower_range_hexes(t)
-		for u: CombatUnit in units:
-			if not u.is_alive():
-				continue
+		for u: CombatUnit in cloaked_units:
 			if _HexGrid.hex_distance(t.hex, get_unit_hex(u)) <= r:
 				u.cloak_detected_by_aura = true
 
@@ -1614,54 +1707,79 @@ func can_tower_target_unit(tower: TowerInstance, unit: CombatUnit) -> bool:
 	return _HexGrid.hex_distance(tower.hex, get_unit_hex(unit)) <= r
 
 
+static func _is_better_target_for_mode(cand: CombatUnit, cur_best: CombatUnit, mode: int) -> bool:
+	if cur_best == null:
+		return true
+	if mode == TowerData.TargetingMode.HIGHEST_HP:
+		if not is_equal_approx(cand.hp, cur_best.hp):
+			return cand.hp > cur_best.hp
+		if not is_equal_approx(cand.path_position, cur_best.path_position):
+			return cand.path_position < cur_best.path_position
+		return cand.unit_id < cur_best.unit_id
+	if mode == TowerData.TargetingMode.CHAIN_ARC:
+		var c_air: bool = cand.is_air()
+		var b_air: bool = cur_best.is_air()
+		if c_air != b_air:
+			return c_air
+		if not is_equal_approx(cand.path_position, cur_best.path_position):
+			return cand.path_position < cur_best.path_position
+		return cand.unit_id < cur_best.unit_id
+	if not is_equal_approx(cand.path_position, cur_best.path_position):
+		return cand.path_position < cur_best.path_position
+	return cand.unit_id < cur_best.unit_id
+
+
 ## Selects the primary target for [param tower] based on its targeting_mode.
 ## When [param prefer_displaceable] is true, candidates immune to displacement (Bosses, or
 ## units past their 3x DR budget) are set aside so a knockback/drag attack aims at a mob it
 ## can actually move; those immune units are still eligible if nothing displaceable is in range.
 func select_target_for_tower(tower: TowerInstance, prefer_displaceable: bool = false) -> CombatUnit:
-	var candidates: Array[CombatUnit] = []
-	for u: CombatUnit in units:
-		if can_tower_target_unit(tower, u):
-			candidates.append(u)
-	if candidates.is_empty():
+	if tower == null or units.is_empty():
+		return null
+	tower._ensure_upgrade_cache()
+	var can_air: bool = tower._cached_can_target_air
+	var can_ground: bool = tower._cached_can_target_ground
+	if not can_air and not can_ground:
+		return null
+	var pool: Array[CombatUnit] = units
+	if not _step_unit_by_id.is_empty():
+		if can_ground and not can_air:
+			pool = _step_ground_units
+		elif can_air and not can_ground:
+			pool = _step_air_units
+	if pool.is_empty():
 		return null
 
-	if prefer_displaceable:
-		var displaceable: Array[CombatUnit] = []
-		for u: CombatUnit in candidates:
-			if not u.is_displacement_immune():
-				displaceable.append(u)
-		if not displaceable.is_empty():
-			candidates = displaceable
+	var r: int = get_effective_tower_range_hexes(tower)
+	var t_hex: Vector2i = tower.hex
+	var mode: int = tower.def.targeting_mode if tower.def != null else 0
+	var check_domain: bool = _step_unit_by_id.is_empty()
+	var best_any: CombatUnit = null
+	var best_disp: CombatUnit = null
 
-	if tower.def != null and tower.def.targeting_mode == TowerData.TargetingMode.HIGHEST_HP:
-		candidates.sort_custom(func(a: CombatUnit, b: CombatUnit) -> bool:
-			if not is_equal_approx(a.hp, b.hp):
-				return a.hp > b.hp
-			return a.path_position < b.path_position
-		)
-		return candidates[0]
+	for u: CombatUnit in pool:
+		if u == null or not u.is_alive():
+			continue
+		if check_domain and not tower.can_target_domain(u):
+			continue
+		if not u.is_cloak_revealed():
+			continue
+		var u_hex: Vector2i = u.cached_hex if u.cached_hex_path_pos == u.path_position else get_unit_hex(u)
+		var dq: int = t_hex.x - u_hex.x
+		if absi(dq) > r:
+			continue
+		var dr: int = t_hex.y - u_hex.y
+		if absi(dr) > r or absi(dq + dr) > r:
+			continue
+		if _is_better_target_for_mode(u, best_any, mode):
+			best_any = u
+		if prefer_displaceable and not u.is_displacement_immune():
+			if _is_better_target_for_mode(u, best_disp, mode):
+				best_disp = u
 
-	if tower.def != null and tower.def.targeting_mode == TowerData.TargetingMode.CHAIN_ARC:
-		# Prioritize Air targets first (anti-air defense role), then closest to base
-		candidates.sort_custom(func(a: CombatUnit, b: CombatUnit) -> bool:
-			var a_air: bool = a.is_air()
-			var b_air: bool = b.is_air()
-			if a_air != b_air:
-				return a_air
-			if not is_equal_approx(a.path_position, b.path_position):
-				return a.path_position < b.path_position
-			return a.unit_id < b.unit_id
-		)
-		return candidates[0]
-
-	# Default: closest to player's base (lowest path_position)
-	candidates.sort_custom(func(a: CombatUnit, b: CombatUnit) -> bool:
-		if not is_equal_approx(a.path_position, b.path_position):
-			return a.path_position < b.path_position
-		return a.unit_id < b.unit_id
-	)
-	return candidates[0]
+	if prefer_displaceable and best_disp != null:
+		return best_disp
+	return best_any
 
 
 # --- Damage Delivery & Kill / Reward Accounting ------------------------------
@@ -1697,19 +1815,32 @@ func deal_damage_from_tower(
 
 	var tid: int = tower.tower_id if tower != null else 0
 	var ttype: String = tower.get_type_id() if tower != null else "unknown"
-	var utags: Array = unit.tags.duplicate()
+	var utags: Array = unit.tags
 
 	total_damage_dealt += dealt_total
-	hit_events.append({
-		"tower_id": tid,
-		"tower_type": ttype,
-		"unit_id": unit.unit_id,
-		"unit_type_id": unit.unit_type_id,
-		"unit_tags": utags,
-		"amount": dealt_total,
-		"damage_tag": damage_tag,
-		"time": wave_elapsed_time,
-	})
+	total_hits_count += 1
+	var merged_hit: bool = false
+	var he_sz: int = hit_events.size()
+	var scan_from: int = maxi(0, he_sz - 12)
+	for he_i in range(he_sz - 1, scan_from - 1, -1):
+		var ev_i: Dictionary = hit_events[he_i]
+		if not is_equal_approx(float(ev_i["time"]), wave_elapsed_time):
+			break
+		if String(ev_i["tower_type"]) == ttype:
+			ev_i["amount"] = float(ev_i["amount"]) + dealt_total
+			merged_hit = true
+			break
+	if not merged_hit:
+		hit_events.append({
+			"tower_id": tid,
+			"tower_type": ttype,
+			"unit_id": unit.unit_id,
+			"unit_type_id": unit.unit_type_id,
+			"unit_tags": utags,
+			"amount": dealt_total,
+			"damage_tag": damage_tag,
+			"time": wave_elapsed_time,
+		})
 	tower_damaged_enemy.emit(tid, ttype, unit.unit_id, utags, dealt_total, damage_tag)
 
 	if unit.hp > 0.0 and unit.is_boss():
@@ -1777,9 +1908,10 @@ func _handle_unit_death(unit: CombatUnit, killer_tower: TowerInstance, from_gutt
 		)
 
 	# Cleanse any tower converted or being channeled by this unit (e.g. killing Acquisitions Rep or Raider)
-	for t: TowerInstance in towers.values():
-		if t.converter_unit_id == unit.unit_id or t.being_channeled_by_unit_id == unit.unit_id:
-			t.clear_conversion()
+	if unit.has_tag(_C.UnitTag.HACKER) or unit.is_boss():
+		for t: TowerInstance in towers.values():
+			if t.converter_unit_id == unit.unit_id or t.being_channeled_by_unit_id == unit.unit_id:
+				t.clear_conversion()
 
 	# Record kill for per-unit-type leveling (regular units) or Rogue Entity kill leveling (+1 level per Rogue kill)
 	if unit.is_rogue_entity:
@@ -1789,9 +1921,10 @@ func _handle_unit_death(unit: CombatUnit, killer_tower: TowerInstance, from_gutt
 		leveling.record_kill(unit.unit_type_id, false, 1)
 
 	# Award Offerings (with dark_patron bonus up to 3 boxes: +10% per box)
+	_ensure_tower_role_caches()
 	var dark_patron_boxes: int = 0
 	var scrap_collector_boxes: int = 0
-	for t: TowerInstance in towers.values():
+	for t: TowerInstance in _tithe_bounty_towers:
 		if t.is_operational():
 			if t.has_behavior("dark_patron"):
 				dark_patron_boxes += 1
@@ -1912,7 +2045,7 @@ func _sync_congregation_blockers(tower: TowerInstance) -> void:
 	var dps: float = (tower.def.summon_dps if tower.def != null else 2.0) * tower.get_upgrade_damage_multiplier()
 	var dmg_red: float = 0.30 if tower.has_behavior("picket_line") else 0.0
 
-	var station: Dictionary = _get_default_congregation_station(tower.hex)
+	var station: Dictionary = _get_congregation_station_for_tower(tower)
 	var default_lane_id: int = int(station["lane_id"])
 	var default_path_idx: int = int(station["path_idx"])
 	var default_hex: Vector2i = station["hex"] as Vector2i
@@ -1944,6 +2077,16 @@ func _sync_congregation_blockers(tower: TowerInstance) -> void:
 			"engaged_unit_id": -1,
 		})
 		_next_blocker_id += 1
+
+
+func _get_congregation_station_for_tower(tower: TowerInstance) -> Dictionary:
+	if tower == null:
+		return _get_default_congregation_station(Vector2i.ZERO)
+	if not tower.cached_congregation_station.is_empty():
+		return tower.cached_congregation_station
+	var station: Dictionary = _get_default_congregation_station(tower.hex)
+	tower.cached_congregation_station = station
+	return station
 
 
 ## Returns the primary adjacent station { "lane_id": int, "path_idx": int, "hex": Vector2i }
@@ -2012,7 +2155,6 @@ func step(delta: float, rng: RandomNumberGenerator) -> void:
 	if delta <= 0.0 or game_over:
 		return
 	wave_elapsed_time += delta
-	_invalidate_all_tower_caches()
 
 	# 1. Update tower jam/disable/conversion timers & pending jams
 	for t: TowerInstance in towers.values():
@@ -2029,13 +2171,26 @@ func step(delta: float, rng: RandomNumberGenerator) -> void:
 			if t.conversion_timer <= 0.0:
 				t.clear_conversion()
 
+	_invalidate_step_tower_caches()
+
+	# Pre-refresh cached_hex on all living units once at the start of the tick
+	for u: CombatUnit in units:
+		if u != null and u.is_alive() and u.cached_hex_path_pos != u.path_position:
+			get_unit_hex(u)
+
 	# 2. Refresh Compliance Officer suppression, detector auras, & enemy abilities / boss mechanics
 	refresh_compliance_suppression()
 	update_detection_auras()
 	_step_enemy_abilities(delta, rng)
 
-	# 3. Reset per-frame continuous aura slow states on units
+	# 3. Reset per-frame continuous aura slow states on units & build step domain lists
+	_step_unit_by_id.clear()
+	_step_ground_units.clear()
+	_step_air_units.clear()
+	_step_has_channeling_hacker = false
 	for u: CombatUnit in units:
+		if u == null:
+			continue
 		u.drain_slow_strength = 0.0
 		u.flood_slow_strength = 0.0
 		u.conduct_electric_wet = false
@@ -2043,6 +2198,14 @@ func step(delta: float, rng: RandomNumberGenerator) -> void:
 		u.grounded_electric_bonus = 0.0
 		if u.root_timer <= 0.0:
 			u.entangled_by_drain = false
+		if u.is_alive():
+			_step_unit_by_id[u.unit_id] = u
+			if u.is_channeling_hack:
+				_step_has_channeling_hacker = true
+			if u.is_air():
+				_step_air_units.append(u)
+			elif u.is_ground():
+				_step_ground_units.append(u)
 
 	# 4. Step each operational tower (and release any blockers on non-operational Congregation towers)
 	for t: TowerInstance in towers.values():
@@ -2053,23 +2216,31 @@ func step(delta: float, rng: RandomNumberGenerator) -> void:
 		_step_tower(t, delta, rng)
 
 	# 5. Step active puddles (ichor_bloom)
-	for i in range(puddles.size() - 1, -1, -1):
-		var p: Dictionary = puddles[i]
-		p["remaining"] = float(p["remaining"]) - delta
-		var p_hex: Vector2i = p["hex"] as Vector2i
-		var src_tower: TowerInstance = towers.get(int(p["tower_id"]), null) as TowerInstance
-		var p_dps: float = float(p["dps"])
-		for u: CombatUnit in units.duplicate():
-			if not u.is_alive() or not u.is_ground():
-				continue
-			if _HexGrid.hex_distance(p_hex, get_unit_hex(u)) <= 1:
-				var boss_scale: float = balance.boss_slow_and_dot_strength if u.is_boss() else 1.0
-				var hit_dmg: float = calculate_hit_damage(src_tower, u, p_dps * delta * boss_scale, _C.DamageTag.VOID)
-				_in_continuous_dot_tick = true
-				deal_damage_from_tower(src_tower, u, hit_dmg, _C.DamageTag.VOID)
-				_in_continuous_dot_tick = false
-		if float(p["remaining"]) <= 0.0:
-			puddles.remove_at(i)
+	if not puddles.is_empty():
+		var puddle_by_hex_tower: Dictionary = {}
+		for i in range(puddles.size() - 1, -1, -1):
+			var p: Dictionary = puddles[i]
+			p["remaining"] = float(p["remaining"]) - delta
+			var p_hex: Vector2i = p["hex"] as Vector2i
+			var p_tid: int = int(p["tower_id"])
+			var p_dps: float = float(p["dps"])
+			var p_key: Vector3i = Vector3i(p_hex.x, p_hex.y, p_tid)
+			puddle_by_hex_tower[p_key] = float(puddle_by_hex_tower.get(p_key, 0.0)) + p_dps
+			if float(p["remaining"]) <= 0.0:
+				puddles.remove_at(i)
+		for p_key: Vector3i in puddle_by_hex_tower.keys():
+			var p_hex := Vector2i(p_key.x, p_key.y)
+			var src_tower: TowerInstance = towers.get(p_key.z, null) as TowerInstance
+			var total_p_dps: float = float(puddle_by_hex_tower[p_key])
+			for u: CombatUnit in _step_ground_units:
+				if u == null or not u.is_alive():
+					continue
+				if _HexGrid.hex_distance(p_hex, get_unit_hex(u)) <= 1:
+					var boss_scale: float = balance.boss_slow_and_dot_strength if u.is_boss() else 1.0
+					var hit_dmg: float = calculate_hit_damage(src_tower, u, total_p_dps * delta * boss_scale, _C.DamageTag.VOID)
+					_in_continuous_dot_tick = true
+					deal_damage_from_tower(src_tower, u, hit_dmg, _C.DamageTag.VOID)
+					_in_continuous_dot_tick = false
 
 	# 6. Step units (DoTs, timers, movement, leaks)
 	_step_units(delta)
@@ -2124,10 +2295,16 @@ func _step_dead_air_tower(tower: TowerInstance, delta: float) -> void:
 	var grounding: float = tower.get_grounding_bonus()
 
 	# Continuous slow aura & Grounded mark on Air units in range only.
-	for u: CombatUnit in units:
-		if not u.is_alive() or not u.is_air():
+	var t_hex: Vector2i = tower.hex
+	for u: CombatUnit in _step_air_units:
+		if not u.is_alive():
 			continue
-		if _HexGrid.hex_distance(tower.hex, get_unit_hex(u)) > r:
+		var u_hex: Vector2i = u.cached_hex if u.cached_hex_path_pos == u.path_position else get_unit_hex(u)
+		var dq: int = t_hex.x - u_hex.x
+		if absi(dq) > r:
+			continue
+		var dr: int = t_hex.y - u_hex.y
+		if absi(dr) > r or absi(dq + dr) > r:
 			continue
 		u.drain_slow_strength = maxf(u.drain_slow_strength, slow_str)
 		if grounding > 0.0:
@@ -2217,18 +2394,19 @@ func _step_choir_tower(tower: TowerInstance, delta: float) -> void:
 	if tower.has_behavior("jammer_choir"):
 		tower.special_cooldown -= delta
 		var stun_ready: bool = tower.special_cooldown <= 0.0
-		var did_stun: bool = false
-		for u: CombatUnit in units:
-			if not u.is_alive() or _HexGrid.hex_distance(tower.hex, get_unit_hex(u)) > r:
-				continue
-			if u.has_tag(_C.UnitTag.HACKER):
-				u.interrupt_hack()
-			if stun_ready and (u.is_air() or u.has_tag(_C.UnitTag.CYBERNETIC)):
-				u.apply_stun(float(tower.get_behavior_param("jammer_choir", "stun_duration", 1.5)))
-				did_stun = true
-		if did_stun:
-			tower.special_cooldown = float(tower.get_behavior_param("jammer_choir", "stun_interval", 8.0))
-			tower_cooldown_used.emit(tower.tower_id, tower.get_type_id(), "jammer_choir", tower.hex)
+		if stun_ready or _step_has_channeling_hacker:
+			var did_stun: bool = false
+			for u: CombatUnit in units:
+				if not u.is_alive() or _HexGrid.hex_distance(tower.hex, get_unit_hex(u)) > r:
+					continue
+				if u.is_channeling_hack and u.has_tag(_C.UnitTag.HACKER):
+					u.interrupt_hack()
+				if stun_ready and (u.is_air() or u.has_tag(_C.UnitTag.CYBERNETIC)):
+					u.apply_stun(float(tower.get_behavior_param("jammer_choir", "stun_duration", 1.5)))
+					did_stun = true
+			if did_stun:
+				tower.special_cooldown = float(tower.get_behavior_param("jammer_choir", "stun_interval", 8.0))
+				tower_cooldown_used.emit(tower.tower_id, tower.get_type_id(), "jammer_choir", tower.hex)
 
 	tower.attack_cooldown -= delta
 	if tower.attack_cooldown <= 0.0:
@@ -2372,17 +2550,33 @@ func _step_gutter_circle_tower(tower: TowerInstance, delta: float) -> void:
 func _step_storm_drain_tower(tower: TowerInstance, delta: float) -> void:
 	var r: int = get_effective_tower_range_hexes(tower)
 	var slow_str: float = tower.get_slow_aura_strength()
+	var has_flood_pump: bool = tower.has_behavior("flood_pump")
+	var flood_r: int = int(tower.get_behavior_param("flood_pump", "flood_radius", 1)) if has_flood_pump else 0
+	var flood_slow: float = float(tower.get_behavior_param("flood_pump", "flood_slow", 0.40)) if has_flood_pump else 0.0
 
-	# Continuous slow aura & Entangled on Ground units in range
-	for u: CombatUnit in units:
-		if not u.is_alive() or not u.is_ground():
+	# Continuous slow aura & Entangled on Ground units in range, while collecting targetable units
+	var in_range_targets: Array[CombatUnit] = []
+	var ground_pool: Array[CombatUnit] = _step_ground_units if not _step_unit_by_id.is_empty() else units
+	var t_hex: Vector2i = tower.hex
+	var max_check_r: int = maxi(r, flood_r)
+	for u: CombatUnit in ground_pool:
+		if u == null or not u.is_alive() or not u.is_ground():
 			continue
-		var d: int = _HexGrid.hex_distance(tower.hex, get_unit_hex(u))
+		var u_hex: Vector2i = u.cached_hex if u.cached_hex_path_pos == u.path_position else get_unit_hex(u)
+		var dq: int = t_hex.x - u_hex.x
+		if absi(dq) > max_check_r:
+			continue
+		var dr: int = t_hex.y - u_hex.y
+		if absi(dr) > max_check_r:
+			continue
+		var d: int = (absi(dq) + absi(dr) + absi(dq + dr)) >> 1
 		if d <= r:
 			u.drain_slow_strength = maxf(u.drain_slow_strength, slow_str)
 			u.entangled_by_drain = true
-		if tower.has_behavior("flood_pump") and d <= int(tower.get_behavior_param("flood_pump", "flood_radius", 1)):
-			u.flood_slow_strength = maxf(u.flood_slow_strength, float(tower.get_behavior_param("flood_pump", "flood_slow", 0.40)))
+			if u.is_cloak_revealed():
+				in_range_targets.append(u)
+		if has_flood_pump and d <= flood_r:
+			u.flood_slow_strength = maxf(u.flood_slow_strength, flood_slow)
 			u.conduct_electric_wet = true
 			u.entangled_by_drain = true
 
@@ -2394,8 +2588,10 @@ func _step_storm_drain_tower(tower: TowerInstance, delta: float) -> void:
 			var sweep_dmg: float = float(tower.get_behavior_param("leviathan_awakens", "sweep_damage", 120.0))
 			var sweep_root: float = float(tower.get_behavior_param("leviathan_awakens", "sweep_root_duration", 1.0))
 			var hit_any: bool = false
-			for u: CombatUnit in units.duplicate():
-				if u.is_alive() and u.is_ground() and _HexGrid.hex_distance(tower.hex, get_unit_hex(u)) <= (r + extra_r):
+			var sweep_snap: int = units.size()
+			for u_i in range(sweep_snap):
+				var u: CombatUnit = units[u_i]
+				if u != null and u.is_alive() and u.is_ground() and _HexGrid.hex_distance(tower.hex, get_unit_hex(u)) <= (r + extra_r):
 					u.apply_root(sweep_root, true)
 					var dmg: float = calculate_hit_damage(tower, u, sweep_dmg, _C.DamageTag.VOID)
 					deal_damage_from_tower(tower, u, dmg, _C.DamageTag.VOID)
@@ -2405,35 +2601,35 @@ func _step_storm_drain_tower(tower: TowerInstance, delta: float) -> void:
 				tower_cooldown_used.emit(tower.tower_id, tower.get_type_id(), "leviathan_awakens", tower.hex)
 
 	# Periodic root (every 8 s) & continuous Kinetic DPS on up to max_targets
-	var in_range_targets: Array[CombatUnit] = []
-	for u: CombatUnit in units:
-		if can_tower_target_unit(tower, u):
-			in_range_targets.append(u)
-	in_range_targets.sort_custom(func(a: CombatUnit, b: CombatUnit) -> bool:
-		return a.path_position < b.path_position
-	)
-
 	var max_t: int = mini(tower.get_max_targets(), in_range_targets.size())
 	if max_t > 0:
 		tower.root_cooldown -= delta
-		if tower.root_cooldown <= 0.0:
-			tower.root_cooldown = tower.def.root_interval if tower.def.root_interval > 0.0 else 8.0
-			var root_dur: float = tower.def.root_duration
-			var drag_hexes: float = 0.0
-			var root_ability_id: String = "tentacle_root"
-			if tower.has_behavior("deep_grasp"):
-				root_dur = float(tower.get_behavior_param("deep_grasp", "root_duration", 2.5))
-				drag_hexes = float(tower.get_behavior_param("deep_grasp", "drag_hexes", 1))
-				root_ability_id = "deep_grasp"
-			for idx in range(max_t):
-				var tgt: CombatUnit = in_range_targets[idx]
-				tgt.apply_root(root_dur, true)
-				if drag_hexes > 0.0 and not tgt.is_displacement_immune():
-					tgt.displace_along_path(drag_hexes, get_spawn_path_index(tgt.lane_id))
-			tower_cooldown_used.emit(tower.tower_id, tower.get_type_id(), root_ability_id, tower.hex)
-
 	tower.attack_cooldown -= delta
-	if tower.attack_cooldown <= 0.0 and max_t > 0:
+
+	var will_root: bool = (max_t > 0 and tower.root_cooldown <= 0.0)
+	var will_attack: bool = (max_t > 0 and tower.attack_cooldown <= 0.0)
+	if (will_root or will_attack) and in_range_targets.size() > 1:
+		in_range_targets.sort_custom(func(a: CombatUnit, b: CombatUnit) -> bool:
+			return a.path_position < b.path_position
+		)
+
+	if will_root:
+		tower.root_cooldown = tower.def.root_interval if tower.def.root_interval > 0.0 else 8.0
+		var root_dur: float = tower.def.root_duration
+		var drag_hexes: float = 0.0
+		var root_ability_id: String = "tentacle_root"
+		if tower.has_behavior("deep_grasp"):
+			root_dur = float(tower.get_behavior_param("deep_grasp", "root_duration", 2.5))
+			drag_hexes = float(tower.get_behavior_param("deep_grasp", "drag_hexes", 1))
+			root_ability_id = "deep_grasp"
+		for idx in range(max_t):
+			var tgt: CombatUnit = in_range_targets[idx]
+			tgt.apply_root(root_dur, true)
+			if drag_hexes > 0.0 and not tgt.is_displacement_immune():
+				tgt.displace_along_path(drag_hexes, get_spawn_path_index(tgt.lane_id))
+		tower_cooldown_used.emit(tower.tower_id, tower.get_type_id(), root_ability_id, tower.hex)
+
+	if will_attack:
 		var tick: float = 0.5
 		tower.attack_cooldown += tick
 		for idx in range(max_t):
@@ -2446,9 +2642,10 @@ func _step_storm_drain_tower(tower: TowerInstance, delta: float) -> void:
 		# live_wire_flood: flooded hexes deal 12 Electric/s
 		if tower.has_behavior("live_wire_flood"):
 			var elec_dps: float = float(tower.get_behavior_param("live_wire_flood", "electric_dps", 12.0))
-			var flood_r: int = int(tower.get_behavior_param("flood_pump", "flood_radius", 1))
-			for u: CombatUnit in units.duplicate():
-				if u.is_alive() and u.is_ground() and _HexGrid.hex_distance(tower.hex, get_unit_hex(u)) <= flood_r:
+			var lw_snap: int = units.size()
+			for u_i in range(lw_snap):
+				var u: CombatUnit = units[u_i]
+				if u != null and u.is_alive() and u.is_ground() and _HexGrid.hex_distance(tower.hex, get_unit_hex(u)) <= flood_r:
 					var edmg: float = calculate_hit_damage(tower, u, elec_dps * tick, _C.DamageTag.ELECTRIC)
 					deal_damage_from_tower(tower, u, edmg, _C.DamageTag.ELECTRIC)
 
@@ -2563,13 +2760,14 @@ func _step_rust_censer_tower(tower: TowerInstance, delta: float) -> void:
 
 ## 8. the_congregation
 func _step_congregation_tower(tower: TowerInstance, delta: float) -> void:
-	_sync_congregation_blockers(tower)
+	if (tower.active_blockers.is_empty() and tower.resummon_timers.is_empty()) or tower.get_corruption_scaled_stat("summon_hp") > 0.0:
+		_sync_congregation_blockers(tower)
 
 	# Tick resummon timers (10 s after death)
 	var max_hp: float = tower.get_summon_max_hp() * get_rite_stat_multiplier(tower, "summon_hp")
 	var dps: float = (tower.def.summon_dps if tower.def != null else 2.0) * tower.get_upgrade_damage_multiplier()
 	var dmg_red: float = 0.30 if tower.has_behavior("picket_line") else 0.0
-	var station: Dictionary = _get_default_congregation_station(tower.hex)
+	var station: Dictionary = _get_congregation_station_for_tower(tower)
 	var default_lane_id: int = int(station["lane_id"])
 	var default_idx: int = int(station["path_idx"])
 	var default_hex: Vector2i = station["hex"] as Vector2i
@@ -2608,10 +2806,17 @@ func _step_congregation_tower(tower: TowerInstance, delta: float) -> void:
 		var b_lane_id: int = int(blocker.get("lane_id", default_lane_id))
 
 		var engaged_unit: CombatUnit = null
-		for u: CombatUnit in units:
-			if u.is_alive() and u.is_ground() and u.engaged_blocker_id == bid:
-				engaged_unit = u
-				break
+		var engaged_uid: int = int(blocker.get("engaged_unit_id", -1))
+		if engaged_uid >= 0 and _step_unit_by_id.has(engaged_uid):
+			var cand_eu: CombatUnit = _step_unit_by_id[engaged_uid] as CombatUnit
+			if cand_eu != null and cand_eu.is_alive() and cand_eu.is_ground() and cand_eu.engaged_blocker_id == bid:
+				engaged_unit = cand_eu
+		if engaged_unit == null:
+			for u: CombatUnit in _step_ground_units:
+				if u.is_alive() and u.engaged_blocker_id == bid:
+					engaged_unit = u
+					blocker["engaged_unit_id"] = u.unit_id
+					break
 
 		# Disengage if the unit was knocked back / displaced off the blocker's hex or is fleeing/confused
 		if engaged_unit != null:
@@ -2629,8 +2834,8 @@ func _step_congregation_tower(tower: TowerInstance, delta: float) -> void:
 			b_lane_id = default_lane_id
 
 			# 1. Prefer an unengaged Ground unit that has reached the blocker's adjacent path hex
-			for u: CombatUnit in units:
-				if not u.is_alive() or not u.is_ground() or u.is_supply_pod or u.is_bid_drone:
+			for u: CombatUnit in _step_ground_units:
+				if not u.is_alive() or u.is_supply_pod or u.is_bid_drone:
 					continue
 				if u.engaged_blocker_id >= 0 or u.flee_timer > 0.0 or u.confuse_timer > 0.0:
 					continue
@@ -2667,19 +2872,20 @@ func _step_congregation_tower(tower: TowerInstance, delta: float) -> void:
 		# already held on the same hex by a fellow blocker from this Congregation
 		var melee_target: CombatUnit = engaged_unit
 		if melee_target == null:
-			for u: CombatUnit in units:
-				if u.is_alive() and u.is_ground() and not u.is_supply_pod and not u.is_bid_drone:
+			for u: CombatUnit in _step_ground_units:
+				if u.is_alive() and not u.is_supply_pod and not u.is_bid_drone:
 					if get_unit_hex(u) == b_hex:
 						melee_target = u
 						break
 
 		if melee_target != null:
-			if tower.has_behavior("union_strike"):
-				var slow_s: float = float(tower.get_behavior_param("union_strike", "melee_slow", 0.30))
-				for u: CombatUnit in units:
-					if u.is_alive() and u.is_ground() and _HexGrid.hex_distance(get_unit_hex(melee_target), get_unit_hex(u)) <= 1:
-						u.apply_timed_slow(slow_s, 1.0)
 			if deal_tick:
+				if tower.has_behavior("union_strike"):
+					var slow_s: float = float(tower.get_behavior_param("union_strike", "melee_slow", 0.30))
+					var mt_hex: Vector2i = get_unit_hex(melee_target)
+					for u: CombatUnit in _step_ground_units:
+						if u.is_alive() and _HexGrid.hex_distance(mt_hex, get_unit_hex(u)) <= 1:
+							u.apply_timed_slow(slow_s, 1.0)
 				var hit_dmg: float = calculate_hit_damage(tower, melee_target, float(blocker["dps"]) * tick_dt, _C.DamageTag.KINETIC)
 				deal_damage_from_tower(tower, melee_target, hit_dmg, _C.DamageTag.KINETIC)
 
@@ -2859,9 +3065,14 @@ func _step_chain_arc_tower(tower: TowerInstance, delta: float) -> void:
 					continue
 				if not tower.can_target_domain(cand) or not cand.is_cloak_revealed():
 					continue
-				var d: int = _HexGrid.hex_distance(last_hex, get_unit_hex(cand))
-				if d > hop_range:
+				var c_hex: Vector2i = cand.cached_hex if cand.cached_hex_path_pos == cand.path_position else get_unit_hex(cand)
+				var dq: int = last_hex.x - c_hex.x
+				if absi(dq) > hop_range:
 					continue
+				var dr: int = last_hex.y - c_hex.y
+				if absi(dr) > hop_range or absi(dq + dr) > hop_range:
+					continue
+				var d: int = (absi(dq) + absi(dr) + absi(dq + dr)) >> 1
 				var c_air: bool = cand.is_air()
 				var better: bool = false
 				if next_target == null:
@@ -2889,10 +3100,13 @@ func _step_chain_arc_tower(tower: TowerInstance, delta: float) -> void:
 
 func _step_enemy_abilities(delta: float, rng: RandomNumberGenerator) -> void:
 	# Reset continuous aura speed bonuses & network effect stacks
+	var has_pods: bool = false
 	for u: CombatUnit in units:
 		u.aura_speed_bonus = 0.0
 		u.network_effect_stacks = 0
 		u.network_damage_reduction = 0.0
+		if u.is_supply_pod and u.is_alive():
+			has_pods = true
 		if u.death_burst_timer > 0.0:
 			u.death_burst_timer = maxf(0.0, u.death_burst_timer - delta)
 			if u.death_burst_timer <= 0.0:
@@ -2915,29 +3129,35 @@ func _step_enemy_abilities(delta: float, rng: RandomNumberGenerator) -> void:
 					u.aura_speed_bonus = maxf(u.aura_speed_bonus, t.converted_speed_aura_pct)
 
 	# Step Supply Pods (Prime Dispatcher Same-Day Delivery)
-	for pod: CombatUnit in units.duplicate():
-		if not pod.is_alive() or not pod.is_supply_pod:
-			continue
-		if pod.pod_reticle_timer > 0.0:
-			pod.pod_reticle_timer = maxf(0.0, pod.pod_reticle_timer - delta)
-			continue
-		pod.pod_open_timer -= delta
-		if pod.pod_open_timer <= 0.0:
-			var count: int = maxi(1, pod.pod_drones_to_spawn)
-			for _i in range(count):
-				spawn_unit_from_data(_UnitBalance.DISPATCHER_SPAWN_UNIT_ID, pod.path_position, 1, null, -1, pod.lane_id)
-			pod.hp = 0.0
+	if has_pods:
+		var pod_snap: int = units.size()
+		for p_i in range(pod_snap):
+			var pod: CombatUnit = units[p_i]
+			if pod == null or not pod.is_alive() or not pod.is_supply_pod:
+				continue
+			if pod.pod_reticle_timer > 0.0:
+				pod.pod_reticle_timer = maxf(0.0, pod.pod_reticle_timer - delta)
+				continue
+			pod.pod_open_timer -= delta
+			if pod.pod_open_timer <= 0.0:
+				var count: int = maxi(1, pod.pod_drones_to_spawn)
+				for _i in range(count):
+					spawn_unit_from_data(_UnitBalance.DISPATCHER_SPAWN_UNIT_ID, pod.path_position, 1, null, -1, pod.lane_id)
+				pod.hp = 0.0
 
 	# Step each living unit's abilities
-	for u: CombatUnit in units.duplicate():
-		if not u.is_alive() or u.is_supply_pod or u.is_bid_drone:
+	_ensure_tower_role_caches()
+	var unit_snap: int = units.size()
+	for u_i in range(unit_snap):
+		var u: CombatUnit = units[u_i]
+		if u == null or not u.is_alive() or u.is_supply_pod or u.is_bid_drone:
 			continue
 
 		# Breakthrough check against any Congregation blockers on the unit's hex
-		if u.has_breakthrough:
+		if u.has_breakthrough and not _congregation_towers.is_empty():
 			var u_hex: Vector2i = get_unit_hex(u)
-			for t: TowerInstance in towers.values():
-				if t.get_type_id() == "the_congregation" and not t.active_blockers.is_empty():
+			for t: TowerInstance in _congregation_towers:
+				if not t.active_blockers.is_empty():
 					for b_idx in range(t.active_blockers.size() - 1, -1, -1):
 						var b: Dictionary = t.active_blockers[b_idx]
 						var b_hex: Vector2i = b.get("hex", t.hex) as Vector2i
@@ -2952,10 +3172,12 @@ func _step_enemy_abilities(delta: float, rng: RandomNumberGenerator) -> void:
 				_emit_telegraph(_AbilityData.ID_SHIELD_REGEN, "telegraph_shield_regen", u, 0.0, {"shield_hp": u.shield_hp})
 
 		# Step attached AbilityData components
-		for ab: AbilityData in u.abilities:
-			if ab == null:
-				continue
-			_step_unit_ability_component(u, ab, delta, rng, 1.0)
+		var ab_list: Array[AbilityData] = u.active_step_abilities if not u.active_step_abilities.is_empty() else u.abilities
+		if not ab_list.is_empty():
+			for ab: AbilityData in ab_list:
+				if ab == null:
+					continue
+				_step_unit_ability_component(u, ab, delta, rng, 1.0)
 
 
 func _step_unit_ability_component(
@@ -2965,14 +3187,17 @@ func _step_unit_ability_component(
 	rng: RandomNumberGenerator,
 	effect_scale: float = 1.0
 ) -> void:
-	var u_hex: Vector2i = get_unit_hex(u)
+	var u_hex: Vector2i = u.cached_hex if u.cached_hex_path_pos == u.path_position else get_unit_hex(u)
 	match ab.ability_id:
 		_AbilityData.ID_COURIER_PACK:
 			var rad: int = ab.radius if ab.radius > 0 else _UnitBalance.SCOOTER_COURIER_PACK_RADIUS_HEXES
 			var boost: float = (ab.pct if ab.pct > 0.0 else _UnitBalance.SCOOTER_COURIER_PACK_SPEED_PCT) * effect_scale
 			for other: CombatUnit in units:
 				if other.unit_id != u.unit_id and other.is_alive() and other.unit_type_id == u.unit_type_id:
-					if _HexGrid.hex_distance(u_hex, get_unit_hex(other)) <= rad:
+					var o_hex: Vector2i = other.cached_hex if other.cached_hex_path_pos == other.path_position else get_unit_hex(other)
+					var dq: int = u_hex.x - o_hex.x
+					var dr: int = u_hex.y - o_hex.y
+					if absi(dq) <= rad and absi(dr) <= rad and absi(dq + dr) <= rad:
 						u.aura_speed_bonus = maxf(u.aura_speed_bonus, boost)
 						break
 
@@ -2981,14 +3206,19 @@ func _step_unit_ability_component(
 			var boost: float = (ab.pct if ab.pct > 0.0 else _UnitBalance.HYPE_INFLUENCER_AURA_SPEED_PCT) * effect_scale
 			for ally: CombatUnit in units:
 				if ally.is_alive() and not ally.is_supply_pod and not ally.is_bid_drone:
-					if _HexGrid.hex_distance(u_hex, get_unit_hex(ally)) <= rad:
+					var a_hex: Vector2i = ally.cached_hex if ally.cached_hex_path_pos == ally.path_position else get_unit_hex(ally)
+					var dq: int = u_hex.x - a_hex.x
+					var dr: int = u_hex.y - a_hex.y
+					if absi(dq) <= rad and absi(dr) <= rad and absi(dq + dr) <= rad:
 						ally.aura_speed_bonus = maxf(ally.aura_speed_bonus, boost)
 
 		_AbilityData.ID_RANGED_SUPPRESS:
 			var rng_hex: int = ab.range_hexes if ab.range_hexes > 0 else (ab.radius if ab.radius > 0 else _UnitBalance.SIEGE_WALKER_SUPPRESS_RANGE_HEXES)
 			var pen: float = (ab.fire_rate_penalty if ab.fire_rate_penalty > 0.0 else _UnitBalance.SIEGE_WALKER_FIRE_RATE_PENALTY) * effect_scale
 			for t: TowerInstance in towers.values():
-				if _HexGrid.hex_distance(u_hex, t.hex) <= rng_hex:
+				var dq: int = u_hex.x - t.hex.x
+				var dr: int = u_hex.y - t.hex.y
+				if absi(dq) <= rng_hex and absi(dr) <= rng_hex and absi(dq + dr) <= rng_hex:
 					if not t.protected_from_enemies:
 						t.ranged_suppress_penalty = maxf(t.ranged_suppress_penalty, pen)
 
@@ -3011,7 +3241,10 @@ func _step_unit_ability_component(
 					_emit_telegraph(ab.ability_id, ab.telegraph_event, u, 0.0, {"target_tower_id": nearest.tower_id, "duration": dur})
 
 		_AbilityData.ID_SPAWN_ON_TIMER:
-			# Prune dead children from active_spawned_unit_ids
+			u.spawn_timer -= delta
+			if u.spawn_timer > 0.0:
+				return
+			# Prune dead children from active_spawned_unit_ids when ready to spawn
 			for i in range(u.active_spawned_unit_ids.size() - 1, -1, -1):
 				var cid: int = u.active_spawned_unit_ids[i]
 				var still_alive: bool = false
@@ -3025,25 +3258,25 @@ func _step_unit_ability_component(
 			var cap_val: int = ab.cap if ab.cap > 0 else 4
 			var current_count: int = u.total_spawned_count if ab.release_on_death else maxi(u.active_spawned_unit_ids.size(), u.total_spawned_count)
 			if current_count >= cap_val:
+				u.spawn_timer = 0.5
 				return
-			u.spawn_timer -= delta
-			if u.spawn_timer <= 0.0:
-				u.spawn_timer += ab.interval if ab.interval > 0.0 else 3.0
-				var batch: int = maxi(1, ab.spawn_count)
-				var allowed: int = mini(batch, cap_val - current_count)
-				if allowed > 0:
-					_emit_telegraph(ab.ability_id, ab.telegraph_event, u, 0.0, {"spawn_unit_id": ab.unit_id, "count": allowed})
-					for _i in range(allowed):
-						var child: CombatUnit = spawn_unit_from_data(ab.unit_id, u.path_position, 1, null, -1, u.lane_id)
-						if child != null:
-							u.total_spawned_count += 1
-							u.active_spawned_unit_ids.append(child.unit_id)
+			u.spawn_timer += ab.interval if ab.interval > 0.0 else 3.0
+			var batch: int = maxi(1, ab.spawn_count)
+			var allowed: int = mini(batch, cap_val - current_count)
+			if allowed > 0:
+				_emit_telegraph(ab.ability_id, ab.telegraph_event, u, 0.0, {"spawn_unit_id": ab.unit_id, "count": allowed})
+				for _i in range(allowed):
+					var child: CombatUnit = spawn_unit_from_data(ab.unit_id, u.path_position, 1, null, -1, u.lane_id)
+					if child != null:
+						u.total_spawned_count += 1
+						u.active_spawned_unit_ids.append(child.unit_id)
 
 		_AbilityData.ID_HEAL:
 			var rad: int = ab.radius if ab.radius > 0 else _UnitBalance.MEDIC_DRONE_HEAL_RADIUS_HEXES
 			var hps_val: float = (ab.hps if ab.hps > 0.0 else _UnitBalance.MEDIC_DRONE_HEAL_HPS) * effect_scale
 			var max_t: int = ab.max_targets if ab.max_targets > 0 else _UnitBalance.MEDIC_DRONE_HEAL_MAX_TARGETS
-			var candidates: Array[CombatUnit] = []
+			var top_units: Array[CombatUnit] = []
+			var top_ratios: Array[float] = []
 			for ally: CombatUnit in units:
 				if not ally.is_alive() or ally.unit_id == u.unit_id:
 					continue
@@ -3054,20 +3287,32 @@ func _step_unit_ability_component(
 					continue
 				if ally.hp >= ally.max_hp:
 					continue
-				if _HexGrid.hex_distance(u_hex, get_unit_hex(ally)) <= rad:
-					candidates.append(ally)
-			if not candidates.is_empty():
-				candidates.sort_custom(func(a: CombatUnit, b: CombatUnit) -> bool:
-					var ra: float = a.hp / maxf(1.0, a.max_hp)
-					var rb: float = b.hp / maxf(1.0, b.max_hp)
-					if not is_equal_approx(ra, rb):
-						return ra < rb
-					return a.unit_id < b.unit_id
-				)
-				var count: int = mini(max_t, candidates.size())
+				var a_hex: Vector2i = ally.cached_hex if ally.cached_hex_path_pos == ally.path_position else get_unit_hex(ally)
+				var dq: int = u_hex.x - a_hex.x
+				var dr: int = u_hex.y - a_hex.y
+				if absi(dq) > rad or absi(dr) > rad or absi(dq + dr) > rad:
+					continue
+				var r_ally: float = ally.hp / maxf(1.0, ally.max_hp)
+				var ins_pos: int = top_units.size()
+				while ins_pos > 0:
+					var prev_r: float = top_ratios[ins_pos - 1]
+					var better: bool = (r_ally < prev_r) if not is_equal_approx(r_ally, prev_r) else (ally.unit_id < top_units[ins_pos - 1].unit_id)
+					if better:
+						ins_pos -= 1
+					else:
+						break
+				if ins_pos < max_t:
+					top_units.insert(ins_pos, ally)
+					top_ratios.insert(ins_pos, r_ally)
+					if top_units.size() > max_t:
+						top_units.pop_back()
+						top_ratios.pop_back()
+			if not top_units.is_empty():
+				var count: int = top_units.size()
+				var heal_amt: float = hps_val * delta
 				for i in range(count):
-					var tgt: CombatUnit = candidates[i]
-					tgt.hp = minf(tgt.max_hp, tgt.hp + hps_val * delta)
+					var tgt: CombatUnit = top_units[i]
+					tgt.hp = minf(tgt.max_hp, tgt.hp + heal_amt)
 				u.heal_telegraph_cooldown -= delta
 				if u.heal_telegraph_cooldown <= 0.0:
 					u.heal_telegraph_cooldown = 1.0
@@ -3417,8 +3662,13 @@ func _check_boss_hp_thresholds(u: CombatUnit, rng: RandomNumberGenerator = null)
 
 
 func _step_units(delta: float) -> void:
-	for u: CombatUnit in units.duplicate():
-		if not u.is_alive():
+	_ensure_tower_role_caches()
+	var unit_snap: int = units.size()
+	for u_idx in range(unit_snap):
+		if u_idx >= units.size():
+			break
+		var u: CombatUnit = units[u_idx]
+		if u == null or not u.is_alive():
 			continue
 		var max_idx: float = get_spawn_path_index(u.lane_id)
 
@@ -3443,23 +3693,47 @@ func _step_units(delta: float) -> void:
 			if u.mark_timer <= 0.0:
 				u.mark_damage_bonus = 0.0
 
-		# Tick DoT stacks (Bosses take DoT at 50% strength)
+		# Tick DoT stacks (Bosses take DoT at 50% strength). Combine stacks sharing source tower & tag into one hit per unit per tick.
 		if not u.dot_stacks.is_empty():
 			var boss_dot_scale: float = balance.boss_slow_and_dot_strength if u.is_boss() else 1.0
-			for i in range(u.dot_stacks.size() - 1, -1, -1):
-				if not u.is_alive():
+			var first_tid: int = int(u.dot_stacks[0]["tower_id"])
+			var first_tag: int = int(u.dot_stacks[0]["damage_tag"])
+			var all_same_source: bool = true
+			for s_i in range(1, u.dot_stacks.size()):
+				var se: Dictionary = u.dot_stacks[s_i]
+				if int(se["tower_id"]) != first_tid or int(se["damage_tag"]) != first_tag:
+					all_same_source = false
 					break
-				var d_entry: Dictionary = u.dot_stacks[i]
-				var tick_time: float = minf(delta, float(d_entry["remaining"]))
-				d_entry["remaining"] = float(d_entry["remaining"]) - delta
-				var src_t: TowerInstance = towers.get(int(d_entry["tower_id"]), null) as TowerInstance
-				var d_tag: int = int(d_entry["damage_tag"])
-				var dot_dmg: float = calculate_hit_damage(src_t, u, float(d_entry["dps"]) * tick_time * boss_dot_scale, d_tag)
-				_in_continuous_dot_tick = true
-				deal_damage_from_tower(src_t, u, dot_dmg, d_tag)
-				_in_continuous_dot_tick = false
-				if float(d_entry["remaining"]) <= 0.0 and i < u.dot_stacks.size():
-					u.dot_stacks.remove_at(i)
+			if all_same_source:
+				var total_raw_dot: float = 0.0
+				for i in range(u.dot_stacks.size() - 1, -1, -1):
+					var d_entry: Dictionary = u.dot_stacks[i]
+					var tick_time: float = minf(delta, float(d_entry["remaining"]))
+					d_entry["remaining"] = float(d_entry["remaining"]) - delta
+					total_raw_dot += float(d_entry["dps"]) * tick_time * boss_dot_scale
+					if float(d_entry["remaining"]) <= 0.0:
+						u.dot_stacks.remove_at(i)
+				if total_raw_dot > 0.0 and u.is_alive():
+					var src_t: TowerInstance = towers.get(first_tid, null) as TowerInstance
+					var dot_dmg: float = calculate_hit_damage(src_t, u, total_raw_dot, first_tag)
+					_in_continuous_dot_tick = true
+					deal_damage_from_tower(src_t, u, dot_dmg, first_tag)
+					_in_continuous_dot_tick = false
+			else:
+				for i in range(u.dot_stacks.size() - 1, -1, -1):
+					if not u.is_alive():
+						break
+					var d_entry: Dictionary = u.dot_stacks[i]
+					var tick_time: float = minf(delta, float(d_entry["remaining"]))
+					d_entry["remaining"] = float(d_entry["remaining"]) - delta
+					var src_t: TowerInstance = towers.get(int(d_entry["tower_id"]), null) as TowerInstance
+					var d_tag: int = int(d_entry["damage_tag"])
+					var dot_dmg: float = calculate_hit_damage(src_t, u, float(d_entry["dps"]) * tick_time * boss_dot_scale, d_tag)
+					_in_continuous_dot_tick = true
+					deal_damage_from_tower(src_t, u, dot_dmg, d_tag)
+					_in_continuous_dot_tick = false
+					if float(d_entry["remaining"]) <= 0.0 and i < u.dot_stacks.size():
+						u.dot_stacks.remove_at(i)
 
 		if not u.is_alive():
 			continue
@@ -3467,8 +3741,8 @@ func _step_units(delta: float) -> void:
 		# Validate engaged_blocker_id still points to a live blocker on an operational Congregation tower
 		if u.engaged_blocker_id >= 0:
 			var blocker_still_valid: bool = false
-			for t: TowerInstance in towers.values():
-				if t.is_operational() and t.get_type_id() == "the_congregation":
+			for t: TowerInstance in _congregation_towers:
+				if t.is_operational():
 					for b: Dictionary in t.active_blockers:
 						if int(b.get("id", -1)) == u.engaged_blocker_id:
 							blocker_still_valid = true
@@ -3641,14 +3915,14 @@ func _does_tower_cover_unit_tag(tower: TowerInstance, tag_int: int) -> bool:
 func simulate(duration: float, dt: float, rng: RandomNumberGenerator) -> Dictionary:
 	var steps: int = roundi(duration / dt)
 	var start_damage: float = total_damage_dealt
-	var start_hits: int = hit_events.size()
+	var start_hits: int = total_hits_count
 	var start_offerings: int = offerings
 	var start_scrap: int = scrap
 	for _i in range(steps):
 		step(dt, rng)
 	return {
 		"damage_dealt": total_damage_dealt - start_damage,
-		"hits_count": hit_events.size() - start_hits,
+		"hits_count": total_hits_count - start_hits,
 		"offerings_gained": offerings - start_offerings,
 		"scrap_gained": scrap - start_scrap,
 		"corruption": corruption,

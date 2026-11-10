@@ -48,6 +48,8 @@ func _ready() -> void:
 ## Lowers the opacity of urban buildings/skyscrapers while in tower-placement build mode
 ## so the construction ghost and hex grid are effortless to see.
 func set_build_mode_active(active: bool) -> void:
+	if is_build_mode_dimmed == active and _chunk_material != null:
+		return
 	is_build_mode_dimmed = active
 	if _chunk_material == null:
 		return
@@ -57,6 +59,21 @@ func set_build_mode_active(active: bool) -> void:
 	else:
 		_chunk_material.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
 		_chunk_material.albedo_color = Color.WHITE
+
+
+## Rebuilds only the chunk containing [param hex] (used when a single tower is placed or sold).
+func refresh_hex(hex: Vector2i) -> void:
+	var gs: Node = get_node_or_null("/root/GameState")
+	if gs == null or gs.get("hex_grid") == null or gs.get("path_generator") == null:
+		return
+	var grid: HexGrid = gs.get("hex_grid") as HexGrid
+	var pgen: PathGenerator = gs.get("path_generator") as PathGenerator
+	if _chunk_nodes.is_empty():
+		refresh_around_hex(hex, 1, true)
+		return
+	var cc: Vector2i = grid.hex_to_chunk(hex)
+	grid.ensure_chunk(cc)
+	_build_or_update_chunk(cc, grid, pgen)
 
 
 func clear_all_chunks() -> void:

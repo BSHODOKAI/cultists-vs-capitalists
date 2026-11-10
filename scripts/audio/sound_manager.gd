@@ -34,6 +34,7 @@ var _environment_fade_active: bool = false
 var _environment_fade_elapsed: float = 0.0
 var _environment_fade_duration: float = 5.0
 var _stream_cache: Dictionary = {}
+var _exists_cache: Dictionary = {}
 var _bound_buttons: Dictionary = {}
 
 
@@ -198,9 +199,15 @@ func get_or_load_stream(stream_path: String) -> AudioStream:
 func _has_valid_stream(stream_path: String) -> bool:
 	if stream_path.is_empty():
 		return false
+	if _exists_cache.has(stream_path):
+		return bool(_exists_cache[stream_path])
 	if DisplayServer.get_name() == "headless":
-		return ResourceLoader.exists(stream_path)
-	return get_or_load_stream(stream_path) != null
+		var ex: bool = ResourceLoader.exists(stream_path)
+		_exists_cache[stream_path] = ex
+		return ex
+	var ok: bool = get_or_load_stream(stream_path) != null
+	_exists_cache[stream_path] = ok
+	return ok
 
 
 func _play_approved_cue(cue_res: Dictionary) -> Dictionary:
@@ -628,14 +635,9 @@ func _on_tower_damaged_enemy(
 	amount: float,
 	damage_tag: int
 ) -> void:
-	# Skip microscopic per-frame DoT sub-ticks (e.g. 6 DPS * 0.033s = 0.2 dmg) and continuous DoT/puddle ticks
+	# Skip microscopic per-frame DoT sub-ticks (e.g. 6 DPS * 0.033s = 0.2 dmg)
 	if amount < 0.75:
 		return
-	var gs: Node = get_node_or_null("/root/GameState")
-	if gs != null:
-		var tsys: TowerSystem = gs.get("tower_system") as TowerSystem
-		if tsys != null and tsys._in_continuous_dot_tick:
-			return
 	play_unit_hit(unit_id, unit_tags, amount, damage_tag)
 
 

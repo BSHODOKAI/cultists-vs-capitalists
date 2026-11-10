@@ -69,6 +69,9 @@ var _unshaded_alpha_mat: StandardMaterial3D
 var _last_pgen: PathGenerator = null
 var _last_build_tower: TowerData = null
 var _last_tower_system: TowerSystem = null
+var _last_range_center: Vector2i = Vector2i(-999999, -999999)
+var _last_range_radius: int = -1
+var _last_range_color: Color = Color(0, 0, 0, 0)
 
 
 func _ready() -> void:
@@ -300,10 +303,22 @@ func _update_range_ring(
 			radius_hexes = int(selected_tower.get_behavior_param("chop_shop", "radius_hexes", 3))
 
 	if radius_hexes <= 0:
-		_range_multimesh.multimesh = null
+		if _last_range_radius != 0:
+			_last_range_radius = 0
+			_range_multimesh.multimesh = null
 		return
 
 	var ring_col: Color = get_active_range_ring_color(selected_tower, build_tower, in_build_mode)
+	if (
+		_range_multimesh.multimesh != null
+		and center_hex == _last_range_center
+		and radius_hexes == _last_range_radius
+		and ring_col == _last_range_color
+	):
+		return
+	_last_range_center = center_hex
+	_last_range_radius = radius_hexes
+	_last_range_color = ring_col
 	var ring_hexes: Array[Vector2i] = _HexMath.disk(center_hex, radius_hexes)
 	_populate_ring_multimesh(_range_multimesh, ring_hexes, ring_col, 0.05)
 

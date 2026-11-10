@@ -35,6 +35,16 @@ var objectives: Array[ObjectiveInstance] = []
 var _last_placed_id: String = ""
 ## True once an enemy has been near an unclaimed site during the current wave.
 var _contested_this_wave: bool = false
+var _cached_epoch: int = -1
+var _cached_site_count: int = -1
+var _cached_aura_radius: int = -1
+var _has_claimed_sites: bool = false
+var _has_captured_sites: bool = false
+var _has_unclaimed_sites: bool = false
+var _revealed_bonus_by_hex: Dictionary = {}
+var _jam_mult_by_hex: Dictionary = {}
+var _capture_speed_by_hex: Dictionary = {}
+var _capture_dmg_by_hex: Dictionary = {}
 
 
 func _init(p_balance: ObjectiveBalanceData = null, p_rng: RandomNumberGenerator = null) -> void:
@@ -49,6 +59,59 @@ func _init(p_balance: ObjectiveBalanceData = null, p_rng: RandomNumberGenerator 
 func reset() -> void:
 	objectives.clear()
 	_last_placed_id = ""
+	ObjectiveInstance.state_epoch += 1
+	_cached_epoch = -1
+
+
+func _ensure_aura_cache() -> void:
+	var r: int = get_aura_radius()
+	if (
+		_cached_epoch == ObjectiveInstance.state_epoch
+		and _cached_site_count == objectives.size()
+		and _cached_aura_radius == r
+	):
+		return
+	_cached_epoch = ObjectiveInstance.state_epoch
+	_cached_site_count = objectives.size()
+	_cached_aura_radius = r
+	_has_claimed_sites = false
+	_has_captured_sites = false
+	_has_unclaimed_sites = false
+	_revealed_bonus_by_hex.clear()
+	_jam_mult_by_hex.clear()
+	_capture_speed_by_hex.clear()
+	_capture_dmg_by_hex.clear()
+
+	if objectives.is_empty():
+		return
+	var disk_offsets: Array[Vector2i] = _HexGrid.hex_disk(Vector2i.ZERO, r)
+	for o: ObjectiveInstance in objectives:
+		if o == null:
+			continue
+		if o.state == ObjectiveInstance.State.UNCLAIMED:
+			_has_unclaimed_sites = true
+		elif o.state == ObjectiveInstance.State.CLAIMED:
+			_has_claimed_sites = true
+			if o.data != null:
+				var rev_b: float = o.data.revealed_damage_bonus
+				var jam_m: float = maxf(0.0, o.data.jam_duration_mult)
+				for off: Vector2i in disk_offsets:
+					var h: Vector2i = o.hex + off
+					if rev_b != 0.0:
+						_revealed_bonus_by_hex[h] = float(_revealed_bonus_by_hex.get(h, 0.0)) + rev_b
+					if not is_equal_approx(jam_m, 1.0):
+						_jam_mult_by_hex[h] = float(_jam_mult_by_hex.get(h, 1.0)) * jam_m
+		elif o.state == ObjectiveInstance.State.CAPTURED:
+			_has_captured_sites = true
+			if o.data != null:
+				var spd_m: float = 1.0 + maxf(0.0, o.data.capture_enemy_speed_bonus)
+				var dmg_m: float = 1.0 - o.data.capture_enemy_damage_reduction
+				for off: Vector2i in disk_offsets:
+					var h: Vector2i = o.hex + off
+					if not is_equal_approx(spd_m, 1.0):
+						_capture_speed_by_hex[h] = float(_capture_speed_by_hex.get(h, 1.0)) * spd_m
+					if not is_equal_approx(dmg_m, 1.0):
+						_capture_dmg_by_hex[h] = float(_capture_dmg_by_hex.get(h, 1.0)) * dmg_m
 
 
 # --- Queries -----------------------------------------------------------------
@@ -82,10 +145,8 @@ func get_objective_hexes() -> Array[Vector2i]:
 ## True when at least one site is still UNCLAIMED (i.e. capturable). Lets callers
 ## skip the per-tick enemy scan entirely when nothing can change.
 func has_unclaimed_sites() -> bool:
-	for o: ObjectiveInstance in objectives:
-		if o.state == ObjectiveInstance.State.UNCLAIMED:
-			return true
-	return false
+	_ensure_aura_cache()
+	return _has_unclaimed_sites
 
 
 ## True when the cult currently holds a site of [param kind].
@@ -356,40 +417,36 @@ func get_aura_radius() -> int:
 ## Additive Revealed-tower damage from held Ley Line sites whose aura covers
 ## [param hex]. Zero when the hex is outside every held site.
 func get_revealed_damage_bonus_at(hex: Vector2i) -> float:
-	var total: float = 0.0
-	for o: ObjectiveInstance in objectives:
-		if o.is_claimed() and o.data != null and _in_aura(o, hex):
-			total += o.data.revealed_damage_bonus
-	return total
+	_ensure_aura_cache()
+	if not _has_claimed_sites:
+		return 0.0
+	return float(_revealed_bonus_by_hex.get(hex, 0.0))
 
 
 ## Multiplier on Rigged-tower jam duration from held Data Center sites covering
 ## [param hex] (< 1.0 = shortened jam).
 func get_jam_duration_mult_at(hex: Vector2i) -> float:
-	var mult: float = 1.0
-	for o: ObjectiveInstance in objectives:
-		if o.is_claimed() and o.data != null and _in_aura(o, hex):
-			mult *= maxf(0.0, o.data.jam_duration_mult)
-	return mult
+	_ensure_aura_cache()
+	if not _has_claimed_sites:
+		return 1.0
+	return float(_jam_mult_by_hex.get(hex, 1.0))
 
 
 ## Speed multiplier for an enemy at [param hex] from CORPORATE-CAPTURED sites.
 func get_capture_speed_mult_at(hex: Vector2i) -> float:
-	var mult: float = 1.0
-	for o: ObjectiveInstance in objectives:
-		if o.is_captured() and o.data != null and _in_aura(o, hex):
-			mult *= 1.0 + maxf(0.0, o.data.capture_enemy_speed_bonus)
-	return mult
+	_ensure_aura_cache()
+	if not _has_captured_sites:
+		return 1.0
+	return float(_capture_speed_by_hex.get(hex, 1.0))
 
 
 ## Damage-taken multiplier for an enemy at [param hex] from CORPORATE-CAPTURED
 ## sites (< 1.0 = takes less damage).
 func get_capture_damage_taken_mult_at(hex: Vector2i) -> float:
-	var mult: float = 1.0
-	for o: ObjectiveInstance in objectives:
-		if o.is_captured() and o.data != null and _in_aura(o, hex):
-			mult *= 1.0 - o.data.capture_enemy_damage_reduction
-	return mult
+	_ensure_aura_cache()
+	if not _has_captured_sites:
+		return 1.0
+	return float(_capture_dmg_by_hex.get(hex, 1.0))
 
 
 ## True when [param hex] is already inside some site's aura of the same kind, so

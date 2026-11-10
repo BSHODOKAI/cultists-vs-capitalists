@@ -73,6 +73,11 @@ const PANEL_INNER_WIDTH = PANEL_WIDTH - 20.0
 ## Which tower's Sell button is ARMED, waiting for a confirming second press. Keyed by
 ## tower_id so changing selection disarms it automatically; -1 means nothing is armed.
 var _sell_armed_for: int = -1
+var _built_ladder_tower_id: int = -1
+var _built_ladder_tier: int = -1
+var _built_ladder_branch: int = -1
+var _built_ladder_rite_visible: bool = false
+var _built_upgrade_buttons: Dictionary = {}
 
 
 func _ready() -> void:
@@ -227,8 +232,14 @@ func _connect_signals() -> void:
 	gs.connect("build_mode_changed", func(_td: Variant) -> void: refresh())
 	gs.connect("tower_upgraded_on_hex", func(_t: Variant, _n: String) -> void: refresh())
 	gs.connect("tower_maintained", func(_t: Variant) -> void: refresh())
-	gs.connect("currencies_changed", func(_o: int, _s: int) -> void: refresh())
-	gs.connect("corruption_changed", func(_c: int) -> void: refresh())
+	gs.connect("currencies_changed", func(_o: int, _s: int) -> void:
+		if visible:
+			refresh()
+	)
+	gs.connect("corruption_changed", func(_c: int) -> void:
+		if visible:
+			refresh()
+	)
 	if gs.has_signal("fork_candidate_selected"):
 		gs.connect("fork_candidate_selected", func(_idx: int, _cand: Dictionary) -> void: refresh())
 	if gs.has_signal("path_preview_ready"):
@@ -247,11 +258,8 @@ func refresh() -> void:
 	_penance_button.disabled = (tsys == null or not tsys.can_perform_penance())
 	_penance_button.text = "Global Penance (-5 Corruption)\nCost: 40 · Now: %d" % int(gs.get("corruption"))
 
-	for child: Node in _tier_container.get_children():
-		_tier_container.remove_child(child)
-		child.queue_free()
-
 	if inst == null or inst.def == null or tsys == null:
+		_clear_upgrade_ladder()
 		var build_td: TowerData = gs.get("selected_build_tower") as TowerData
 		if build_td != null:
 			visible = true
@@ -496,7 +504,39 @@ static func compute_panel_rect(view_size: Vector2, preferred_top: float) -> Rect
 	return Rect2(view_size.x - PANEL_MARGIN - PANEL_WIDTH, top, PANEL_WIDTH, PANEL_HEIGHT)
 
 
+func _clear_upgrade_ladder() -> void:
+	_built_ladder_tower_id = -1
+	_built_ladder_tier = -1
+	_built_ladder_branch = -1
+	_built_ladder_rite_visible = false
+	_built_upgrade_buttons.clear()
+	for child: Node in _tier_container.get_children():
+		_tier_container.remove_child(child)
+		child.queue_free()
+
+
 func _build_upgrade_ladder(inst: TowerInstance, tsys: TowerSystem) -> void:
+	var rite_vis: bool = tsys.has_ever_drawn_rite()
+	if (
+		_built_ladder_tower_id == inst.tower_id
+		and _built_ladder_tier == inst.tier
+		and _built_ladder_branch == inst.branch
+		and _built_ladder_rite_visible == rite_vis
+		and _tier_container.get_child_count() > 0
+	):
+		for node_id: String in _built_upgrade_buttons.keys():
+			var btn: Button = _built_upgrade_buttons[node_id] as Button
+			if is_instance_valid(btn):
+				var check: Dictionary = tsys.can_upgrade_tower(inst, node_id, false)
+				btn.disabled = not bool(check.get("ok", false))
+		return
+
+	_clear_upgrade_ladder()
+	_built_ladder_tower_id = inst.tower_id
+	_built_ladder_tier = inst.tier
+	_built_ladder_branch = inst.branch
+	_built_ladder_rite_visible = rite_vis
+
 	var def: TowerData = inst.def
 	if inst.tier == 1 and def.t2_upgrade != null:
 		_tier_container.add_child(_create_upgrade_card(inst, tsys, def.t2_upgrade))
@@ -645,6 +685,7 @@ func _create_upgrade_button(inst: TowerInstance, tsys: TowerSystem, node: Upgrad
 	btn.tooltip_text = "Cost: %d %s" % [node.cost, curr_name]
 	btn.text = "Cost: %d%s" % [node.cost, impact_str]
 	btn.pressed.connect(_on_upgrade_pressed.bind(inst, node.id), CONNECT_DEFERRED)
+	_built_upgrade_buttons[node.id] = btn
 	return btn
 
 

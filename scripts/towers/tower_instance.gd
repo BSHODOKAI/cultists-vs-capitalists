@@ -56,14 +56,150 @@ var shot_counter: int = 0
 
 # --- Per-step cached aura/variety stats (avoids O(T^3 * U) recalculation) ----
 var cached_variety_bonus: float = -1.0
+var cached_mesh_network_rate: float = -1.0
 var cached_shrine_buffs: Dictionary = {}
 var cached_effective_range: int = -1
+var cached_congregation_station: Dictionary = {}
+
+# --- Upgrade-derived caches (rebuilt only when unlocked_nodes changes) -------
+var _cached_unlocked_count: int = -1
+var _behavior_map: Dictionary = {}
+var _behavior_node_map: Dictionary = {}
+var _behavior_param_sums: Dictionary = {}
+var _corruption_stat_map: Dictionary = {}
+var _cached_upgrade_damage_mult: float = 1.0
+var _cached_upgrade_fire_rate_mult: float = 1.0
+var _cached_corruption_scaled_dmg: float = 0.0
+var _cached_applies_displacement: bool = false
+var _cached_can_target_air: bool = false
+var _cached_can_target_ground: bool = false
+var _cached_member_count: int = 1
+var _cached_max_targets: int = 1
+var _cached_slow_aura: float = 0.0
+var _cached_grounding_bonus: float = 0.0
+var _cached_dot_duration: float = 0.0
+var _cached_shred_cap: int = 5
+var _cached_aura_fire_rate: float = 0.0
+var _cached_summon_max_count: int = 0
+var _cached_summon_max_hp: float = 60.0
+var _cached_income_offerings: int = 0
 
 
 func invalidate_stat_cache() -> void:
 	cached_variety_bonus = -1.0
-	cached_shrine_buffs.clear()
+	cached_mesh_network_rate = -1.0
+	cached_shrine_buffs = {}
 	cached_effective_range = -1
+	_cached_unlocked_count = -1
+
+
+func invalidate_step_cache() -> void:
+	cached_shrine_buffs = {}
+	cached_effective_range = -1
+
+
+func invalidate_path_cache() -> void:
+	cached_congregation_station.clear()
+
+
+func _ensure_upgrade_cache() -> void:
+	if _cached_unlocked_count == unlocked_nodes.size():
+		return
+	_cached_unlocked_count = unlocked_nodes.size()
+	_behavior_map.clear()
+	_behavior_node_map.clear()
+	_behavior_param_sums.clear()
+	_corruption_stat_map.clear()
+	_cached_applies_displacement = false
+	_cached_can_target_air = false
+	_cached_can_target_ground = false
+	var members: int = 1
+	var max_t: int = 1
+	var slow_a: float = 0.0
+	var ground_b: float = 0.0
+	var dot_d: float = 0.0
+	var shred_c: int = 5
+	var aura_fr: float = 0.0
+	var sum_cnt: int = 0
+	var base_sum_hp: float = 60.0
+	var base_inc: int = 0
+	if def != null:
+		members = def.starting_members
+		max_t = def.max_targets
+		slow_a = def.slow_aura_strength
+		ground_b = def.grounding_bonus
+		dot_d = def.dot_duration
+		aura_fr = def.aura_fire_rate_bonus
+		sum_cnt = def.summon_count
+		base_sum_hp = def.summon_hp
+		base_inc = def.income_offerings
+		for b: String in def.base_behaviors:
+			_behavior_map[b] = true
+			if TowerBehaviorRegistry.behavior_applies_displacement(b):
+				_cached_applies_displacement = true
+		for t: int in def.target_tags:
+			if t == _C.UnitTag.AIR:
+				_cached_can_target_air = true
+			elif t == _C.UnitTag.GROUND:
+				_cached_can_target_ground = true
+	var dmg_add: float = 0.0
+	var rate_add: float = 0.0
+	var corr_dmg: float = 0.0
+	var add_sum_hp: float = 0.0
+	var mult_sum_hp: float = 0.0
+	var inc_mult: float = 0.0
+	for node: UpgradeNode in unlocked_nodes:
+		if node == null:
+			continue
+		dmg_add += node.damage_mult
+		rate_add += node.fire_rate_mult
+		corr_dmg += node.corruption_scaled_damage
+		members += node.members_add
+		max_t += node.targets_add
+		if node.slow_aura_override > 0.0:
+			slow_a = node.slow_aura_override
+		if node.grounding_bonus_override > 0.0:
+			ground_b = node.grounding_bonus_override
+		if node.dot_duration_override > 0.0:
+			dot_d = node.dot_duration_override
+		if node.shred_cap_override > shred_c:
+			shred_c = node.shred_cap_override
+		if node.aura_fire_rate_override > 0.0:
+			aura_fr = node.aura_fire_rate_override
+		sum_cnt += node.summon_count_add
+		add_sum_hp += node.summon_hp_add
+		mult_sum_hp += node.summon_hp_mult
+		inc_mult += node.income_mult
+		if node.grants_air_targeting:
+			_cached_can_target_air = true
+		for k_stat: Variant in node.corruption_scaled_stat.keys():
+			var ks: String = String(k_stat)
+			_corruption_stat_map[ks] = float(_corruption_stat_map.get(ks, 0.0)) + float(node.corruption_scaled_stat[k_stat])
+		for k_param: Variant in node.behavior_params.keys():
+			var pv: Variant = node.behavior_params[k_param]
+			if pv is int or pv is float:
+				var kp: String = String(k_param)
+				_behavior_param_sums[kp] = float(_behavior_param_sums.get(kp, 0.0)) + float(pv)
+		for b: String in node.behaviors:
+			_behavior_map[b] = true
+			_behavior_node_map[b] = node
+			if TowerBehaviorRegistry.behavior_applies_displacement(b):
+				_cached_applies_displacement = true
+	if corr_dmg != 0.0:
+		_corruption_stat_map["damage"] = float(_corruption_stat_map.get("damage", 0.0)) + corr_dmg
+	_cached_upgrade_damage_mult = 1.0 + dmg_add
+	_cached_upgrade_fire_rate_mult = 1.0 + rate_add
+	_cached_corruption_scaled_dmg = corr_dmg
+	_cached_member_count = maxi(1, members)
+	_cached_max_targets = maxi(1, max_t)
+	_cached_slow_aura = slow_a
+	_cached_grounding_bonus = ground_b
+	_cached_dot_duration = dot_d
+	_cached_shred_cap = shred_c
+	_cached_aura_fire_rate = aura_fr
+	_cached_summon_max_count = sum_cnt
+	_cached_summon_max_hp = (base_sum_hp + add_sum_hp) * (1.0 + mult_sum_hp)
+	_cached_income_offerings = roundi(float(base_inc) * (1.0 + inc_mult)) if base_inc > 0 else 0
 
 ## Active Congregation blockers: Array of Dictionaries:
 ## { "id": int, "hp": float, "max_hp": float, "dps": float, "hex": Vector2i, "path_idx": int, "damage_reduction": float }
@@ -105,19 +241,16 @@ func has_upgrade(node_id: String) -> bool:
 
 
 func has_behavior(behavior_id: String) -> bool:
-	if def != null and def.base_behaviors.has(behavior_id):
-		return true
-	for node: UpgradeNode in unlocked_nodes:
-		if node != null and node.behaviors.has(behavior_id):
-			return true
-	return false
+	_ensure_upgrade_cache()
+	return _behavior_map.has(behavior_id)
 
 
 func get_behavior_param(behavior_id: String, key: String, default_value: Variant = null) -> Variant:
-	for node: UpgradeNode in unlocked_nodes:
-		if node != null and node.behaviors.has(behavior_id):
-			if node.behavior_params.has(key):
-				return node.behavior_params[key]
+	_ensure_upgrade_cache()
+	if _behavior_node_map.has(behavior_id):
+		var node: UpgradeNode = _behavior_node_map[behavior_id] as UpgradeNode
+		if node != null and node.behavior_params.has(key):
+			return node.behavior_params[key]
 	return default_value
 
 
@@ -125,28 +258,16 @@ func get_behavior_param(behavior_id: String, key: String, default_value: Variant
 ## Target selection uses this to aim a displacement attack at mobs the effect can move,
 ## rather than at a Boss or a mob that has used up its displacement diminishing returns.
 func applies_displacement() -> bool:
-	if def != null:
-		for b: String in def.base_behaviors:
-			if TowerBehaviorRegistry.behavior_applies_displacement(b):
-				return true
-	for node: UpgradeNode in unlocked_nodes:
-		if node == null:
-			continue
-		for b: String in node.behaviors:
-			if TowerBehaviorRegistry.behavior_applies_displacement(b):
-				return true
-	return false
+	_ensure_upgrade_cache()
+	return _cached_applies_displacement
 
 
 ## Sums [param key] across every unlocked node that declares it. Rite kill effects are read
 ## this way so a new Rite node needs no hardcoded behaviour-id branch in the combat code:
 ## the node's own params are the whole specification.
 func get_behavior_param_sum(key: String) -> float:
-	var total: float = 0.0
-	for node: UpgradeNode in unlocked_nodes:
-		if node != null and node.behavior_params.has(key):
-			total += float(node.behavior_params[key])
-	return total
+	_ensure_upgrade_cache()
+	return float(_behavior_param_sums.get(key, 0.0))
 
 
 ## True when the tower can currently act (not misfired, jammed, scrap-starved, disabled, or converted).
@@ -212,10 +333,8 @@ func get_effective_range_hexes(extra_range_mult: float = 0.0) -> int:
 
 
 func get_upgrade_damage_multiplier() -> float:
-	var add_mult: float = 0.0
-	for node: UpgradeNode in unlocked_nodes:
-		add_mult += node.damage_mult
-	return 1.0 + add_mult
+	_ensure_upgrade_cache()
+	return _cached_upgrade_damage_mult
 
 
 ## Rite branch (hexed_nail_gun): the "ledger" of consecutive shots signed against
@@ -225,138 +344,93 @@ var ledger_stacks: int = 0
 
 
 func get_upgrade_fire_rate_multiplier() -> float:
-	var add_mult: float = 0.0
-	for node: UpgradeNode in unlocked_nodes:
-		add_mult += node.fire_rate_mult
-	return 1.0 + add_mult
+	_ensure_upgrade_cache()
+	return _cached_upgrade_fire_rate_mult
 
 
 ## Rite branch signature: additive damage per point of Corruption, summed across
 ## unlocked nodes. 0.0 when the tower has no Rite node (the common case).
 func get_corruption_scaled_damage() -> float:
-	var per_point: float = 0.0
-	for node: UpgradeNode in unlocked_nodes:
-		per_point += node.corruption_scaled_damage
-	return per_point
+	_ensure_upgrade_cache()
+	return _cached_corruption_scaled_dmg
 
 
 ## Rite: additive per-point-Corruption bonus for [param key], summed across unlocked nodes.
 ## The `"damage"` key folds in the original [member UpgradeNode.corruption_scaled_damage]
 ## field so both spellings agree. Returns 0.0 when the tower has no Rite node (the common case).
 func get_corruption_scaled_stat(key: String) -> float:
-	var per_point: float = 0.0
-	for node: UpgradeNode in unlocked_nodes:
-		if node == null:
-			continue
-		if key == "damage":
-			per_point += node.corruption_scaled_damage
-		if node.corruption_scaled_stat.has(key):
-			per_point += float(node.corruption_scaled_stat[key])
-	return per_point
+	_ensure_upgrade_cache()
+	return float(_corruption_stat_map.get(key, 0.0))
 
 
 ## True when this tower draws ANY Corruption-scaled power. Used by the data test to enforce
 ## that every Rite node is genuinely the Corruption-scaling branch, whatever stat it scales.
 func has_corruption_scaling() -> bool:
+	_ensure_upgrade_cache()
 	for key: String in ["damage", "aura_fire_rate", "income", "summon_hp"]:
-		if get_corruption_scaled_stat(key) > 0.0:
+		if float(_corruption_stat_map.get(key, 0.0)) > 0.0:
 			return true
 	return false
 
 
 func get_member_count() -> int:
-	var count: int = def.starting_members if def != null else 1
-	for node: UpgradeNode in unlocked_nodes:
-		count += node.members_add
-	return maxi(1, count)
+	_ensure_upgrade_cache()
+	return _cached_member_count
 
 
 func get_max_targets() -> int:
-	var count: int = def.max_targets if def != null else 1
-	for node: UpgradeNode in unlocked_nodes:
-		count += node.targets_add
-	return maxi(1, count)
+	_ensure_upgrade_cache()
+	return _cached_max_targets
 
 
 func get_slow_aura_strength() -> float:
-	var val: float = def.slow_aura_strength if def != null else 0.0
-	for node: UpgradeNode in unlocked_nodes:
-		if node.slow_aura_override > 0.0:
-			val = node.slow_aura_override
-	return val
+	_ensure_upgrade_cache()
+	return _cached_slow_aura
 
 
 ## Extra ELECTRIC damage-taken fraction this tower applies to air it grounds (AIR_CONTROL).
 ## Resolves the upgrade override, then adds any Rite-branch per-Corruption scaling.
 func get_grounding_bonus() -> float:
-	if def == null:
-		return 0.0
-	var val: float = def.grounding_bonus
-	for node: UpgradeNode in unlocked_nodes:
-		if node.grounding_bonus_override > 0.0:
-			val = node.grounding_bonus_override
-	return val
+	_ensure_upgrade_cache()
+	return _cached_grounding_bonus
 
 
 func get_dot_duration() -> float:
-	var val: float = def.dot_duration if def != null else 0.0
-	for node: UpgradeNode in unlocked_nodes:
-		if node.dot_duration_override > 0.0:
-			val = node.dot_duration_override
-	return val
+	_ensure_upgrade_cache()
+	return _cached_dot_duration
 
 
 func get_shred_cap() -> int:
-	var cap: int = 5
-	for node: UpgradeNode in unlocked_nodes:
-		if node.shred_cap_override > cap:
-			cap = node.shred_cap_override
-	return cap
+	_ensure_upgrade_cache()
+	return _cached_shred_cap
 
 
 func get_aura_fire_rate_bonus() -> float:
-	var val: float = def.aura_fire_rate_bonus if def != null else 0.0
-	for node: UpgradeNode in unlocked_nodes:
-		if node.aura_fire_rate_override > 0.0:
-			val = node.aura_fire_rate_override
-	return val
+	_ensure_upgrade_cache()
+	return _cached_aura_fire_rate
 
 
 func get_summon_max_count() -> int:
-	var count: int = def.summon_count if def != null else 0
-	for node: UpgradeNode in unlocked_nodes:
-		count += node.summon_count_add
-	return count
+	_ensure_upgrade_cache()
+	return _cached_summon_max_count
 
 
 func get_summon_max_hp() -> float:
-	var base_hp: float = def.summon_hp if def != null else 60.0
-	var add_hp: float = 0.0
-	var mult_hp: float = 0.0
-	for node: UpgradeNode in unlocked_nodes:
-		add_hp += node.summon_hp_add
-		mult_hp += node.summon_hp_mult
-	return (base_hp + add_hp) * (1.0 + mult_hp)
+	_ensure_upgrade_cache()
+	return _cached_summon_max_hp
 
 
 func get_income_offerings() -> int:
-	if def == null or def.income_offerings <= 0:
-		return 0
-	var mult: float = 0.0
-	for node: UpgradeNode in unlocked_nodes:
-		mult += node.income_mult
-	return roundi(float(def.income_offerings) * (1.0 + mult))
+	_ensure_upgrade_cache()
+	return _cached_income_offerings
 
 
 func can_target_domain(unit: CombatUnit) -> bool:
 	if def == null or unit == null:
 		return false
-	var allowed: Array[int] = def.target_tags.duplicate()
-	for node: UpgradeNode in unlocked_nodes:
-		if node.grants_air_targeting and not allowed.has(_C.UnitTag.AIR):
-			allowed.append(_C.UnitTag.AIR)
+	_ensure_upgrade_cache()
 	if unit.is_air():
-		return allowed.has(_C.UnitTag.AIR)
+		return _cached_can_target_air
 	if unit.is_ground():
-		return allowed.has(_C.UnitTag.GROUND)
+		return _cached_can_target_ground
 	return false

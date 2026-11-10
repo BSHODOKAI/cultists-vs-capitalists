@@ -135,9 +135,9 @@ func _connect_signals() -> void:
 	if gs.has_signal("fork_candidate_selected"):
 		gs.connect("fork_candidate_selected", func(_idx: int, _cand: Dictionary) -> void: refresh())
 	if gs.has_signal("towers_crushed_by_fork"):
-		gs.connect("towers_crushed_by_fork", func(_lid: int, _c: Array, _bo: int, _bs: int) -> void: refresh())
+		gs.connect("towers_crushed_by_fork", func(_lid: int, _c: Array, _bo: int, _bs: int) -> void: _refresh_bounty_only())
 	if gs.has_signal("lane_bounty_claimed"):
-		gs.connect("lane_bounty_claimed", func(_lid: int, _uid: int, _po: int, _ps: int) -> void: refresh())
+		gs.connect("lane_bounty_claimed", func(_lid: int, _uid: int, _po: int, _ps: int) -> void: _refresh_bounty_only())
 	gs.connect("next_faction_announced", func(fac: String, logo: String) -> void:
 		_next_faction_banner.visible = true
 		_next_faction_banner.text = "BOSS SLAIN! Next Faction: %s (%s)" % [fac.replace("_", " ").to_upper(), logo]
@@ -165,6 +165,24 @@ func clear_boss_and_next_faction_banner() -> void:
 		if dir != null:
 			dir.revealed_next_faction_id = ""
 			dir.revealed_next_faction_logo = ""
+
+
+func _refresh_bounty_only() -> void:
+	var gs: Node = get_node_or_null("/root/GameState")
+	if gs == null or _bounty_label == null:
+		return
+	var tsys: TowerSystem = gs.get("tower_system") as TowerSystem
+	if tsys == null:
+		_bounty_label.visible = false
+		return
+	var tot_b: Dictionary = tsys.get_total_bounty_pool()
+	var b_off: int = int(tot_b.get("offerings", 0))
+	var b_scr: int = int(tot_b.get("scrap", 0))
+	if b_off > 0 or b_scr > 0:
+		_bounty_label.visible = true
+		_bounty_label.text = "Salvage Bounty Pool: +%d Off / +%d Scrap remaining" % [b_off, b_scr]
+	else:
+		_bounty_label.visible = false
 
 
 func refresh() -> void:

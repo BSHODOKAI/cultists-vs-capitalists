@@ -88,7 +88,7 @@ func _connect_signals() -> void:
 	gs.connect("tower_upgraded_on_hex", _on_tower_upgraded)
 	gs.connect("tower_sold_from_hex", _on_tower_sold)
 	gs.connect("tower_maintained", _on_tower_maintained)
-	gs.connect("selected_tower_changed", func(_t: Variant) -> void: _refresh_hover_and_overlays())
+	gs.connect("selected_tower_changed", func(_t: Variant) -> void: _refresh_hover_only())
 	gs.connect("build_mode_changed", func(_td: Variant) -> void: _refresh_hover_and_overlays())
 	gs.connect("enemy_spawned", _on_enemy_spawned)
 	gs.connect("enemy_died", _on_enemy_died)
@@ -172,7 +172,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				gs.set("has_hovered_hex", true)
 			else:
 				gs.set("has_hovered_hex", false)
-			_refresh_hover_and_overlays()
+			_refresh_hover_only()
 		elif not st.canceled:
 			_handle_hex_tap_or_click(st.position, false, gs)
 			if get_viewport() != null:
@@ -185,12 +185,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		var mm: InputEventMouseMotion = event as InputEventMouseMotion
 		var picked: Variant = camera_rig.pick_hex_at_screen(mm.position)
-		if picked != null:
-			gs.set("hovered_hex", picked as Vector2i)
-			gs.set("has_hovered_hex", true)
-		else:
-			gs.set("has_hovered_hex", false)
-		_refresh_hover_and_overlays()
+		var new_has_hover: bool = (picked != null)
+		var new_hover_hex: Vector2i = (picked as Vector2i) if new_has_hover else Vector2i.ZERO
+		var old_has_hover: bool = bool(gs.get("has_hovered_hex"))
+		var old_hover_hex: Vector2i = gs.get("hovered_hex") as Vector2i
+		if new_has_hover != old_has_hover or (new_has_hover and new_hover_hex != old_hover_hex):
+			gs.set("hovered_hex", new_hover_hex)
+			gs.set("has_hovered_hex", new_has_hover)
+			_refresh_hover_only()
 
 	# Mouse button clicks on the hex grid (ignore touch-emulated left clicks; touch taps fire on release above)
 	if event is InputEventMouseButton and event.pressed and camera_rig != null:
@@ -374,12 +376,11 @@ func _rebuild_world_views() -> void:
 	_refresh_hover_and_overlays()
 
 
-func _refresh_hover_and_overlays() -> void:
+func _refresh_hover_only() -> void:
 	var gs: Node = get_node_or_null("/root/GameState")
 	if gs == null or overlay_view == null:
 		return
 	var tsys: TowerSystem = gs.get("tower_system") as TowerSystem
-	var pgen: PathGenerator = gs.get("path_generator") as PathGenerator
 	var h_hex: Vector2i = gs.get("hovered_hex") as Vector2i
 	var has_h: bool = bool(gs.get("has_hovered_hex"))
 	var build_td: TowerData = gs.get("selected_build_tower") as TowerData
@@ -389,20 +390,30 @@ func _refresh_hover_and_overlays() -> void:
 	if terrain_view != null:
 		terrain_view.set_build_mode_active(build_td != null)
 	overlay_view.update_hover(h_hex, has_h, build_td, val, sel_t, tsys)
+
+
+func _refresh_hover_and_overlays() -> void:
+	var gs: Node = get_node_or_null("/root/GameState")
+	if gs == null or overlay_view == null:
+		return
+	var pgen: PathGenerator = gs.get("path_generator") as PathGenerator
 	if pgen != null:
 		overlay_view.refresh_path_overlays(pgen)
+	_refresh_hover_only()
 
 
 func _on_tower_placed(inst: TowerInstance) -> void:
 	if tower_factory != null:
 		tower_factory.spawn_tower_view(inst)
-	_rebuild_world_views()
+	if terrain_view != null and inst != null:
+		terrain_view.refresh_hex(inst.hex)
+	_refresh_hover_and_overlays()
 
 
 func _on_tower_upgraded(inst: TowerInstance, _node_id: String) -> void:
 	if tower_factory != null:
 		tower_factory.refresh_tower_view(inst)
-	_refresh_hover_and_overlays()
+	_refresh_hover_only()
 
 
 func _on_tower_sold(tower_id: int, _hex: Vector2i, refund: Dictionary) -> void:
@@ -415,7 +426,9 @@ func _on_tower_sold(tower_id: int, _hex: Vector2i, refund: Dictionary) -> void:
 			effects_view.spawn_floating_text(_HexMath.hex_to_world(_hex, 0.5), "+%d Off" % off_r, Color(0.85, 0.65, 1.0))
 		if scr_r > 0:
 			effects_view.spawn_floating_text(_HexMath.hex_to_world(_hex, 0.8), "+%d Scrap" % scr_r, Color(1.0, 0.65, 0.25))
-	_rebuild_world_views()
+	if terrain_view != null:
+		terrain_view.refresh_hex(_hex)
+	_refresh_hover_and_overlays()
 
 
 func _on_tower_maintained(inst: TowerInstance) -> void:

@@ -39,6 +39,7 @@ var _status_label: Label3D
 var _channel_ring: MeshInstance3D
 var _channel_ring_mat: StandardMaterial3D
 var _blocker_container: Node3D
+var _last_status_text: String = ""
 
 
 func setup(inst: TowerInstance, theme: VisualThemeData = null) -> void:
@@ -142,31 +143,50 @@ func update_combat_status() -> void:
 	if tower_instance == null:
 		return
 
-	# Status badge
-	var status_parts: Array[String] = []
-	if tower_instance.converted_by_enemy:
-		status_parts.append("CONVERTED (%.1fs)" % tower_instance.conversion_timer)
-	elif tower_instance.being_channeled_by_unit_id >= 0:
-		status_parts.append("HACKING (%.1fs)" % tower_instance.channel_countdown_remaining)
-	elif tower_instance.jam_timer > 0.0:
-		status_parts.append("JAMMED (%.1fs)" % tower_instance.jam_timer)
-	elif tower_instance.misfired_this_wave:
-		status_parts.append("MISFIRED")
-	elif tower_instance.disabled_for_wave_no_scrap:
-		status_parts.append("NO SCRAP")
-	elif tower_instance.enemy_disable_timer > 0.0:
-		status_parts.append("DISABLED (%.1fs)" % tower_instance.enemy_disable_timer)
-	elif tower_instance.compliance_suppressed:
-		status_parts.append("SUPPRESSED")
-
-	if status_parts.is_empty():
-		_status_label.visible = false
+	var has_status: bool = (
+		tower_instance.converted_by_enemy
+		or tower_instance.being_channeled_by_unit_id >= 0
+		or tower_instance.jam_timer > 0.0
+		or tower_instance.misfired_this_wave
+		or tower_instance.disabled_for_wave_no_scrap
+		or tower_instance.enemy_disable_timer > 0.0
+		or tower_instance.compliance_suppressed
+	)
+	if not has_status:
+		if _status_label.visible:
+			_status_label.visible = false
+			_last_status_text = ""
+		if _channel_ring.visible:
+			_channel_ring.visible = false
 	else:
-		_status_label.visible = true
-		_status_label.text = " | ".join(status_parts)
-		_status_label.modulate = Color(1.0, 0.35, 0.35, 1.0)
+		var status_parts: Array[String] = []
+		if tower_instance.converted_by_enemy:
+			status_parts.append("CONVERTED (%.1fs)" % tower_instance.conversion_timer)
+		elif tower_instance.being_channeled_by_unit_id >= 0:
+			status_parts.append("HACKING (%.1fs)" % tower_instance.channel_countdown_remaining)
+		elif tower_instance.jam_timer > 0.0:
+			status_parts.append("JAMMED (%.1fs)" % tower_instance.jam_timer)
+		elif tower_instance.misfired_this_wave:
+			status_parts.append("MISFIRED")
+		elif tower_instance.disabled_for_wave_no_scrap:
+			status_parts.append("NO SCRAP")
+		elif tower_instance.enemy_disable_timer > 0.0:
+			status_parts.append("DISABLED (%.1fs)" % tower_instance.enemy_disable_timer)
+		elif tower_instance.compliance_suppressed:
+			status_parts.append("SUPPRESSED")
 
-	_channel_ring.visible = (tower_instance.being_channeled_by_unit_id >= 0 or tower_instance.converted_by_enemy)
+		if status_parts.is_empty():
+			_status_label.visible = false
+			_last_status_text = ""
+		else:
+			_status_label.visible = true
+			var next_txt: String = " | ".join(status_parts)
+			if next_txt != _last_status_text:
+				_last_status_text = next_txt
+				_status_label.text = next_txt
+			_status_label.modulate = Color(1.0, 0.35, 0.35, 1.0)
+
+		_channel_ring.visible = (tower_instance.being_channeled_by_unit_id >= 0 or tower_instance.converted_by_enemy)
 
 	# Sync Congregation blocker visual tokens
 	if tower_instance.get_type_id() == "the_congregation":
@@ -217,7 +237,9 @@ func _sync_blocker_meshes() -> void:
 		var hp_ratio: float = clampf(cur_hp / max_hp, 0.0, 1.0)
 		var lbl: Label3D = node.get_node_or_null("BlockerHpLabel") as Label3D
 		if lbl != null:
-			lbl.text = "%d/%d" % [ceili(cur_hp), ceili(max_hp)]
+			var next_hp_txt: String = "%d/%d" % [ceili(cur_hp), ceili(max_hp)]
+			if lbl.text != next_hp_txt:
+				lbl.text = next_hp_txt
 			if is_engaged or hp_ratio < 0.99:
 				lbl.modulate = Color(1.0, 0.35, 0.35, 1.0).lerp(Color(0.45, 1.0, 0.55, 1.0), hp_ratio)
 			else:

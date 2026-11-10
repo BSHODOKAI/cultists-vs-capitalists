@@ -93,21 +93,9 @@ func update_all_views(
 				unit_lanes.append(path_hexes)
 
 	var count: int = alive_units.size()
-	if count >= MULTITHREAD_THRESHOLD and (not path_hexes.is_empty() or has_lanes):
-		var packets: Array[Dictionary] = []
-		packets.resize(count)
-		var now_msec: int = Time.get_ticks_msec()
-		var worker_fn := func(idx: int) -> void:
-			packets[idx] = _EnemyMoverView.compute_visual_packet(
-				alive_units[idx], unit_lanes[idx] as Array[Vector2i], prev_pos_list[idx], alpha, now_msec
-			)
-		var group_id: int = WorkerThreadPool.add_group_task(worker_fn, count)
-		WorkerThreadPool.wait_for_group_task_completion(group_id)
-		for i in range(count):
-			alive_views[i].apply_visual_packet(packets[i])
-	else:
-		for i in range(count):
-			alive_views[i].update_visual(unit_lanes[i] as Array[Vector2i], prev_pos_list[i], alpha)
+	var now_msec: int = Time.get_ticks_msec()
+	for i in range(count):
+		alive_views[i].update_visual(unit_lanes[i] as Array[Vector2i], prev_pos_list[i], alpha, now_msec)
 
 	# Return any despawned/dead unit views to the pool
 	var to_release: Array[int] = []

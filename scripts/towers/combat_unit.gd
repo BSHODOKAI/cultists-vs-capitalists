@@ -22,7 +22,13 @@ var unit_name: String = "Enemy"
 var faction: String = ""
 var unit_data: UnitData = null
 var abilities: Array[AbilityData] = []
-var tags: Array[int] = [_C.UnitTag.GROUND]
+var active_step_abilities: Array[AbilityData] = []
+var tags: Array[int] = [_C.UnitTag.GROUND]:
+	set(value):
+		tags = value
+		_rebuild_tag_mask()
+var _tag_mask: int = 1 << _C.UnitTag.GROUND
+var _cached_tags_size: int = 1
 var max_hp: float = 100.0
 var hp: float = 100.0
 var shield_hp: float = 0.0
@@ -194,24 +200,45 @@ func is_alive() -> bool:
 	return hp > 0.0
 
 
+func _rebuild_tag_mask() -> void:
+	var m: int = 0
+	for t: int in tags:
+		if t >= 0 and t < 62:
+			m |= (1 << t)
+	_tag_mask = m
+	_cached_tags_size = tags.size()
+
+
 func has_tag(tag: int) -> bool:
+	if tags.size() != _cached_tags_size:
+		_rebuild_tag_mask()
+	if tag >= 0 and tag < 62:
+		return (_tag_mask & (1 << tag)) != 0
 	return tags.has(tag)
 
 
 func is_boss() -> bool:
-	return tags.has(_C.UnitTag.BOSS)
+	if tags.size() != _cached_tags_size:
+		_rebuild_tag_mask()
+	return (_tag_mask & (1 << _C.UnitTag.BOSS)) != 0
 
 
 func is_air() -> bool:
-	return tags.has(_C.UnitTag.AIR)
+	if tags.size() != _cached_tags_size:
+		_rebuild_tag_mask()
+	return (_tag_mask & (1 << _C.UnitTag.AIR)) != 0
 
 
 func is_ground() -> bool:
-	return tags.has(_C.UnitTag.GROUND)
+	if tags.size() != _cached_tags_size:
+		_rebuild_tag_mask()
+	return (_tag_mask & (1 << _C.UnitTag.GROUND)) != 0
 
 
 func is_cloaked() -> bool:
-	return tags.has(_C.UnitTag.CLOAKED)
+	if tags.size() != _cached_tags_size:
+		_rebuild_tag_mask()
+	return (_tag_mask & (1 << _C.UnitTag.CLOAKED)) != 0
 
 
 ## True when this unit is either not Cloaked, or currently revealed by a detector.
@@ -361,6 +388,7 @@ func displace_along_path(delta_hexes: float, max_path_index: float) -> bool:
 	if mult <= 0.0:
 		return false
 	path_position = clampf(path_position + delta_hexes * mult, 0.0, maxf(0.0, max_path_index))
+	cached_hex_path_pos = -999999.0
 	return true
 
 

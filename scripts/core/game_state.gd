@@ -590,6 +590,7 @@ func _on_sim_tick(dt: float, _tick_index: int) -> void:
 
 	var pre_off: int = tower_system.offerings
 	var pre_scrap: int = tower_system.scrap
+	var pre_corr: int = tower_system.corruption
 	var pre_unit_count: int = tower_system.units.size()
 
 	# Spawn scheduled units up to current wave_elapsed_time
@@ -609,8 +610,9 @@ func _on_sim_tick(dt: float, _tick_index: int) -> void:
 
 	if tower_system.offerings != pre_off or tower_system.scrap != pre_scrap:
 		currencies_changed.emit(tower_system.offerings, tower_system.scrap)
+	if tower_system.corruption != pre_corr:
+		corruption_changed.emit(tower_system.corruption)
 
-	spatial_index.rebuild(tower_system.units, path_generator.path_hexes, path_generator.lanes)
 	_note_objective_contest()
 
 	# Check wave completion
@@ -1181,6 +1183,8 @@ func _on_tower_damaged_enemy(
 	coverage_tracker.on_tower_damaged_enemy(
 		tower_id, tower_type, unit_id, unit_tags, amount, damage_tag, current_wave
 	)
+	if tower_system != null and tower_system._in_continuous_dot_tick:
+		return
 	tower_damaged_enemy.emit(tower_id, tower_type, unit_id, unit_tags, amount, damage_tag)
 
 

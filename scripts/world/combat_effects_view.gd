@@ -19,8 +19,8 @@ signal projectile_hit(world_pos: Vector3, tower_type: String, damage_tag: int)
 ## Chain lightning color keyframes: instant electric blue -> hot white glow -> fade.
 const CHAIN_BLUE: Color = Color(0.22, 0.55, 1.0, 1.0)
 const CHAIN_WHITE: Color = Color(0.98, 1.0, 1.0, 1.0)
-const CHAIN_SIDES: int = 6
-const MAX_ACTIVE_CHAINS: int = 24
+const CHAIN_SIDES: int = 4
+const MAX_ACTIVE_CHAINS: int = 10
 
 @export var theme_data: VisualThemeData
 
@@ -46,6 +46,7 @@ var _fx_rng: RandomNumberGenerator
 var _puddle_multimesh: MultiMeshInstance3D
 var _ring_mesh: ArrayMesh
 var _puddle_mesh: ArrayMesh
+var _last_puddle_sig: int = 0
 
 
 func _ready() -> void:
@@ -115,6 +116,7 @@ func clear_all() -> void:
 
 	if _puddle_multimesh != null:
 		_puddle_multimesh.multimesh = null
+	_last_puddle_sig = 0
 
 
 func spawn_beam(from_world: Vector3, to_world: Vector3, damage_tag: int, duration: float = 0.14, thickness: float = 0.08) -> void:
@@ -262,7 +264,7 @@ func _make_chain_jitter(points: Array[Vector3], _thickness: float) -> Array:
 	var jitter: Array = []
 	for i in range(points.size() - 1):
 		var seg_len: float = points[i].distance_to(points[i + 1])
-		var sub: int = clampi(int(seg_len / 0.20), 4, 12)
+		var sub: int = clampi(int(seg_len / 0.45), 2, 6)
 		var seg_arr: Array = []
 		for _s in range(1, sub):
 			seg_arr.append(Vector2(_fx_rng.randf_range(-1.0, 1.0), _fx_rng.randf_range(-1.0, 1.0)))
@@ -272,22 +274,30 @@ func _make_chain_jitter(points: Array[Vector3], _thickness: float) -> Array:
 
 ## Resolves the current anchor positions for a following chain, keeping the last
 ## known position for any anchor whose provider returns null (dead/released unit).
+## Sets entry["points_moved"] = true only when at least one anchor moved.
 func _resolve_chain_points(entry: Dictionary) -> Array[Vector3]:
 	var providers: Array = entry["providers"] as Array
-	var pts: Array[Vector3] = []
 	if providers.is_empty():
+		entry["points_moved"] = false
 		return entry["last_points"] as Array[Vector3]
 	var prev: Array[Vector3] = entry["last_points"] as Array[Vector3]
+	var pts: Array[Vector3] = []
+	var moved: bool = (prev.size() != providers.size())
 	for i in range(providers.size()):
 		var provider: Callable = providers[i] as Callable
 		var v: Variant = provider.call() if provider.is_valid() else null
 		if v is Vector3:
-			pts.append(v as Vector3)
+			var vp: Vector3 = v as Vector3
+			if not moved and i < prev.size() and vp.distance_squared_to(prev[i]) > 0.0001:
+				moved = true
+			pts.append(vp)
 		elif i < prev.size():
 			pts.append(prev[i])
 		else:
 			pts.append(Vector3.ZERO)
-	entry["last_points"] = pts
+	entry["points_moved"] = moved
+	if moved:
+		entry["last_points"] = pts
 	return pts
 
 
@@ -497,10 +507,12 @@ func _process(delta: float) -> void:
 		c["elapsed"] = el_c
 		var cmi: MeshInstance3D = c["node"] as MeshInstance3D
 		if is_instance_valid(cmi):
-			# Following chains re-resolve their anchor points every frame so the arc
-			# stays glued to the moving units; the crackle shape stays stable.
-			if not (c["providers"] as Array).is_empty():
-				cmi.mesh = _build_chain_mesh(_resolve_chain_points(c), float(c["thickness"]), c["jitter"] as Array)
+			# Following chains re-resolve their anchor points during their active flash window
+			# so the arc stays glued to moving units without rebuilding meshes during the long fade.
+			if el_c < 0.45 and not (c["providers"] as Array).is_empty():
+				var pts_now: Array[Vector3] = _resolve_chain_points(c)
+				if bool(c.get("points_moved", false)):
+					cmi.mesh = _build_chain_mesh(pts_now, float(c["thickness"]), c["jitter"] as Array)
 		var mat_c: StandardMaterial3D = cmi.material_override as StandardMaterial3D if is_instance_valid(cmi) else null
 		if mat_c != null:
 			var tc: float = clampf(el_c / dur_c, 0.0, 1.0)
@@ -524,8 +536,17 @@ func sync_puddles(puddles: Array[Dictionary]) -> void:
 	if _puddle_multimesh == null:
 		return
 	if puddles.is_empty():
-		_puddle_multimesh.multimesh = null
+		if _last_puddle_sig != 0:
+			_last_puddle_sig = 0
+			_puddle_multimesh.multimesh = null
 		return
+	var sig: int = puddles.size() * 1000003
+	for i in range(puddles.size()):
+		var h_sig: Vector2i = puddles[i].get("hex", Vector2i.ZERO) as Vector2i
+		sig = (sig * 31) ^ (h_sig.x * 73856093) ^ (h_sig.y * 19349663)
+	if sig == _last_puddle_sig and _puddle_multimesh.multimesh != null:
+		return
+	_last_puddle_sig = sig
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_colors = true

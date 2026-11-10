@@ -304,9 +304,18 @@ func _connect_signals() -> void:
 	var gs: Node = get_node_or_null("/root/GameState")
 	if gs == null:
 		return
-	gs.connect("currencies_changed", func(_o: int, _s: int) -> void: refresh())
-	gs.connect("tower_placed_on_hex", func(_t: Variant) -> void: refresh())
-	gs.connect("tower_sold_from_hex", func(_tid: int, _h: Vector2i, _r: Dictionary) -> void: refresh())
+	gs.connect("currencies_changed", func(_o: int, _s: int) -> void:
+		if is_menu_open or gs.get("selected_build_tower") != null:
+			refresh()
+	)
+	gs.connect("tower_placed_on_hex", func(_t: Variant) -> void:
+		if is_menu_open or gs.get("selected_build_tower") != null:
+			refresh()
+	)
+	gs.connect("tower_sold_from_hex", func(_tid: int, _h: Vector2i, _r: Dictionary) -> void:
+		if is_menu_open or gs.get("selected_build_tower") != null:
+			refresh()
+	)
 	gs.connect("build_mode_changed", func(td: Variant) -> void:
 		if td is TowerData and td != null:
 			inspected_tower = td as TowerData
@@ -554,8 +563,6 @@ func refresh() -> void:
 			"font_color",
 			Color(0.75, 0.95, 0.65) if can_afford else Color(1.0, 0.50, 0.50)
 		)
-		_detail_desc_label.text = inspected_tower.get_display_description()
-		_detail_desc_label.text = inspected_tower.get_display_description()
 		# Cost lives in the header (with its currency icon), so the stat block omits it and
 		# instead spells out the tower's actual abilities in plain language.
 		var texts: Dictionary = _detail_texts(inspected_tower)

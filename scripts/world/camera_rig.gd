@@ -56,6 +56,10 @@ var _touch_drag_distance: float = 0.0
 var _is_touch_panning: bool = false
 var _last_handled_touch_event: InputEvent = null
 var _last_touch_event_consumed: bool = false
+var _cached_playable_rect: Dictionary = {}
+var _playable_rect_sig: Vector4i = Vector4i(-1, -1, -1, -1)
+var _playable_rect_first_hex: Vector2i = Vector2i(999999, 999999)
+var _playable_rect_last_hex: Vector2i = Vector2i(999999, 999999)
 
 
 func _ready() -> void:
@@ -369,14 +373,33 @@ func _compute_playable_rect() -> Dictionary:
 	if gs == null:
 		return {}
 	var pgen: PathGenerator = gs.get("path_generator") as PathGenerator
-	if pgen == null:
+	if pgen == null or pgen.path_hexes.is_empty():
 		return {}
+	var sig := Vector4i(
+		pgen.path_hexes.size(),
+		pgen.get_lane_count(),
+		pgen.ghost_path_hexes.size(),
+		pgen.fork_candidates.size() * 16 + pgen.selected_fork_candidate_index
+	)
+	var first_h: Vector2i = pgen.path_hexes[0]
+	var last_h: Vector2i = pgen.path_hexes[pgen.path_hexes.size() - 1]
+	if (
+		not _cached_playable_rect.is_empty()
+		and sig == _playable_rect_sig
+		and first_h == _playable_rect_first_hex
+		and last_h == _playable_rect_last_hex
+	):
+		return _cached_playable_rect
+	_playable_rect_sig = sig
+	_playable_rect_first_hex = first_h
+	_playable_rect_last_hex = last_h
 	var hexes: Array = []
 	hexes.append_array(pgen.get_all_path_hexes())
 	hexes.append_array(pgen.ghost_path_hexes)
 	for fc: Dictionary in pgen.fork_candidates:
 		hexes.append_array(fc.get("new_hexes", []) as Array)
 	if hexes.is_empty():
+		_cached_playable_rect = {}
 		return {}
 	var min_x: float = INF
 	var max_x: float = -INF
@@ -389,12 +412,13 @@ func _compute_playable_rect() -> Dictionary:
 		min_z = minf(min_z, w.z)
 		max_z = maxf(max_z, w.z)
 	var margin: float = pan_bounds_extra_hexes * sqrt(3.0) * _HexMath.HEX_SIZE
-	return {
+	_cached_playable_rect = {
 		"min_x": min_x - margin,
 		"max_x": max_x + margin,
 		"min_z": min_z - margin,
 		"max_z": max_z + margin,
 	}
+	return _cached_playable_rect
 
 
 func _apply_camera_transform() -> void:

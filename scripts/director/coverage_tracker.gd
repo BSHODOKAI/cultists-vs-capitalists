@@ -69,6 +69,8 @@ const NAME_TO_UNIT_TAG: Dictionary = {
 ## }
 var wave_records: Dictionary = {}
 var current_wave: int = 0
+var _cached_rec_wave: int = -1
+var _cached_rec: Dictionary = {}
 var default_wave_duration: float = _Balance.DEFAULT_WAVE_DURATION_SECONDS
 var window_waves: int = _Balance.COVERAGE_MEASUREMENT_WAVE_WINDOW
 
@@ -84,9 +86,13 @@ func _init(
 func reset() -> void:
 	wave_records.clear()
 	current_wave = 0
+	_cached_rec_wave = -1
+	_cached_rec = {}
 
 
 func _ensure_wave_record(wave_num: int) -> Dictionary:
+	if wave_num == _cached_rec_wave and not _cached_rec.is_empty():
+		return _cached_rec
 	if not wave_records.has(wave_num):
 		var utag_dmg: Dictionary = {}
 		for tag_id: int in UNIT_TAG_NAMES.keys():
@@ -105,12 +111,23 @@ func _ensure_wave_record(wave_num: int) -> Dictionary:
 			"tower_type_damage": {},
 			"duration": default_wave_duration,
 		}
-	return wave_records[wave_num]
+	_cached_rec_wave = wave_num
+	_cached_rec = wave_records[wave_num]
+	return _cached_rec
 
 
 func on_wave_started(wave_num: int) -> void:
 	current_wave = maxi(1, wave_num)
 	_ensure_wave_record(current_wave)
+	# Prune wave_records older than the rolling measurement window + 2 waves
+	var cutoff_wave: int = current_wave - maxi(4, window_waves + 2)
+	if cutoff_wave > 0 and wave_records.size() > 8:
+		var old_keys: Array = []
+		for k: Variant in wave_records.keys():
+			if int(k) < cutoff_wave:
+				old_keys.append(k)
+		for k: Variant in old_keys:
+			wave_records.erase(k)
 
 
 func on_wave_ended(wave_num: int = -1, duration_seconds: float = -1.0) -> void:
@@ -140,12 +157,14 @@ func on_tower_damaged_enemy(
 		current_wave = 1
 	var rec: Dictionary = _ensure_wave_record(w)
 	var utag_dmg: Dictionary = rec["unit_tag_damage"]
-	var seen_tags: Dictionary = {}
+	var seen_mask: int = 0
 	for raw_tag: Variant in unit_tags:
-		var t_id: int = resolve_unit_tag(raw_tag)
-		if t_id >= 0 and not seen_tags.has(t_id):
-			seen_tags[t_id] = true
-			utag_dmg[t_id] = float(utag_dmg.get(t_id, 0.0)) + amount
+		var t_id: int = int(raw_tag) if (raw_tag is int and int(raw_tag) >= 0 and int(raw_tag) <= 18) else resolve_unit_tag(raw_tag)
+		if t_id >= 0 and t_id < 62:
+			var bit: int = 1 << t_id
+			if (seen_mask & bit) == 0:
+				seen_mask |= bit
+				utag_dmg[t_id] = float(utag_dmg.get(t_id, 0.0)) + amount
 
 	var dtag_dmg: Dictionary = rec["damage_tag_damage"]
 	dtag_dmg[damage_tag] = float(dtag_dmg.get(damage_tag, 0.0)) + amount

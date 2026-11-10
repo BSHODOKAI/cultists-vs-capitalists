@@ -23,12 +23,14 @@ var state: int = State.UNCLAIMED
 var capture_progress: int = 0
 var placed_wave: int = 0
 var last_state_change_wave: int = 0
+static var state_epoch: int = 1
 
 
 func _init(p_data: ObjectiveData = null, p_hex: Vector2i = Vector2i.ZERO, p_wave: int = 0) -> void:
 	data = p_data
 	hex = p_hex
 	placed_wave = p_wave
+	state_epoch += 1
 
 
 func get_id() -> String:
@@ -59,6 +61,7 @@ func set_state(new_state: int, wave: int = 0) -> bool:
 	state = new_state
 	capture_progress = 0
 	last_state_change_wave = wave
+	state_epoch += 1
 	return true
 
 

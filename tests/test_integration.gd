@@ -790,3 +790,163 @@ func test_11_fork_condemnation_100_pct_bounty_pool_and_multi_lane_combat() -> vo
 		gs.offerings == off_before_kills + normal_kill_rewards + invested_offerings,
 		"Player Offerings must equal normal kill rewards + 100%% recovered tower bounty"
 	)
+
+
+# --- Test 12: Wave 45+ Multi-Lane & 55+ T4 Towers Performance Stress ----------
+
+func test_12_late_wave_45_multi_lane_performance_stress() -> void:
+	await get_tree().process_frame
+	var gs: GameStateNode = _get_game_state()
+	var clock: SimClockNode = _get_sim_clock()
+	clock.manual_mode = true
+
+	var main_packed := load("res://scenes/main.tscn") as PackedScene
+	assert(main_packed != null, "res://scenes/main.tscn must load")
+	var main_ctrl: MainSceneController = main_packed.instantiate() as MainSceneController
+	add_child(main_ctrl)
+
+	gs.start_new_run(45045)
+	gs.god_mode = true
+	gs.add_currency(_GameState.Currency.OFFERINGS, 500000, "perf_w45")
+	gs.add_currency(_GameState.Currency.SCRAP, 500000, "perf_w45")
+
+	# Grow map to Wave 45 geometry: 5 standard extensions + 2 fork commits (3 lanes total)
+	for g_idx in range(7):
+		gs.current_wave = (g_idx + 2) * 5
+		if g_idx == 2 or g_idx == 4:
+			gs.path_generator.preview_fork(gs.current_wave, 2)
+		else:
+			gs.path_generator.preview_next_extension(gs.current_wave)
+		gs.debug_force_growth()
+
+	assert(gs.path_generator.get_lane_count() == 3, "Wave 45 stress setup must have 3 active lanes")
+	assert(gs.path_generator.get_all_path_hexes().size() >= 80, "Multi-lane path must exceed 80 hexes")
+
+	# Place 55+ fully-upgraded T4 towers across all 11 archetypes (including DoTs, puddles, chains, shrines, blockers)
+	var roster_types: Array[String] = [
+		"hexed_nail_gun",
+		"chanting_choir",
+		"gutter_ritual_circle",
+		"tentacle_storm_drain",
+		"watcher_in_the_billboard",
+		"rust_censer",
+		"fever_shrine",
+		"the_congregation",
+		"tithe_box",
+		"substation_effigy",
+		"dead_air_altar",
+	]
+	var buildable: Array[Vector2i] = gs.path_generator.get_buildable_hexes()
+	var placed_list: Array[TowerInstance] = []
+	for i in range(buildable.size()):
+		if placed_list.size() >= 56:
+			break
+		var tid: String = roster_types[placed_list.size() % roster_types.size()]
+		var inst: TowerInstance = gs.request_place_tower(buildable[i], tid)
+		if inst == null:
+			continue
+		placed_list.append(inst)
+		if inst.def.t2_upgrade != null:
+			gs.request_upgrade_tower(inst, inst.def.t2_upgrade.id)
+		if placed_list.size() % 2 == 0 and inst.def.revealed_t3_upgrade != null:
+			gs.request_upgrade_tower(inst, inst.def.revealed_t3_upgrade.id)
+			if inst.def.revealed_t4_upgrade != null:
+				gs.request_upgrade_tower(inst, inst.def.revealed_t4_upgrade.id)
+		elif inst.def.rigged_t3_upgrade != null:
+			gs.request_upgrade_tower(inst, inst.def.rigged_t3_upgrade.id)
+			if inst.def.rigged_t4_upgrade != null:
+				gs.request_upgrade_tower(inst, inst.def.rigged_t4_upgrade.id)
+
+	assert(placed_list.size() >= 45, "Must place at least 45 T4 towers, placed %d" % placed_list.size())
+
+	# Select a T2 tower on HUD to verify TowerPanel does not rebuild its upgrade cards on kills
+	var inspect_t: TowerInstance = null
+	for h: Vector2i in gs.path_generator.get_buildable_hexes():
+		inspect_t = gs.request_place_tower(h, "gutter_ritual_circle")
+		if inspect_t != null:
+			gs.request_upgrade_tower(inspect_t, inspect_t.def.t2_upgrade.id)
+			break
+	assert(inspect_t != null, "Must place an inspectable T2 tower")
+	gs.select_placed_tower(inspect_t)
+	var tower_panel: TowerPanel = main_ctrl.get_node("HUD/TowerPanel") as TowerPanel
+	var initial_card: Node = tower_panel._tier_container.get_child(0)
+
+	# Jump to Wave 44 -> start Wave 45 (Boss wave with multi-lane escorts + spawned units)
+	gs.current_wave = 44
+	gs._enter_intermission()
+	assert(gs.start_wave(), "Wave 45 must start")
+	assert(gs.tower_system.hit_events.is_empty(), "start_wave() must clear stale hit_events from earlier waves")
+
+	# Spawn 80 additional high-HP multi-lane Wave 45 enemies (mix of Ground, Air, Cloaked, Shielded, Cybernetic, Spawner)
+	var w45_types: Array[String] = [
+		"sponsor_mech",
+		"siege_walker",
+		"riot_shield_unit",
+		"ghost_contractor",
+		"compliance_officer",
+		"acquisitions_rep",
+		"drone_carrier",
+		"medic_drone",
+		"gig_van",
+		"hype_influencer",
+	]
+	for idx in range(80):
+		var lid: int = idx % gs.path_generator.get_lane_count()
+		var l_hexes: Array[Vector2i] = gs.path_generator.get_lane(lid)
+		var pos: float = lerpf(4.0, float(maxi(5, l_hexes.size() - 2)), float(idx) / 80.0)
+		var utype: String = w45_types[idx % w45_types.size()]
+		var u: CombatUnit = gs.tower_system.spawn_unit_from_data(utype, pos, 1, gs._combat_rng, -1, lid)
+		if u != null:
+			u.max_hp = 2500.0
+			u.hp = 2500.0
+			gs.enemy_spawned.emit(u)
+
+	# Warm up 1 frame so initial 3D node pool instantiation is not mixed into steady-state frame timing
+	main_ctrl._process(1.0 / 60.0)
+
+	var sim_usec: int = 0
+	var render_usec: int = 0
+	var frames: int = 30 # 30 frames at 3x speed = 90 ticks (3.0s simulated Wave 45 combat)
+	for f in range(frames):
+		var ts0: int = Time.get_ticks_usec()
+		clock.step_ticks(3)
+		var ts1: int = Time.get_ticks_usec()
+		main_ctrl._process(1.0 / 60.0)
+		var ts2: int = Time.get_ticks_usec()
+		sim_usec += (ts1 - ts0)
+		render_usec += (ts2 - ts1)
+	var total_ms: float = float(sim_usec + render_usec) / 1000.0
+	var avg_frame_ms: float = total_ms / float(frames)
+	var avg_sim_ms: float = (float(sim_usec) / 1000.0) / float(frames)
+	var avg_render_ms: float = (float(render_usec) / 1000.0) / float(frames)
+
+	print(
+		"[PERF STRESS WAVE 45 | 3 LANES | %d T4 TOWERS | %d UNITS @ 3x SPEED] Avg frame: %.2f ms (sim 3 ticks: %.2f ms, 3D+HUD: %.2f ms, hit_events=%d)" % [
+			gs.tower_system.towers.size(),
+			gs.tower_system.units.size(),
+			avg_frame_ms,
+			avg_sim_ms,
+			avg_render_ms,
+			gs.tower_system.hit_events.size()
+		]
+	)
+
+	assert(
+		tower_panel._tier_container.get_child(0) == initial_card,
+		"TowerPanel must reuse existing upgrade cards across mid-wave currency/corruption updates instead of rebuilding"
+	)
+	assert(
+		gs.tower_system.hit_events.size() <= 512,
+		"hit_events must remain bounded during heavy DoT/puddle late-wave combat (got %d)" % gs.tower_system.hit_events.size()
+	)
+	assert(
+		avg_frame_ms < 16.0,
+		"Wave 45 3-lane 3x-speed frame time must stay under 16.0 ms (got %.2f ms: sim=%.2f ms, render=%.2f ms, towers=%d, units=%d)" % [
+			avg_frame_ms, avg_sim_ms, avg_render_ms, gs.tower_system.towers.size(), gs.tower_system.units.size()
+		]
+	)
+
+	main_ctrl.queue_free()
+	gs.god_mode = false
+	clock.manual_mode = false
+

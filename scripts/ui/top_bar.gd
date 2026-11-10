@@ -48,6 +48,12 @@ var _base_fonts: Dictionary = {}      # Control -> int base font size
 var _base_seps: Dictionary = {}       # BoxContainer -> int base separation
 var _base_icon_sizes: Dictionary = {} # Control -> float base min width (chip icons + bar)
 var _applying_fit: bool = false
+var _last_fit_sig: String = ""
+static var _cached_off_sources_line: String = ""
+static var _cached_scr_sources_line: String = ""
+static var _cached_sources_tsys_id: int = 0
+static var _cached_sources_tower_cnt: int = -1
+static var _cached_sources_scrap_mult: float = -1.0
 ## Test hook: forces the width the bar must fit into. -1 (default) measures the viewport.
 var fit_width_override: float = -1.0
 
@@ -371,9 +377,37 @@ func _connect_signals() -> void:
 	gs.connect("objectives_changed", func(_o: Variant) -> void: refresh())
 	gs.connect("wave_started", func(_w: int) -> void: refresh())
 	gs.connect("intel_updated", func(_i: Dictionary, _r: Variant) -> void: refresh())
-	gs.connect("tower_placed_on_hex", func(_t: Variant) -> void: refresh())
-	gs.connect("tower_upgraded_on_hex", func(_t: Variant, _n: String) -> void: refresh())
-	gs.connect("tower_sold_from_hex", func(_tid: int, _h: Vector2i, _r: Dictionary) -> void: refresh())
+	gs.connect("tower_placed_on_hex", func(_t: Variant) -> void:
+		_invalidate_tooltip_sources_cache()
+		refresh()
+	)
+	gs.connect("tower_upgraded_on_hex", func(_t: Variant, _n: String) -> void:
+		_invalidate_tooltip_sources_cache()
+		refresh()
+	)
+	gs.connect("tower_sold_from_hex", func(_tid: int, _h: Vector2i, _r: Dictionary) -> void:
+		_invalidate_tooltip_sources_cache()
+		refresh()
+	)
+
+
+static func _invalidate_tooltip_sources_cache() -> void:
+	_cached_sources_tower_cnt = -1
+
+
+func _compute_fit_sig() -> String:
+	return "%d|%d|%d|%d|%d|%d|%d|%d|%d|%d" % [
+		roundi(_available_width()),
+		1 if (_penance_button != null and _penance_button.visible) else 0,
+		1 if (_draw_rite_button != null and _draw_rite_button.visible) else 0,
+		_lives_label.text.length() if _lives_label != null else 0,
+		_wave_label.text.length() if _wave_label != null else 0,
+		_faction_label.text.length() if _faction_label != null else 0,
+		_offerings_label.text.length() if _offerings_label != null else 0,
+		_scrap_label.text.length() if _scrap_label != null else 0,
+		_rites_label.text.length() if _rites_label != null else 0,
+		_corruption_label.text.length() if _corruption_label != null else 0,
+	]
 
 
 func refresh() -> void:
@@ -441,8 +475,11 @@ func refresh() -> void:
 		_draw_rite_button.disabled = not can_draw
 
 	# The visible set of readouts (e.g. the Draw Rite button appears once a Rite is held) can
-	# change the row's width, so re-fit after every data refresh.
-	_apply_fit()
+	# change the row's width, so re-fit when the layout signature changes.
+	var fit_sig: String = _compute_fit_sig()
+	if fit_sig != _last_fit_sig:
+		_last_fit_sig = fit_sig
+		_apply_fit()
 
 
 func _on_draw_rite_pressed() -> void:
@@ -528,12 +565,27 @@ static func build_currency_tooltip(currency: int, tsys: TowerSystem) -> String:
 
 	var lines: PackedStringArray = [header]
 
-	# 1. Active income rates, bonuses, and wave upkeeps
-	if is_off:
+	# 1. Active income rates, bonuses, and wave upkeeps (cached across kills until towers/events change)
+	var tsys_id: int = tsys.get_instance_id()
+	var t_cnt: int = tsys.towers.size()
+	if (
+		tsys._tower_role_cache_dirty
+		or tsys_id != _cached_sources_tsys_id
+		or t_cnt != _cached_sources_tower_cnt
+		or not is_equal_approx(tsys.event_scrap_income_mult, _cached_sources_scrap_mult)
+		or _cached_off_sources_line.is_empty()
+		or _cached_scr_sources_line.is_empty()
+	):
+		_cached_sources_tsys_id = tsys_id
+		_cached_sources_tower_cnt = t_cnt
+		_cached_sources_scrap_mult = tsys.event_scrap_income_mult
+
 		var tithe_count: int = 0
 		var tithe_per_sec: float = 0.0
 		var dark_patron_count: int = 0
 		var frenzy_upkeep: int = 0
+		var collector_count: int = 0
+		var solvent_upkeep: int = 0
 		for t: TowerInstance in tsys.towers.values():
 			if t == null:
 				continue
@@ -552,6 +604,10 @@ static func build_currency_tooltip(currency: int, tsys: TowerSystem) -> String:
 					if other != null and other.tower_id != t.tower_id and HexGrid.hex_distance(t.hex, other.hex) <= rad:
 						buffed += 1
 				frenzy_upkeep += buffed * int(t.get_behavior_param("frenzy_rites", "offerings_upkeep_per_buffed_tower", 4))
+			if t.is_operational() and t.has_behavior("scrap_collector"):
+				collector_count += 1
+			if t.has_behavior("solvent_tank"):
+				solvent_upkeep += int(t.get_behavior_param("solvent_tank", "scrap_upkeep_per_wave", 4))
 		dark_patron_count = mini(dark_patron_count, 3)
 		var mod_parts: PackedStringArray = ["Enemy Kills: 100% of unit cost"]
 		if tithe_count > 0:
@@ -560,17 +616,8 @@ static func build_currency_tooltip(currency: int, tsys: TowerSystem) -> String:
 			mod_parts.append("Dark Patron: +%d%% kill Offerings" % (dark_patron_count * 10))
 		if frenzy_upkeep > 0:
 			mod_parts.append("Frenzy Rites Upkeep: -%d/wave" % frenzy_upkeep)
-		lines.append("Sources: " + " · ".join(mod_parts))
-	else:
-		var collector_count: int = 0
-		var solvent_upkeep: int = 0
-		for t: TowerInstance in tsys.towers.values():
-			if t == null:
-				continue
-			if t.is_operational() and t.has_behavior("scrap_collector"):
-				collector_count += 1
-			if t.has_behavior("solvent_tank"):
-				solvent_upkeep += int(t.get_behavior_param("solvent_tank", "scrap_upkeep_per_wave", 4))
+		_cached_off_sources_line = "Sources: " + " · ".join(mod_parts)
+
 		collector_count = mini(collector_count, 3)
 		var mod_parts_s: PackedStringArray = ["Enemy Kills: ~50% of unit cost"]
 		if collector_count > 0:
@@ -579,7 +626,9 @@ static func build_currency_tooltip(currency: int, tsys: TowerSystem) -> String:
 			mod_parts_s.append("Wave Event: x%.2f Scrap" % tsys.event_scrap_income_mult)
 		if solvent_upkeep > 0:
 			mod_parts_s.append("Solvent Tank Upkeep: -%d/wave" % solvent_upkeep)
-		lines.append("Sources: " + " · ".join(mod_parts_s))
+		_cached_scr_sources_line = "Sources: " + " · ".join(mod_parts_s)
+
+	lines.append(_cached_off_sources_line if is_off else _cached_scr_sources_line)
 
 	# 2. Live Wave & Run Ledger breakdown
 	var source_Specs: Array[Dictionary] = [
