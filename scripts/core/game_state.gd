@@ -268,13 +268,19 @@ func transition_to(new_state: int) -> bool:
 
 # --- Run Setup & Bootstrap ---------------------------------------------------
 
-## Starts a new run with [param seed_val] (if < 0, uses pending_seed_override or 1337).
+## Starts a new run with [param seed_val]. If < 0, uses the pending override; if
+## none is set (blank menu seed input, direct scene launch), rolls a fresh random
+## seed so every unspecified run is different rather than repeating a fixed default.
 func start_new_run(seed_val: int = -1) -> void:
 	if seed_val >= 0:
 		run_seed = seed_val
 	elif pending_seed_override >= 0:
 		run_seed = pending_seed_override
 		pending_seed_override = -1
+	else:
+		var seed_rng := RandomNumberGenerator.new()
+		seed_rng.randomize()
+		run_seed = seed_rng.randi_range(1, 9999999)
 
 	var clock: Node = _get_sim_clock_node()
 	if clock != null and clock.has_method("reset"):

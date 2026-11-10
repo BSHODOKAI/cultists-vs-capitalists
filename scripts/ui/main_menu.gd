@@ -82,7 +82,11 @@ func _on_start_pressed() -> void:
 	var gs: Node = get_node_or_null("/root/GameState")
 	if gs != null and _seed_input != null:
 		var txt: String = _seed_input.text.strip_edges()
-		if not txt.is_empty():
+		if txt.is_empty():
+			var rng := RandomNumberGenerator.new()
+			rng.randomize()
+			gs.set("pending_seed_override", rng.randi_range(1, 9999999))
+		else:
 			var parsed_seed: int = txt.to_int() if txt.is_valid_int() else abs(txt.hash())
 			gs.set("pending_seed_override", maxi(1, parsed_seed))
 	get_tree().change_scene_to_file(MAIN_SCENE_PATH)

@@ -92,6 +92,16 @@ func _ready() -> void:
 
 	_build_hover_nodes()
 	_build_multimesh_layers()
+	var xray_mat := StandardMaterial3D.new()
+	xray_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	xray_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	xray_mat.vertex_color_use_as_albedo = true
+	xray_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	xray_mat.no_depth_test = true
+	xray_mat.render_priority = 4
+	_ghost_path_multimesh.material_override = xray_mat
+	_unselected_fork_multimesh.material_override = xray_mat
+	_condemned_tower_multimesh.material_override = xray_mat
 
 
 func _build_hover_nodes() -> void:

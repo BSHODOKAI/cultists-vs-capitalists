@@ -97,6 +97,18 @@ func test_01_main_build_palette_menu_inspect_before_build_and_description_displa
 	gs.emit_signal("wave_started", 11)
 	assert(not intel_panel._next_faction_banner.visible, "Next faction / Boss Slain banner must be removed once the next round starts")
 
+	# 7. Verify IntelPanel fork route buttons use deferred signals so pressing Route B selects candidate 1 without freeing the button mid-signal
+	var p_fork: Dictionary = gs.path_generator.preview_fork(30, 2)
+	gs.emit_signal("path_preview_ready", p_fork)
+	gs.emit_signal("fork_preview_ready", gs.path_generator.fork_candidates, gs.path_generator.selected_fork_candidate_index)
+	assert(intel_panel._fork_choice_box.visible, "Fork choice box must be visible when fork preview is active")
+	assert(intel_panel._fork_buttons_row.get_child_count() >= 2, "Fork buttons row must contain at least Route A and Route B buttons")
+	var route_b_btn: Button = intel_panel._fork_buttons_row.get_child(1) as Button
+	assert(route_b_btn != null, "Route B button must exist")
+	route_b_btn.pressed.emit()
+	await get_tree().process_frame
+	assert(gs.path_generator.selected_fork_candidate_index == 1, "Pressing Route B button must select candidate index 1")
+
 	main_inst.queue_free()
 	clock.manual_mode = false
 

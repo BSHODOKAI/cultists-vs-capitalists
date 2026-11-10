@@ -644,7 +644,7 @@ func _create_upgrade_button(inst: TowerInstance, tsys: TowerSystem, node: Upgrad
 	btn.icon = _PlaceholderIcons.get_cost_icon(node.currency, 16)
 	btn.tooltip_text = "Cost: %d %s" % [node.cost, curr_name]
 	btn.text = "Cost: %d%s" % [node.cost, impact_str]
-	btn.pressed.connect(_on_upgrade_pressed.bind(inst, node.id))
+	btn.pressed.connect(_on_upgrade_pressed.bind(inst, node.id), CONNECT_DEFERRED)
 	return btn
 
 

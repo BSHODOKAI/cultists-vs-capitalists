@@ -40,6 +40,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		if (event as InputEventKey).keycode == KEY_F3:
 			visible = not visible
 			if visible:
+				var gs: Node = _gs()
+				if gs != null and _seed_spin != null:
+					_seed_spin.value = maxi(1, int(gs.get("run_seed")))
 				refresh()
 			get_viewport().set_input_as_handled()
 
@@ -149,7 +152,8 @@ func _build_ui() -> void:
 	_seed_spin = SpinBox.new()
 	_seed_spin.min_value = 1
 	_seed_spin.max_value = 9999999
-	_seed_spin.value = 1337
+	var initial_seed: int = int(_gs().get("run_seed")) if _gs() != null else 1337
+	_seed_spin.value = maxi(1, initial_seed)
 	row4.add_child(_seed_spin)
 	_add_cmd_btn(row4, "Reset w/ Seed", func() -> void:
 		_gs().call("start_new_run", int(_seed_spin.value))

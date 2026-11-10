@@ -267,15 +267,28 @@ func _handle_hex_tap_or_click(screen_pos: Vector2, keep_build_mode: bool, gs: No
 			sound_manager.play_ui_error("placement_rejected")
 		_refresh_hover_and_overlays()
 	else:
-		# Select placed tower by hex lookup (never physics picking)
+		# Select placed tower by hex lookup (never physics picking), or select a fork candidate
+		# if the player clicked anywhere along or adjacent (<= 1 hex) to a fork candidate ribbon.
 		var existing: TowerInstance = gs.call("get_tower_at_hex", hex) as TowerInstance
 		var pgen: PathGenerator = gs.get("path_generator") as PathGenerator
 		if existing == null and pgen != null and pgen.preview_is_fork:
+			var picked_fork_idx: int = -1
 			for c_idx in range(pgen.fork_candidates.size()):
 				var c_nh: Array = pgen.fork_candidates[c_idx].get("new_hexes", []) as Array
 				if c_nh.has(hex):
-					gs.call("request_select_fork_candidate", c_idx)
+					picked_fork_idx = c_idx
 					break
+			if picked_fork_idx < 0:
+				var best_dist: int = 2
+				for c_idx in range(pgen.fork_candidates.size()):
+					var c_nh: Array = pgen.fork_candidates[c_idx].get("new_hexes", []) as Array
+					for fh_var: Variant in c_nh:
+						var d: int = _HexMath.distance(hex, fh_var as Vector2i)
+						if d < best_dist:
+							best_dist = d
+							picked_fork_idx = c_idx
+			if picked_fork_idx >= 0:
+				gs.call("request_select_fork_candidate", picked_fork_idx)
 		gs.call("select_placed_tower", existing)
 		_refresh_hover_and_overlays()
 	return true

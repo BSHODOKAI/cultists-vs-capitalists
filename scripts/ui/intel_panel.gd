@@ -260,14 +260,14 @@ func refresh() -> void:
 			var bounty_info: Dictionary = tsys.compute_condemned_bounty_for_hexes(sel_nh) if tsys != null else {"tower_count": 0, "offerings": 0, "scrap": 0}
 			var cr_cnt: int = int(bounty_info.get("tower_count", 0))
 			if cr_cnt > 0:
-				_fork_choice_header.text = "COMPANY DROP — %s: Crushes %d Tower(s) -> +%d Off / +%d Scrap Bounty" % [
+				_fork_choice_header.text = "COMPANY DROP — %s: Crushes %d Tower(s) -> +%d Off / +%d Scrap Bounty\n(Route commits automatically after Boss)" % [
 					String(sel_cand.get("label", "Route A")),
 					cr_cnt,
 					int(bounty_info.get("offerings", 0)),
 					int(bounty_info.get("scrap", 0))
 				]
 			else:
-				_fork_choice_header.text = "COMPANY DROP — %s: %d Hexes (0 Towers Crushed)" % [
+				_fork_choice_header.text = "COMPANY DROP — %s: %d Hexes (0 Towers Crushed)\n(Route commits automatically after Boss)" % [
 					String(sel_cand.get("label", "Route A")),
 					sel_nh.size()
 				]
@@ -280,8 +280,10 @@ func refresh() -> void:
 				btn.focus_mode = Control.FOCUS_NONE
 				btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 				btn.text = "%s%s (%d!)" % ["[*] " if is_sel else "", c_lbl, c_crushed] if c_crushed > 0 else "%s%s" % ["[*] " if is_sel else "", c_lbl]
+				if is_sel:
+					btn.modulate = Color(1.0, 0.78, 0.42)
 				var bind_idx: int = c_idx
-				btn.pressed.connect(func() -> void: _on_fork_route_button_pressed(bind_idx))
+				btn.pressed.connect(_on_fork_route_button_pressed.bind(bind_idx), CONNECT_DEFERRED)
 				_fork_buttons_row.add_child(btn)
 		else:
 			_fork_choice_box.visible = false

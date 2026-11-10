@@ -124,7 +124,17 @@ func _connect_signals() -> void:
 	)
 	if gs.has_signal("fork_preview_ready"):
 		gs.connect("fork_preview_ready", func(cands: Array, _sel_idx: int) -> void:
-			show_banner("COMPANY DROP INBOUND! %d Drop Routes Detected — Choose Route in Intel Panel!" % cands.size(), 5.0, Color(1.0, 0.48, 0.18))
+			show_banner("COMPANY DROP INBOUND! %d Drop Routes Detected — Choose Route in Intel Panel (Routes Commit After Boss)!" % cands.size(), 5.0, Color(1.0, 0.48, 0.18))
+		)
+	if gs.has_signal("fork_candidate_selected"):
+		gs.connect("fork_candidate_selected", func(_sel_idx: int, cand: Dictionary) -> void:
+			var r_lbl: String = String(cand.get("label", "Route")).to_upper()
+			var c_hexes: int = (cand.get("new_hexes", []) as Array).size()
+			var c_crushed: int = (cand.get("condemned_hexes", []) as Array).size()
+			if c_crushed > 0:
+				show_banner("%s LOCKED (%d Hexes, %d Tower(s) Condemned -> 100%% Kill Bounty) — Start Wave When Ready!" % [r_lbl, c_hexes, c_crushed], 3.2, Color(1.0, 0.65, 0.25))
+			else:
+				show_banner("%s LOCKED (%d Hexes, 0 Towers Crushed) — Start Wave When Ready!" % [r_lbl, c_hexes], 3.2, Color(0.45, 0.95, 0.65))
 		)
 	if gs.has_signal("towers_crushed_by_fork"):
 		gs.connect("towers_crushed_by_fork", func(lane_id: int, crushed: Array, b_off: int, b_scr: int) -> void:

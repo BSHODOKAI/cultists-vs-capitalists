@@ -1444,16 +1444,23 @@ func generate_fork_candidates(for_boss_wave: int = 20, count_override: int = -1)
 	var raw_pool: Array[Dictionary] = []
 
 	if is_new_lane:
-		raw_pool = _search_new_lane_fork_candidates(rng, fork_min_ext, fork_max_ext, ext_seed)
+		raw_pool = _search_new_lane_fork_candidates(rng, fork_min_ext, fork_max_ext, ext_seed, fork_max_join_index)
+		if raw_pool.size() < desired_count * 2:
+			for fc: Dictionary in _search_new_lane_fork_candidates(rng, _C.FALLBACK_MIN_EXT, fork_min_ext, ext_seed, fork_max_join_index):
+				raw_pool.append(fc)
+		if raw_pool.size() < desired_count * 2:
+			for fc: Dictionary in _search_new_lane_fork_candidates(rng, _C.MIN_FALLBACK_EXT, _C.FALLBACK_MIN_EXT, ext_seed, fork_max_join_index + 3):
+				raw_pool.append(fc)
 		if raw_pool.size() < desired_count:
-			var fallback_pool: Array[Dictionary] = _search_new_lane_fork_candidates(rng, _C.FALLBACK_MIN_EXT, fork_min_ext, ext_seed)
-			for fc: Dictionary in fallback_pool:
+			for fc: Dictionary in _search_existing_fork_extension_candidates(rng, _C.MIN_FALLBACK_EXT, fork_max_ext, ext_seed):
 				raw_pool.append(fc)
 	else:
 		raw_pool = _search_existing_fork_extension_candidates(rng, fork_min_ext, fork_max_ext, ext_seed)
-		if raw_pool.size() < desired_count:
-			var fallback_ext: Array[Dictionary] = _search_existing_fork_extension_candidates(rng, _C.FALLBACK_MIN_EXT, fork_min_ext, ext_seed)
-			for fc: Dictionary in fallback_ext:
+		if raw_pool.size() < desired_count * 2:
+			for fc: Dictionary in _search_existing_fork_extension_candidates(rng, _C.FALLBACK_MIN_EXT, fork_min_ext, ext_seed):
+				raw_pool.append(fc)
+		if raw_pool.size() < desired_count * 2:
+			for fc: Dictionary in _search_existing_fork_extension_candidates(rng, _C.MIN_FALLBACK_EXT, _C.FALLBACK_MIN_EXT, ext_seed):
 				raw_pool.append(fc)
 
 	# Pick up to desired_count geographically distinct candidates (different exit sectors / endpoints)
@@ -1513,12 +1520,14 @@ func _search_new_lane_fork_candidates(
 	rng: RandomNumberGenerator,
 	cur_min_len: int,
 	cur_max_len: int,
-	ext_seed: int
+	ext_seed: int,
+	max_join_override: int = -1
 ) -> Array[Dictionary]:
 	var results: Array[Dictionary] = []
 	var seen_sigs: Dictionary = {}
 	var target_lane_id: int = get_lane_count()
-	var max_join: int = mini(fork_max_join_index, maxi(0, path_hexes.size() - 2))
+	var join_cap: int = max_join_override if max_join_override >= 0 else fork_max_join_index
+	var max_join: int = mini(join_cap, maxi(0, path_hexes.size() - 2))
 	var center: Vector2 = _bounding_center()
 	grid.ensure_chunks_around(path_hexes[0], cur_max_len + terrain_margin + 8)
 
@@ -1582,15 +1591,15 @@ func _search_existing_fork_extension_candidates(
 	var seen_sigs: Dictionary = {}
 	var center: Vector2 = _bounding_center()
 
-	# Candidate pool across fork lanes (1..lanes.size()-1), sorted shortest-first
+	# Candidate pool across fork lanes (1..lanes.size()-1), sorted shortest-first, plus lane 0 as fallback
 	var fork_lane_ids: Array[int] = []
 	for lid in range(1, get_lane_count()):
 		fork_lane_ids.append(lid)
-	if fork_lane_ids.is_empty():
-		fork_lane_ids.append(0)
 	fork_lane_ids.sort_custom(func(a: int, b: int) -> bool:
 		return get_lane(a).size() < get_lane(b).size()
 	)
+	if not fork_lane_ids.has(0):
+		fork_lane_ids.append(0)
 
 	for target_lid: int in fork_lane_ids:
 		var base_lane: Array[Vector2i] = get_lane(target_lid)
@@ -1858,7 +1867,7 @@ func preview_next_extension(for_boss_wave: int = -1) -> Dictionary:
 
 	if target_boss_wave >= fork_min_wave and should_fork_for_boss_wave(target_boss_wave):
 		var cands: Array[Dictionary] = generate_fork_candidates(target_boss_wave)
-		if not cands.is_empty():
+		if cands.size() >= 2:
 			preview_is_fork = true
 			fork_candidates = cands
 			select_fork_candidate(0)
@@ -1880,7 +1889,7 @@ func preview_next_extension(for_boss_wave: int = -1) -> Dictionary:
 func preview_fork(for_boss_wave: int = 20, candidate_count: int = -1) -> Dictionary:
 	_pending_preview_result.clear()
 	var cands: Array[Dictionary] = generate_fork_candidates(for_boss_wave, candidate_count)
-	if cands.is_empty():
+	if cands.size() < 2:
 		return preview_next_extension(0)
 	preview_is_fork = true
 	fork_candidates = cands

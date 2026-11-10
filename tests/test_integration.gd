@@ -125,7 +125,27 @@ func test_02_smoke_main_loads_and_reaches_intermission() -> void:
 	add_child(menu_inst)
 	assert(menu_inst.get_node_or_null("Center/VBox/StartButton") != null, "MainMenu must have StartButton")
 	assert(menu_inst.get_node_or_null("Center/VBox/QuitButton") != null, "MainMenu must have QuitButton")
+	var seed_input: LineEdit = menu_inst.get_node_or_null("Center/VBox/SeedBox/SeedInput") as LineEdit
+	assert(seed_input != null, "MainMenu must have SeedInput")
+	assert(seed_input.text.is_empty(), "SeedInput must start blank")
+	assert(not seed_input.placeholder_text.contains("1337"), "SeedInput placeholder must not advertise 1337 as a default")
 	menu_inst.queue_free()
+
+	# Verify blank seed / start_new_run(-1) rolls a random seed rather than defaulting to 1337
+	gs.pending_seed_override = -1
+	gs.start_new_run(-1)
+	var first_random_seed: int = gs.run_seed
+	assert(first_random_seed >= 1, "Random seed must be >= 1, got %d" % first_random_seed)
+	var saw_non_1337: bool = first_random_seed != 1337
+	var saw_distinct: bool = false
+	for _i in range(5):
+		gs.start_new_run(-1)
+		if gs.run_seed != 1337:
+			saw_non_1337 = true
+		if gs.run_seed != first_random_seed:
+			saw_distinct = true
+	assert(saw_non_1337, "Blank/default seed must not stick to 1337")
+	assert(saw_distinct, "Repeated blank-seed runs must roll distinct random seeds")
 
 	var main_packed := load("res://scenes/main.tscn") as PackedScene
 	assert(main_packed != null, "res://scenes/main.tscn must load")

@@ -517,3 +517,16 @@ func test_12_fork_cadence_candidate_selection_and_max_3_lanes_cap() -> void:
 		gen.get_lane(1).size() > lane_1_len_before or gen.get_lane(2).size() > lane_2_len_before,
 		"Once at 3 lanes, fork commits must extend one of the fork lanes"
 	)
+
+	# 4. Tight-geometry seeds (e.g. seeds 48, 57, 117, 163) must still offer >= 2 fork candidates
+	for tight_seed: int in [48, 57, 117, 163]:
+		var t_gen := _PathGen.new(tight_seed)
+		t_gen.generate_initial_path()
+		t_gen.preview_next_extension(10)
+		t_gen.commit_extension()
+		t_gen.preview_next_extension(15)
+		t_gen.commit_extension()
+		var t_cands: Array[Dictionary] = t_gen.generate_fork_candidates(30, 2)
+		assert(t_cands.size() >= 2, "Seed %d must generate >= 2 fork candidates at Wave 30, got %d" % [tight_seed, t_cands.size()])
+		assert(t_cands[0]["new_hexes"] != t_cands[1]["new_hexes"], "Seed %d Route A and Route B must be distinct" % tight_seed)
+

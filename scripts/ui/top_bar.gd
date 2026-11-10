@@ -2,6 +2,17 @@
 ##
 ## Displays lives, wave and interval number, active faction logo/badge,
 ## Offerings, Scrap, and the global Corruption meter (0-100).
+##
+## RESPONSIVE FIT (all resolutions / aspect ratios): the bar must show EVERY
+## element at every viewport width. The HUD is authored against a base 1152x648
+## and, with a KEEP-aspect scale derived from window height, the layout width is
+## exactly `648 * aspect`: 1152 at 16:9, 1037 at 16:10, 864 at 4:3. The full row
+## (with the Draw Rite button visible once a Rite is held) needs ~1152 px, so at
+## 16:10 and 4:3 the rightmost readouts used to spill off the screen. Rather than
+## wrapping (which would grow the bar and shove the Intel / Boss / Tower panels)
+## the bar COMPACTS: it measures its natural width and shrinks its fonts,
+## separations, icons and Corruption bar until the whole row fits on ONE line.
+## Because the bar stays a fixed 44 px band, no other HUD window moves.
 class_name TopBar
 extends PanelContainer
 
@@ -17,9 +28,27 @@ var _rites_label: Label
 var _attention_label: Label
 var _draw_rite_button: Button
 
+var _hbox: HBoxContainer
+var _corr_box: HBoxContainer
+
+## Base (unscaled) font sizes / gaps, captured at build time so the fit can be
+## re-derived from any viewport width without drift.
+var _base_fonts: Dictionary = {}      # Control -> int base font size
+var _base_seps: Dictionary = {}       # BoxContainer -> int base separation
+var _base_icon_sizes: Dictionary = {} # Control -> float base min width (chip icons + bar)
+var _applying_fit: bool = false
+## Test hook: forces the width the bar must fit into. -1 (default) measures the viewport.
+var fit_width_override: float = -1.0
+
 const ATTENTION_COLOR = Color(0.74, 0.56, 0.46)
 const ATTENTION_HOT_COLOR = Color(1.0, 0.34, 0.28)
 const RITES_COLOR = Color(0.96, 0.80, 0.36)
+
+## Never shrink text below this scale: past it the row is left as-is (an extreme
+## windowed drag), because unreadable text is worse than a clipped readout.
+const _MIN_FIT_SCALE: float = 0.50
+const _MIN_FONT_SIZE: int = 8
+const _MIN_SEP: int = 3
 
 ## Hover explanation for the Corruption meter. Crucial: the meter gates both a damage bonus
 ## and a Rogue wave, so the player must be able to read what the number means without a manual.
@@ -44,6 +73,12 @@ func _ready() -> void:
 	_build_ui()
 	_connect_signals()
 	refresh()
+	if not resized.is_connected(_on_resized):
+		resized.connect(_on_resized)
+	var vp: Viewport = get_viewport()
+	if vp != null and not vp.size_changed.is_connected(_on_resized):
+		vp.size_changed.connect(_on_resized)
+	_on_resized()
 
 
 func _build_ui() -> void:
@@ -54,22 +89,22 @@ func _build_ui() -> void:
 	style.set_content_margin_all(8)
 	add_theme_stylebox_override("panel", style)
 
-	var hbox := HBoxContainer.new()
-	hbox.add_theme_constant_override("separation", 20)
-	add_child(hbox)
+	_hbox = HBoxContainer.new()
+	_add_box(_hbox, 20)
+	add_child(_hbox)
 
-	_lives_label = _make_stat_label(hbox, "Lives: 20/20", Color(1.0, 0.45, 0.45))
-	_wave_label = _make_stat_label(hbox, "Wave: 0 (Int 1)", Color(0.85, 0.90, 1.0))
-	_faction_label = _make_stat_label(hbox, "Faction: SWARM SYNDICATE", Color(0.98, 0.82, 0.25))
+	_lives_label = _make_stat_label(_hbox, "Lives: 20/20", Color(1.0, 0.45, 0.45))
+	_wave_label = _make_stat_label(_hbox, "Wave: 0 (Int 1)", Color(0.85, 0.90, 1.0))
+	_faction_label = _make_stat_label(_hbox, "Faction: SWARM SYNDICATE", Color(0.98, 0.82, 0.25))
 	_offerings_label = _make_currency_chip(
-		hbox,
+		_hbox,
 		PlaceholderIcons.COST_OFFERINGS,
 		"150",
 		Color(0.75, 0.50, 1.0),
 		"Offerings -- build Revealed towers and upgrades, pay Penance, cleanse conversions."
 	)
 	_scrap_label = _make_currency_chip(
-		hbox,
+		_hbox,
 		PlaceholderIcons.COST_SCRAP,
 		"40",
 		Color(1.0, 0.65, 0.25),
@@ -80,7 +115,7 @@ func _build_ui() -> void:
 	# and spend like Offerings and Scrap. Same icon+number chip shape keeps the three legible
 	# as one set.
 	_rites_label = _make_currency_chip(
-		hbox,
+		_hbox,
 		PlaceholderIcons.COST_RITES,
 		"0",
 		RITES_COLOR,
@@ -90,10 +125,11 @@ func _build_ui() -> void:
 		+ "Spend Rites on a tower's Rite upgrade branch -- they are NEVER refunded."
 	)
 	_rites_label.add_theme_font_size_override("font_size", 13)
+	_track_font(_rites_label)
 
-	var corr_box := HBoxContainer.new()
-	corr_box.add_theme_constant_override("separation", 6)
-	hbox.add_child(corr_box)
+	_corr_box = HBoxContainer.new()
+	_add_box(_corr_box, 6)
+	_hbox.add_child(_corr_box)
 
 	_corruption_label = Label.new()
 	_corruption_label.text = "Corruption: 0/100"
@@ -102,7 +138,8 @@ func _build_ui() -> void:
 	# Corruption explanation actually appears on hover.
 	_corruption_label.mouse_filter = Control.MOUSE_FILTER_STOP
 	_corruption_label.tooltip_text = CORRUPTION_TOOLTIP
-	corr_box.add_child(_corruption_label)
+	_corr_box.add_child(_corruption_label)
+	_track_font(_corruption_label)
 
 	_corruption_bar = ProgressBar.new()
 	_corruption_bar.min_value = 0.0
@@ -112,14 +149,16 @@ func _build_ui() -> void:
 	_corruption_bar.custom_minimum_size = Vector2(110.0, 18.0)
 	_corruption_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_corruption_bar.tooltip_text = CORRUPTION_TOOLTIP
-	corr_box.add_child(_corruption_bar)
+	_corr_box.add_child(_corruption_bar)
+	_track_icon_size(_corruption_bar)
 
 	_penance_button = Button.new()
 	_penance_button.text = "Penance (-5) [40 Off]"
 	_penance_button.focus_mode = Control.FOCUS_NONE
 	_penance_button.add_theme_font_size_override("font_size", 12)
 	_penance_button.pressed.connect(_on_penance_pressed)
-	corr_box.add_child(_penance_button)
+	_corr_box.add_child(_penance_button)
+	_track_font(_penance_button)
 
 	# Reckoning: the severity the NEXT Rogue wave inherits from Rite debt. Read next to the
 	# meter it is caused by, with its own hover explanation (see RECKONING_TOOLTIP).
@@ -129,7 +168,8 @@ func _build_ui() -> void:
 	_attention_label.add_theme_color_override("font_color", ATTENTION_COLOR)
 	_attention_label.mouse_filter = Control.MOUSE_FILTER_STOP
 	_attention_label.tooltip_text = RECKONING_TOOLTIP
-	hbox.add_child(_attention_label)
+	_hbox.add_child(_attention_label)
+	_track_font(_attention_label)
 
 	# The button spells out its price in its own label, because "Draw Rite" alone never told
 	# the player what it costs. The exact Corruption cost is filled in by refresh(), which
@@ -140,7 +180,25 @@ func _build_ui() -> void:
 	_draw_rite_button.add_theme_font_size_override("font_size", 12)
 	_draw_rite_button.pressed.connect(_on_draw_rite_pressed)
 	_draw_rite_button.visible = false
-	hbox.add_child(_draw_rite_button)
+	_hbox.add_child(_draw_rite_button)
+	_track_font(_draw_rite_button)
+
+
+## Adds a BoxContainer with [param sep] separation and remembers it for the fit pass.
+func _add_box(box: BoxContainer, sep: int) -> void:
+	box.add_theme_constant_override("separation", sep)
+	_base_seps[box] = sep
+
+
+## Records a control's base font size (its current override, or the theme default) so the
+## responsive fit can scale it and restore it exactly.
+func _track_font(node: Control) -> void:
+	_base_fonts[node] = node.get_theme_font_size("font_size")
+
+
+## Records a control's base minimum width (chip icons, Corruption bar).
+func _track_icon_size(node: Control) -> void:
+	_base_icon_sizes[node] = node.custom_minimum_size.x
 
 
 func _make_stat_label(parent: Node, text: String, col: Color) -> Label:
@@ -149,6 +207,7 @@ func _make_stat_label(parent: Node, text: String, col: Color) -> Label:
 	lbl.add_theme_font_size_override("font_size", 15)
 	lbl.add_theme_color_override("font_color", col)
 	parent.add_child(lbl)
+	_track_font(lbl)
 	return lbl
 
 
@@ -159,9 +218,9 @@ func _make_currency_chip(
 	parent: Node, currency: int, text: String, col: Color, tooltip: String
 ) -> Label:
 	var chip := HBoxContainer.new()
-	chip.add_theme_constant_override("separation", 5)
 	chip.tooltip_text = tooltip
 	parent.add_child(chip)
+	_add_box(chip, 5)
 
 	var icon := TextureRect.new()
 	icon.texture = PlaceholderIcons.get_cost_icon(currency, 18)
@@ -169,13 +228,84 @@ func _make_currency_chip(
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	chip.add_child(icon)
+	_track_icon_size(icon)
 
 	var lbl := Label.new()
 	lbl.text = text
 	lbl.add_theme_font_size_override("font_size", 15)
 	lbl.add_theme_color_override("font_color", col)
 	chip.add_child(lbl)
+	_track_font(lbl)
 	return lbl
+
+
+## ---- Responsive one-row fit -------------------------------------------------
+
+## Re-applies the compacting scale whenever the bar (or the viewport) resizes.
+func _on_resized() -> void:
+	_apply_fit()
+
+
+## The layout width the bar must fit into. This is the VIEWPORT width, never the bar's own
+## `size.x`: a Control's size is clamped UP to its combined minimum, so once the natural row is
+## wider than the viewport the bar reports its (too wide) minimum width and would never shrink.
+func _available_width() -> float:
+	if fit_width_override > 0.0:
+		return fit_width_override
+	var vw: float = get_viewport_rect().size.x
+	if vw > 1.0:
+		return vw
+	return size.x
+
+
+## Scales every tracked font / separation / icon by [param s] and refreshes the layout.
+func _set_scale(s: float) -> void:
+	for node: Variant in _base_fonts.keys():
+		if is_instance_valid(node):
+			var base: int = int(_base_fonts[node])
+			(node as Control).add_theme_font_size_override(
+				"font_size", maxi(_MIN_FONT_SIZE, roundi(float(base) * s))
+			)
+	for node: Variant in _base_seps.keys():
+		if is_instance_valid(node):
+			var base: int = int(_base_seps[node])
+			(node as BoxContainer).add_theme_constant_override(
+				"separation", maxi(_MIN_SEP, roundi(float(base) * s))
+			)
+	for node: Variant in _base_icon_sizes.keys():
+		if is_instance_valid(node):
+			var c: Control = node as Control
+			var base: float = float(_base_icon_sizes[node])
+			c.custom_minimum_size.x = maxf(10.0, roundf(base * s))
+			if c == _corruption_bar:
+				c.custom_minimum_size.y = maxf(12.0, roundf(18.0 * s))
+	update_minimum_size()
+
+
+## Measures the natural (unscaled) width and, if the bar is narrower, shrinks the row until it
+## fits on one line. The estimate is iterated because font sizes round to whole pixels and the
+## stylebox / button content margins are fixed, so a single ratio can still overflow by a few
+## pixels. Each pass only DECREASES the scale, so it converges. Idempotent.
+func _apply_fit() -> void:
+	if _hbox == null or _applying_fit:
+		return
+	_applying_fit = true
+	_set_scale(1.0)
+	var avail: float = _available_width()
+	var natural: float = get_combined_minimum_size().x
+	if avail > 0.0 and natural > avail:
+		var s: float = clampf(avail / natural, _MIN_FIT_SCALE, 1.0)
+		_set_scale(s)
+		for _i in range(6):
+			var w: float = get_combined_minimum_size().x
+			if w <= avail or w <= 0.0:
+				break
+			var next_s: float = clampf(s * (avail / w) * 0.97, _MIN_FIT_SCALE, 1.0)
+			if is_equal_approx(next_s, s):
+				break
+			s = next_s
+			_set_scale(s)
+	_applying_fit = false
 
 
 func _connect_signals() -> void:
@@ -242,6 +372,10 @@ func refresh() -> void:
 		var can_draw: bool = bool(gs.call("can_draw_rites", 1))
 		_draw_rite_button.visible = can_draw or rites_n > 0
 		_draw_rite_button.disabled = not can_draw
+
+	# The visible set of readouts (e.g. the Draw Rite button appears once a Rite is held) can
+	# change the row's width, so re-fit after every data refresh.
+	_apply_fit()
 
 
 func _on_draw_rite_pressed() -> void:
