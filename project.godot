@@ -19,6 +19,7 @@ config/features=PackedStringArray("4.7")
 SimClock="*res://scripts/core/sim_clock.gd"
 GameState="*res://scripts/core/game_state.gd"
 UiScale="*res://scripts/core/ui_scale_controller.gd"
+ZivaAnalytics="*res://addons/ziva_analytics/ziva_analytics.gd"
 
 [display]
 
@@ -67,3 +68,8 @@ camera_zoom_out={
 "events": [Object(InputEventMouseButton,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"button_mask":0,"position":Vector2(0, 0),"global_position":Vector2(0, 0),"factor":1.0,"button_index":5,"canceled":false,"pressed":false,"double_click":false,"script":null)
 ]
 }
+
+[ziva]
+
+analytics/ingest_key="zva_ac8wCuQ0ddGrrLXsikugRp79MqpAd5oy"
+analytics/endpoint="https://ziva.sh/api/v1/analytics/events"

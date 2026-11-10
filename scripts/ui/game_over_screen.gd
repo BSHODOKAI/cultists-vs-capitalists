@@ -8,6 +8,7 @@ extends PanelContainer
 
 var _summary_label: RichTextLabel
 var _same_seed_check: CheckBox
+var _copy_log_button: Button
 var _restart_button: Button
 var _menu_button: Button
 
@@ -57,13 +58,19 @@ func _build_ui() -> void:
 
 	_restart_button = Button.new()
 	_restart_button.text = "Restart Run"
-	_restart_button.custom_minimum_size = Vector2(160.0, 40.0)
+	_restart_button.custom_minimum_size = Vector2(140.0, 40.0)
 	_restart_button.pressed.connect(_on_restart_pressed)
 	btn_hbox.add_child(_restart_button)
 
+	_copy_log_button = Button.new()
+	_copy_log_button.text = "Copy Run Log"
+	_copy_log_button.custom_minimum_size = Vector2(140.0, 40.0)
+	_copy_log_button.pressed.connect(_on_copy_log_pressed)
+	btn_hbox.add_child(_copy_log_button)
+
 	_menu_button = Button.new()
 	_menu_button.text = "Main Menu"
-	_menu_button.custom_minimum_size = Vector2(160.0, 40.0)
+	_menu_button.custom_minimum_size = Vector2(140.0, 40.0)
 	_menu_button.pressed.connect(_on_menu_pressed)
 	btn_hbox.add_child(_menu_button)
 
@@ -81,6 +88,8 @@ func _connect_signals() -> void:
 
 func show_loss_report(report: LossReport) -> void:
 	visible = true
+	if _copy_log_button != null:
+		_copy_log_button.text = "Copy Run Log"
 	if report == null or _summary_label == null:
 		return
 
@@ -104,7 +113,31 @@ func show_loss_report(report: LossReport) -> void:
 		if k is String:
 			lines.append("  • %s: %s" % [String(k), str(report.coverage_per_unit_tag[k])])
 
+	var gs: Node = get_node_or_null("/root/GameState")
+	if gs != null:
+		var st: StrategyTracker = gs.get("strategy_tracker") as StrategyTracker
+		if st != null:
+			var fb: Dictionary = st.get_director_feedback_profile()
+			var dom: Array = fb.get("dominant_strategies", []) as Array
+			if not dom.is_empty():
+				lines.append("")
+				lines.append("Detected Patterns: " + ", ".join(PackedStringArray(dom)))
+		var rec: PlaytestRecorder = gs.get("playtest_recorder") as PlaytestRecorder
+		if rec != null and not rec.last_saved_log_path.is_empty():
+			lines.append("Saved Log: " + rec.last_saved_log_path)
+
 	_summary_label.text = "\n".join(lines)
+
+
+func _on_copy_log_pressed() -> void:
+	var gs: Node = get_node_or_null("/root/GameState")
+	if gs == null:
+		return
+	var rec: PlaytestRecorder = gs.call("ensure_playtest_recorder") as PlaytestRecorder
+	if rec != null:
+		rec.copy_run_log_to_clipboard("game_over")
+		if _copy_log_button != null:
+			_copy_log_button.text = "Copied Run Log!"
 
 
 func _on_restart_pressed() -> void:

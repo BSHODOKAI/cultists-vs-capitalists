@@ -90,12 +90,23 @@ func _build_ui() -> void:
 	# Command buttons row 1: Economy & Lives & God Mode
 	var row1 := HBoxContainer.new()
 	vbox.add_child(row1)
-	_add_cmd_btn(row1, "+100 Off", func() -> void: _gs().call("add_currency", 0, 100, "debug"))
-	_add_cmd_btn(row1, "+100 Scrap", func() -> void: _gs().call("add_currency", 1, 100, "debug"))
-	_add_cmd_btn(row1, "Lives=20", func() -> void: _gs().set("lives", 20))
+	_add_cmd_btn(row1, "+100 Off", func() -> void:
+		_gs().call("record_debug_action", "add_offerings", {"amount": 100})
+		_gs().call("add_currency", 0, 100, "debug")
+	)
+	_add_cmd_btn(row1, "+100 Scrap", func() -> void:
+		_gs().call("record_debug_action", "add_scrap", {"amount": 100})
+		_gs().call("add_currency", 1, 100, "debug")
+	)
+	_add_cmd_btn(row1, "Lives=20", func() -> void:
+		_gs().call("record_debug_action", "set_lives", {"lives": 20})
+		_gs().set("lives", 20)
+	)
 	_add_cmd_btn(row1, "God Mode", func() -> void:
 		var gs: Node = _gs()
-		gs.set("god_mode", not bool(gs.get("god_mode")))
+		var next_gm: bool = not bool(gs.get("god_mode"))
+		gs.call("record_debug_action", "toggle_god_mode", {"enabled": next_gm})
+		gs.set("god_mode", next_gm)
 		refresh()
 	)
 
@@ -109,6 +120,7 @@ func _build_ui() -> void:
 	row2.add_child(_wave_spin)
 	_add_cmd_btn(row2, "Jump Wave", func() -> void:
 		var gs: Node = _gs()
+		gs.call("record_debug_action", "jump_wave", {"wave": int(_wave_spin.value)})
 		gs.set("current_wave", int(_wave_spin.value) - 1)
 		gs.call("_enter_intermission")
 		refresh()
@@ -116,11 +128,13 @@ func _build_ui() -> void:
 	_add_cmd_btn(row2, "Force Growth", func() -> void:
 		# Routed through GameState (not a bare commit_extension) so objectives
 		# settle on the new ground exactly as they do after a boss kill.
+		_gs().call("record_debug_action", "force_growth")
 		_gs().call("debug_force_growth")
 		refresh()
 	)
 	_add_cmd_btn(row2, "Preview Fork", func() -> void:
 		var gs: Node = _gs()
+		gs.call("record_debug_action", "preview_fork")
 		var pgen: PathGenerator = gs.get("path_generator") as PathGenerator
 		if pgen != null:
 			var p_res: Dictionary = pgen.preview_fork(maxi(20, int(gs.get("current_wave"))))
@@ -141,6 +155,7 @@ func _build_ui() -> void:
 		var tsys: TowerSystem = gs.get("tower_system") as TowerSystem
 		if tsys != null:
 			var uid: String = _unit_option.get_item_text(_unit_option.selected)
+			gs.call("record_debug_action", "spawn_unit", {"unit_id": uid})
 			var u: CombatUnit = tsys.spawn_unit_from_data(uid)
 			if u != null:
 				gs.emit_signal("enemy_spawned", u)
@@ -198,6 +213,7 @@ func _build_ui() -> void:
 	vbox.add_child(row6)
 	_add_cmd_btn(row6, "+10 Corruption", func() -> void:
 		var gs: Node = _gs()
+		gs.call("record_debug_action", "add_corruption", {"amount": 10})
 		var tsys: TowerSystem = gs.get("tower_system") as TowerSystem
 		if tsys != null:
 			tsys.add_corruption(10)
@@ -208,6 +224,7 @@ func _build_ui() -> void:
 	)
 	_add_cmd_btn(row6, "+1 Rite", func() -> void:
 		var gs: Node = _gs()
+		gs.call("record_debug_action", "add_rite", {"amount": 1})
 		var tsys: TowerSystem = gs.get("tower_system") as TowerSystem
 		if tsys != null:
 			tsys.rites += 1
@@ -216,6 +233,7 @@ func _build_ui() -> void:
 		refresh()
 	)
 	_add_cmd_btn(row6, "Seed Objective", func() -> void:
+		_gs().call("record_debug_action", "seed_objective")
 		_seed_objective()
 		refresh()
 	)
@@ -228,6 +246,20 @@ func _build_ui() -> void:
 	vbox.add_child(row7)
 	_add_cmd_btn(row7, "T2 Selected", func() -> void: _debug_upgrade_selected(false))
 	_add_cmd_btn(row7, "Rite Selected", func() -> void: _debug_upgrade_selected(true))
+	_add_cmd_btn(row7, "Copy Log", func() -> void:
+		var gs: Node = _gs()
+		if gs != null:
+			var rec: PlaytestRecorder = gs.call("ensure_playtest_recorder") as PlaytestRecorder
+			if rec != null:
+				rec.copy_run_log_to_clipboard("debug_panel")
+		refresh()
+	)
+	_add_cmd_btn(row7, "Replay Clip", func() -> void:
+		var gs: Node = _gs()
+		if gs != null:
+			gs.call("import_and_replay_json", DisplayServer.clipboard_get())
+		refresh()
+	)
 
 
 ## Upgrades the selected tower through the tower panel's own public API: to T2, and optionally on
@@ -236,6 +268,7 @@ func _debug_upgrade_selected(include_rite: bool) -> void:
 	var gs: Node = _gs()
 	if gs == null:
 		return
+	gs.call("record_debug_action", "upgrade_selected", {"include_rite": include_rite})
 	var inst: TowerInstance = gs.get("selected_placed_tower") as TowerInstance
 	if inst == null or inst.def == null:
 		return
@@ -361,5 +394,15 @@ func refresh() -> void:
 			lines.append("  #%d %s: %.2f (%s)" % [
 				int(r["pick_index"]), String(r["unit_id"]), float(r["score"]), String(r["dominant_reason"])
 			])
+
+	var st: StrategyTracker = gs.get("strategy_tracker") as StrategyTracker
+	if st != null:
+		var fb: Dictionary = st.get_director_feedback_profile(tsys)
+		var dom: Array = fb.get("dominant_strategies", []) as Array
+		lines.append("Strategy Flags: %s | KillDepth: %.2f | CounterNeut: %.0f%%" % [
+			",".join(PackedStringArray(dom)) if not dom.is_empty() else "none",
+			float(fb.get("recent_avg_kill_depth", 0.5)),
+			float(fb.get("recent_counter_neutralization_rate", 0.0)) * 100.0,
+		])
 
 	_info_label.text = "\n".join(lines)

@@ -344,15 +344,37 @@ counts, guaranteeing claimability).
 
 ---
 
-## 10. Engineering Conventions & Project Layout
+## 10. Playtest Telemetry, Command Logs & StrategyTracker Director API
+
+Full reference and future `WaveDirector` integration recipes live in `res://PLAYTEST_TELEMETRY_AND_DIRECTOR_API.md`.
+
+- **Cloud Telemetry (`ZivaAnalytics` Autoload — `res://addons/ziva_analytics/ziva_analytics.gd`):**
+- Coordinated by `PlaytestRecorder` (`res://scripts/telemetry/playtest_recorder.gd`, attached at `GameState.playtest_recorder`).
+- Emits `run_started`, `wave_completed`, `boss_outcome`, `reckoning_triggered`, and `run_ended` (followed by `ZivaAnalytics.flush()`) during live interactive runs; automatically suppressed during headless tests, bot simulations, and `replay_command_log()`.
+- Optional Playtester Handle on `MainMenu` is persisted in `user://playtest_profile.cfg` and passed to `ZivaAnalytics.identify()`.
+- Any F3 `DebugPanel` cheat or `--start-*` launch override marks `GameState.debug_tainted = true` and logs a `debug_action` event so debug runs are distinguishable from organic playtest data.
+- **Persistent Command Logs & Deterministic JSON Replay (`user://playtest_logs/*.json`):**
+- `GameState._log_command()` records `tick`, `wave`, `state`, and spatial placement context (`is_overlap_hex`, `min_path_dist`, `path_progress_ratio`).
+- `PlaytestRecorder` auto-saves full run JSON files to `user://playtest_logs/` on Game Over, run restart, Quit to Main Menu, and window close, and provides **"Copy Run Log"** buttons on `GameOverScreen`, `InGameMenu`, and `DebugPanel`.
+- `GameState.export_command_log_dict()` and `GameState.import_and_replay_json(json_str)` (or **"Replay Clip"** in `F3` `DebugPanel`) round-trip hex coordinates (`{"q": x, "r": y}`) through JSON with 100% deterministic fidelity via `replay_command_log()`.
+- **Strategy & Director-Invalidation Detection (`StrategyTracker` — `res://scripts/telemetry/strategy_tracker.gd`):**
+- Pure-logic (`RefCounted`) analyzer owned by `GameState.strategy_tracker`; emits `GameState.wave_strategy_evaluated(wave_number, digest)` at the end of every wave.
+- Detects 9 strategy/exploit flags: `spawn_camp_invalidation`, `unscouted_backline_hiding`, `intel_retcon_churn`, `counter_pick_neutralized`, `t2_unbranched_spam`, `cap_dodging`, `monoculture_spam`, `rite_brinkmanship`, and `cc_killbox_stall`.
+- Exposes `StrategyTracker.get_director_feedback_profile(tower_system, window_waves)` returning rolling `[0.0..1.0]` strategy scores, `extended_branch_mix`, `potential_tag_coverage` (including unscouted towers), and `counter_unit_efficacy` ready to feed into `WaveDirector.generate_wave()`.
+
+---
+
+## 11. Engineering Conventions & Project Layout
 
 - **Data-Driven Resources:** All game data lives in `.tres` files under `res://data/` (`data/towers/`, `data/upgrades/`, `data/units/`, `data/units/bosses/`, `data/biomes/`, and `data/*_balance.tres`). Never scatter balance numbers through logic.
-- **Pure Logic vs. Nodes:** Core systems (`HexGrid`, `HexMath`, `HexSpatialIndex`, `PathGenerator`, `TowerSystem`, `TowerInstance`, `CombatUnit`, `UnitLeveling`, `WaveDirector`, `WaveRoster`, `CoverageTracker`, `AudioCueSystem`, `DisplaySettings`, `AudioSettings`) extend `RefCounted` so they can be tested headlessly without a scene tree.
+- **Pure Logic vs. Nodes:** Core systems (`HexGrid`, `HexMath`, `HexSpatialIndex`, `PathGenerator`, `TowerSystem`, `TowerInstance`, `CombatUnit`, `UnitLeveling`, `WaveDirector`, `WaveRoster`, `CoverageTracker`, `StrategyTracker`, `AudioCueSystem`, `DisplaySettings`, `AudioSettings`) extend `RefCounted` so they can be tested headlessly without a scene tree.
 - **Deterministic RNG:** All randomness uses seeded `RandomNumberGenerator` instances passed into systems. Never call global `randf()` or `randi()`.
 - **Typing:** Always use `class_name` and explicit static type annotations on every `var`, parameter, return type, and signal.
 - **Cross-System Signals (`GameState` & `TowerSystem`):**
 - `wave_started(wave_number)`
 - `wave_ended(wave_number)`
+- `wave_strategy_evaluated(wave_number, digest)`
+- `command_recorded(entry)`
 - `enemy_spawned(unit)`
 - `enemy_died(unit_id)`
 - `enemy_leaked(unit_id, leak_cost)`
@@ -367,6 +389,7 @@ counts, guaranteeing claimability).
 ```text
 res://
 ├── AGENTS.md
+├── PLAYTEST_TELEMETRY_AND_DIRECTOR_API.md
 ├── data/
 │   ├── audio_balance.tres
 │   ├── director_balance.tres
@@ -387,7 +410,9 @@ res://
 │   ├── core/           # SimClock, GameState, HexMath, HexSpatialIndex, DisplaySettings, VisualThemeData
 │   ├── director/       # WaveDirector, WaveRoster, CoverageTracker, DirectorBalanceData, DirectorSimulator
 │   ├── events/         # RunEventSystem, EventData, EventBalanceData, EventLibrary
+│   ├── objectives/     # ObjectiveSystem, ObjectiveInstance, ObjectiveData, ObjectiveBalanceData, ObjectiveLibrary
 │   ├── path/           # HexGrid, PathGenerator, PathConstants, PathBalanceData
+│   ├── telemetry/      # StrategyTracker, PlaytestRecorder
 │   ├── towers/         # TowerData, UpgradeNode, TowerInstance, CombatUnit, TowerSystem, TowerLibrary, TowerBehaviorRegistry, TowerBalanceData
 │   ├── ui/             # MainMenu, InGameMenu, SettingsMenu, TopBar, BuildPalette, TowerPanel, IntelPanel, WaveControls, BossBar, TelegraphLayer, GameOverScreen, DebugPanel, PlaceholderIcons
 │   ├── units/          # UnitData, AbilityData, UnitAbilityRegistry, UnitLeveling, UnitLibrary, UnitBalanceData, LossReport

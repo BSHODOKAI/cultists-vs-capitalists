@@ -236,6 +236,20 @@ func is_rigged() -> bool:
 	return branch == _UpgradeNode.Branch.RIGGED
 
 
+func is_rite() -> bool:
+	return branch == _UpgradeNode.Branch.RITE
+
+
+func can_target_air() -> bool:
+	_ensure_upgrade_cache()
+	return _cached_can_target_air
+
+
+func can_target_ground() -> bool:
+	_ensure_upgrade_cache()
+	return _cached_can_target_ground
+
+
 func has_upgrade(node_id: String) -> bool:
 	return unlocked_upgrade_ids.has(node_id)
 

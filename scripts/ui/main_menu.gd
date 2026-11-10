@@ -9,12 +9,14 @@ extends Control
 const MAIN_SCENE_PATH := "res://scenes/main.tscn"
 const _SettingsMenu = preload("res://scripts/ui/settings_menu.gd")
 const _SoundManager = preload("res://scripts/audio/sound_manager.gd")
+const _PlaytestRecorder = preload("res://scripts/telemetry/playtest_recorder.gd")
 
 @onready var _center: CenterContainer = get_node_or_null("Center") as CenterContainer
 @onready var _main_vbox: VBoxContainer = get_node_or_null("Center/VBox") as VBoxContainer
 @onready var _start_button: Button = get_node_or_null("Center/VBox/StartButton") as Button
 @onready var _settings_button: Button = get_node_or_null("Center/VBox/SettingsButton") as Button
 @onready var _quit_button: Button = get_node_or_null("Center/VBox/QuitButton") as Button
+@onready var _tester_input: LineEdit = get_node_or_null("Center/VBox/TesterBox/TesterInput") as LineEdit
 @onready var _seed_input: LineEdit = get_node_or_null("Center/VBox/SeedBox/SeedInput") as LineEdit
 @onready var _settings_menu: SettingsMenu = get_node_or_null("Center/SettingsMenu") as SettingsMenu
 var _sound_manager: SoundManager = null
@@ -44,6 +46,9 @@ func _ready() -> void:
 		_quit_button.pressed.connect(_on_quit_pressed)
 	if _settings_menu != null and not _settings_menu.closed.is_connected(_on_settings_closed):
 		_settings_menu.closed.connect(_on_settings_closed)
+
+	if _tester_input != null:
+		_tester_input.text = _PlaytestRecorder.load_playtester_handle()
 
 	_sound_manager = get_node_or_null("SoundManager") as SoundManager
 	if _sound_manager == null:
@@ -80,6 +85,10 @@ func _on_settings_closed() -> void:
 
 func _on_start_pressed() -> void:
 	var gs: Node = get_node_or_null("/root/GameState")
+	if gs != null and _tester_input != null:
+		var rec: PlaytestRecorder = gs.call("ensure_playtest_recorder") as PlaytestRecorder
+		if rec != null:
+			rec.set_playtester_handle(_tester_input.text)
 	if gs != null and _seed_input != null:
 		var txt: String = _seed_input.text.strip_edges()
 		if txt.is_empty():

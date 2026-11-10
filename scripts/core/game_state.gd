@@ -30,6 +30,8 @@ const _RunEventSystem = preload("res://scripts/events/run_event_system.gd")
 const _ObjectiveLibrary = preload("res://scripts/objectives/objective_library.gd")
 const _ObjectiveSystem = preload("res://scripts/objectives/objective_system.gd")
 const _ObjectiveData = preload("res://scripts/objectives/objective_data.gd")
+const _StrategyTracker = preload("res://scripts/telemetry/strategy_tracker.gd")
+const _PlaytestRecorder = preload("res://scripts/telemetry/playtest_recorder.gd")
 
 enum RunState {
 	RUN_SETUP = 0,
@@ -100,6 +102,9 @@ signal selected_tower_changed(tower: TowerInstance)
 signal build_mode_changed(tower_def: TowerData)
 signal camera_focus_requested(world_pos: Vector3, label: String)
 signal biome_changed(biome: BiomeData)
+signal command_recorded(entry: Dictionary)
+signal wave_strategy_evaluated(wave_number: int, digest: Dictionary)
+signal run_about_to_restart(previous_wave: int)
 
 # --- Core Systems (RefCounted pure logic) ------------------------------------
 var hex_grid: HexGrid
@@ -109,6 +114,8 @@ var director: WaveDirector
 var coverage_tracker: CoverageTracker
 var unit_leveling: UnitLeveling
 var spatial_index: RefCounted
+var strategy_tracker: StrategyTracker = null
+var playtest_recorder: PlaytestRecorder = null
 
 ## Run-Event scheduler (deck of cards). Rebuilt on each start_new_run.
 var run_event_system: RunEventSystem = null
@@ -139,6 +146,12 @@ var active_biome: BiomeData = null
 var max_lives: int = _C.STARTING_LIVES
 var god_mode: bool = false
 var auto_start_waves: bool = false
+## True when any debug cheat / override was used during this run.
+var debug_tainted: bool = false
+## True while `replay_command_log()` is stepping a deterministic replay.
+var is_replaying: bool = false
+## Optional playtester handle set from MainMenu (persisted via PlaytestRecorder).
+var playtester_handle: String = ""
 
 ## Locked roster for the upcoming or active wave.
 var locked_roster: WaveRoster = null
@@ -175,9 +188,19 @@ func _get_sim_clock_node() -> Node:
 
 func _ready() -> void:
 	_parse_dev_args()
+	ensure_playtest_recorder()
 	var clock: Node = _get_sim_clock_node()
 	if clock != null and not clock.is_connected("tick", Callable(self, "_on_sim_tick")):
 		clock.connect("tick", Callable(self, "_on_sim_tick"))
+
+
+func ensure_playtest_recorder() -> PlaytestRecorder:
+	if playtest_recorder == null:
+		playtest_recorder = _PlaytestRecorder.new()
+		playtest_recorder.name = "PlaytestRecorder"
+		add_child(playtest_recorder)
+		playtest_recorder.bind_to_game_state(self)
+	return playtest_recorder
 
 
 ## Parses dev-only launch args (after the bare `--`) that override starting funds.
@@ -273,6 +296,9 @@ func transition_to(new_state: int) -> bool:
 ## none is set (blank menu seed input, direct scene launch), rolls a fresh random
 ## seed so every unspecified run is different rather than repeating a fixed default.
 func start_new_run(seed_val: int = -1) -> void:
+	if current_wave > 0 or not command_log.is_empty():
+		run_about_to_restart.emit(current_wave)
+
 	if seed_val >= 0:
 		run_seed = seed_val
 	elif pending_seed_override >= 0:
@@ -301,8 +327,10 @@ func start_new_run(seed_val: int = -1) -> void:
 	_boss_died_this_wave = false
 	current_wave = 0
 	current_interval = 1
+	debug_tainted = god_mode or debug_start_offerings >= 0 or debug_start_scrap >= 0
 
 	current_state = RunState.RUN_SETUP
+	strategy_tracker = _StrategyTracker.new()
 	_log_command("start_run", {"seed": run_seed})
 
 	# Initialize pure-logic systems with run_seed
@@ -467,6 +495,8 @@ func _enter_intermission() -> void:
 		"is_boss": locked_roster.is_boss_wave,
 		"is_stars": locked_roster.is_stars_are_right,
 	})
+	if strategy_tracker != null:
+		strategy_tracker.on_intermission_started(next_wave, tower_system, locked_roster)
 	intel_updated.emit(locked_roster.intel, locked_roster)
 
 
@@ -528,6 +558,8 @@ func start_wave() -> bool:
 			"level": rogue.spawn_level,
 			"hp": snappedf(rogue.max_hp, 0.1),
 		})
+		if strategy_tracker != null:
+			strategy_tracker.on_unit_spawned(rogue, tower_system)
 		enemy_spawned.emit(rogue)
 		if reckoning_count == 0:
 			var lane_hexes: Array[Vector2i] = tower_system.get_lane_hexes(rogue.lane_id)
@@ -541,6 +573,8 @@ func start_wave() -> bool:
 		corruption_changed.emit(tower_system.corruption)
 
 	coverage_tracker.on_wave_started(current_wave)
+	if strategy_tracker != null:
+		strategy_tracker.on_wave_started(current_wave, tower_system, coverage_tracker, locked_roster)
 	path_generator.on_wave_started(
 		current_wave,
 		locked_roster.spawn_schedule.size(),
@@ -587,6 +621,8 @@ func _on_sim_tick(dt: float, _tick_index: int) -> void:
 	for u: CombatUnit in tower_system.units:
 		if u != null and u.is_alive():
 			prev_unit_positions[u.unit_id] = u.path_position
+	if strategy_tracker != null:
+		strategy_tracker.update_unit_positions(tower_system.units)
 
 	var pre_off: int = tower_system.offerings
 	var pre_scrap: int = tower_system.scrap
@@ -606,6 +642,8 @@ func _on_sim_tick(dt: float, _tick_index: int) -> void:
 		for u: CombatUnit in tower_system.units:
 			if u != null and u.is_alive() and not prev_unit_positions.has(u.unit_id):
 				prev_unit_positions[u.unit_id] = u.path_position
+				if strategy_tracker != null:
+					strategy_tracker.on_unit_spawned(u, tower_system)
 				enemy_spawned.emit(u)
 
 	if tower_system.offerings != pre_off or tower_system.scrap != pre_scrap:
@@ -735,6 +773,8 @@ func _spawn_scheduled_item(item: Dictionary) -> CombatUnit:
 		"hp": snappedf(unit.max_hp, 0.1),
 		"is_boss": is_boss,
 	})
+	if strategy_tracker != null:
+		strategy_tracker.on_unit_spawned(unit, tower_system)
 	enemy_spawned.emit(unit)
 	return unit
 
@@ -769,6 +809,11 @@ func _on_wave_cleared() -> void:
 		"lives_lost": lives_lost,
 		"rubber_factor": snappedf(director.rubber_factor, 0.01),
 	})
+	if strategy_tracker != null:
+		var digest: Dictionary = strategy_tracker.on_wave_ended(
+			current_wave, duration, tower_system, locked_roster
+		)
+		wave_strategy_evaluated.emit(current_wave, digest)
 	wave_ended.emit(current_wave)
 
 	if locked_roster != null and locked_roster.is_boss_wave:
@@ -1199,6 +1244,9 @@ func _on_tower_system_cooldown_used(
 
 func _on_tower_system_enemy_died(unit_id: int) -> void:
 	path_generator.on_enemy_died(unit_id)
+	if strategy_tracker != null:
+		var last_pos: float = float(prev_unit_positions.get(unit_id, -1.0))
+		strategy_tracker.on_unit_died(unit_id, last_pos)
 	_log_event("enemy_died", {"unit_id": unit_id, "wave": current_wave})
 	if not _in_sim_tick:
 		currencies_changed.emit(offerings, scrap)
@@ -1216,6 +1264,8 @@ func _on_tower_system_enemy_leaked(unit_id: int, leak_cost: int) -> void:
 		enemy_leaked.emit(unit_id, 0)
 		return
 	path_generator.on_enemy_leaked(unit_id, leak_cost)
+	if strategy_tracker != null:
+		strategy_tracker.on_unit_leaked(unit_id, leak_cost)
 	_log_event("enemy_leaked", {"unit_id": unit_id, "leak_cost": leak_cost, "lives": lives})
 	lives_changed.emit(lives, max_lives)
 	currencies_changed.emit(offerings, scrap)
@@ -1245,6 +1295,8 @@ func _on_tower_system_boss_leaked(wave_num: int) -> void:
 
 
 func _on_tower_system_ability_telegraphed(ev: Dictionary) -> void:
+	if strategy_tracker != null:
+		strategy_tracker.on_ability_telegraphed(ev)
 	_log_event("ability_telegraphed", {
 		"ability_id": String(ev.get("ability_id", "")),
 		"event": String(ev.get("event", "")),
@@ -1359,6 +1411,9 @@ func _on_tower_system_loss_report(report: LossReport) -> void:
 func _compute_tower_branch_mix() -> Dictionary:
 	var rev: int = 0
 	var rig: int = 0
+	var rite_cnt: int = 0
+	var t1_cnt: int = 0
+	var t2_shared_cnt: int = 0
 	var cong: int = 0
 	if tower_system != null:
 		for t: TowerInstance in tower_system.towers.values():
@@ -1366,11 +1421,20 @@ func _compute_tower_branch_mix() -> Dictionary:
 				rev += 1
 			elif t.is_rigged():
 				rig += 1
+			elif t.is_rite():
+				rite_cnt += 1
+			elif t.tier >= 2:
+				t2_shared_cnt += 1
+			else:
+				t1_cnt += 1
 			if t.get_type_id() == "the_congregation":
 				cong += 1
 	return {
 		"revealed": rev,
 		"rigged": rig,
+		"rite": rite_cnt,
+		"t1": t1_cnt,
+		"t2_shared": t2_shared_cnt,
 		"congregation": cong,
 	}
 
@@ -1544,12 +1608,32 @@ func _current_tick() -> int:
 
 
 func _log_command(command_name: String, payload: Dictionary = {}) -> void:
+	var enriched: Dictionary = payload.duplicate(true)
+	if command_name == "place_tower" and enriched.has("hex") and path_generator != null:
+		var h: Vector2i = _parse_hex_variant(enriched["hex"])
+		var spatial: Dictionary = _StrategyTracker.compute_hex_spatial_context(h, path_generator.path_hexes)
+		enriched["is_overlap_hex"] = bool(spatial.get("is_overlap_hex", false))
+		enriched["min_path_dist"] = int(spatial.get("min_path_dist", 0))
+		enriched["path_progress_ratio"] = float(spatial.get("path_progress_ratio", 0.5))
 	var entry: Dictionary = {
 		"tick": _current_tick(),
+		"wave": current_wave,
+		"state": current_state,
 		"command": command_name,
-		"payload": payload.duplicate(true),
+		"payload": enriched,
 	}
 	command_log.append(entry)
+	if strategy_tracker != null:
+		strategy_tracker.on_command_recorded(entry, tower_system)
+	command_recorded.emit(entry)
+
+
+## Marks the current run as tainted by a debug cheat/command and logs it.
+func record_debug_action(action_name: String, details: Dictionary = {}) -> void:
+	debug_tainted = true
+	var p: Dictionary = details.duplicate(true)
+	p["action"] = action_name
+	_log_event("debug_action", p)
 
 
 func _log_event(event_name: String, payload: Dictionary = {}) -> void:
@@ -1567,6 +1651,7 @@ func replay_command_log(seed_val: int, recorded_commands: Array[Dictionary], tot
 	if clock != null:
 		clock.set("manual_mode", true)
 
+	is_replaying = true
 	start_new_run(seed_val)
 
 	# Group commands by tick
@@ -1593,6 +1678,7 @@ func replay_command_log(seed_val: int, recorded_commands: Array[Dictionary], tot
 		if by_tick.has(step_i):
 			for cmd: Dictionary in (by_tick[step_i] as Array):
 				_execute_replayed_command(cmd)
+	is_replaying = false
 
 
 func _execute_replayed_command(cmd: Dictionary) -> void:
@@ -1600,20 +1686,131 @@ func _execute_replayed_command(cmd: Dictionary) -> void:
 	var p: Dictionary = cmd.get("payload", {}) as Dictionary
 	match cname:
 		"place_tower":
-			request_place_tower(p.get("hex", Vector2i.ZERO) as Vector2i, String(p.get("tower_id", "")))
+			request_place_tower(_parse_hex_variant(p.get("hex", Vector2i.ZERO)), String(p.get("tower_id", "")))
 		"upgrade_tower":
-			request_upgrade_tower(p.get("hex", Vector2i.ZERO) as Vector2i, String(p.get("node_id", "")))
+			request_upgrade_tower(_parse_hex_variant(p.get("hex", Vector2i.ZERO)), String(p.get("node_id", "")))
 		"sell_tower":
-			request_sell_tower(p.get("hex", Vector2i.ZERO) as Vector2i)
+			request_sell_tower(_parse_hex_variant(p.get("hex", Vector2i.ZERO)))
 		"start_wave":
 			start_wave()
 		"penance":
 			request_penance()
 		"maintenance":
-			request_maintenance(p.get("hex", Vector2i.ZERO) as Vector2i)
+			request_maintenance(_parse_hex_variant(p.get("hex", Vector2i.ZERO)))
 		"cleanse_tower":
-			request_cleanse_tower(p.get("hex", Vector2i.ZERO) as Vector2i)
+			request_cleanse_tower(_parse_hex_variant(p.get("hex", Vector2i.ZERO)))
 		"select_fork_candidate":
 			request_select_fork_candidate(int(p.get("index", 0)))
 		"draw_rites":
 			request_draw_rites(int(p.get("count", 1)))
+
+
+## Converts any hex representation (Vector2i, {"q","r"}, {"x","y"}, [q, r], or "(q, r)")
+## back into a Vector2i so JSON-deserialized command logs replay identically.
+static func _parse_hex_variant(raw_hex: Variant) -> Vector2i:
+	if raw_hex is Vector2i:
+		return raw_hex as Vector2i
+	if raw_hex is Vector2:
+		var v2: Vector2 = raw_hex as Vector2
+		return Vector2i(roundi(v2.x), roundi(v2.y))
+	if raw_hex is Dictionary:
+		var d: Dictionary = raw_hex as Dictionary
+		if d.has("q") or d.has("r"):
+			return Vector2i(int(d.get("q", 0)), int(d.get("r", 0)))
+		return Vector2i(int(d.get("x", 0)), int(d.get("y", 0)))
+	if raw_hex is Array:
+		var a: Array = raw_hex as Array
+		if a.size() >= 2:
+			return Vector2i(int(a[0]), int(a[1]))
+	if raw_hex is String:
+		var s: String = (raw_hex as String).strip_edges().trim_prefix("(").trim_suffix(")")
+		var parts: PackedStringArray = s.split(",")
+		if parts.size() >= 2:
+			return Vector2i(parts[0].strip_edges().to_int(), parts[1].strip_edges().to_int())
+	return Vector2i.ZERO
+
+
+## Converts a Variant (including nested Dictionaries/Arrays with Vector2i) into JSON-safe values.
+static func to_json_safe(val: Variant) -> Variant:
+	if val is Vector2i:
+		var v: Vector2i = val as Vector2i
+		return {"q": v.x, "r": v.y}
+	if val is Vector2:
+		var v2: Vector2 = val as Vector2
+		return {"x": snappedf(v2.x, 0.01), "y": snappedf(v2.y, 0.01)}
+	if val is Vector3:
+		var v3: Vector3 = val as Vector3
+		return {"x": snappedf(v3.x, 0.01), "y": snappedf(v3.y, 0.01), "z": snappedf(v3.z, 0.01)}
+	if val is Color:
+		return (val as Color).to_html()
+	if val is Dictionary:
+		var out_d: Dictionary = {}
+		var src_d: Dictionary = val as Dictionary
+		for k: Variant in src_d.keys():
+			out_d[str(k)] = to_json_safe(src_d[k])
+		return out_d
+	if val is Array:
+		var out_a: Array = []
+		for item: Variant in (val as Array):
+			out_a.append(to_json_safe(item))
+		return out_a
+	return val
+
+
+## Exports a JSON-serializable Dictionary containing the seed, total_ticks, and command_log
+## that can be saved to disk or copied to the clipboard and replayed via `import_and_replay_dict()`.
+func export_command_log_dict() -> Dictionary:
+	var max_cmd_tick: int = _current_tick()
+	var serialized_cmds: Array[Dictionary] = []
+	for cmd: Dictionary in command_log:
+		var t: int = int(cmd.get("tick", 0))
+		if t > max_cmd_tick:
+			max_cmd_tick = t
+		serialized_cmds.append(to_json_safe(cmd) as Dictionary)
+	return {
+		"seed": run_seed,
+		"total_ticks": max_cmd_tick,
+		"reached_wave": current_wave,
+		"debug_tainted": debug_tainted,
+		"command_log": serialized_cmds,
+	}
+
+
+## Imports and deterministically replays a Dictionary produced by `export_command_log_dict()`
+## or a full PlaytestRecorder JSON payload.
+func import_and_replay_dict(data: Dictionary) -> bool:
+	if data == null or data.is_empty():
+		return false
+	var seed_val: int = int(data.get("seed", -1))
+	if seed_val < 0 and data.has("meta") and data["meta"] is Dictionary:
+		seed_val = int((data["meta"] as Dictionary).get("seed", -1))
+	if seed_val < 0:
+		return false
+
+	var raw_cmds: Array = data.get("command_log", []) as Array
+	var typed_cmds: Array[Dictionary] = []
+	var max_tick: int = int(data.get("total_ticks", 0))
+	if max_tick <= 0 and data.has("meta") and data["meta"] is Dictionary:
+		max_tick = int((data["meta"] as Dictionary).get("total_ticks", 0))
+
+	for item: Variant in raw_cmds:
+		if item is Dictionary:
+			var d: Dictionary = item as Dictionary
+			typed_cmds.append(d)
+			var t: int = int(d.get("tick", 0))
+			if t > max_tick:
+				max_tick = t
+
+	replay_command_log(seed_val, typed_cmds, max_tick)
+	return true
+
+
+## Parses a JSON string (from file or clipboard) and replays the run deterministically.
+func import_and_replay_json(json_str: String) -> bool:
+	if json_str.strip_edges().is_empty():
+		return false
+	var parsed: Variant = JSON.parse_string(json_str)
+	if parsed is Dictionary:
+		return import_and_replay_dict(parsed as Dictionary)
+	return false
+

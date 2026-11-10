@@ -29,6 +29,7 @@ var _menu_vbox: VBoxContainer
 var _title_label: Label
 var _resume_button: Button
 var _settings_button: Button
+var _copy_log_button: Button
 var _main_menu_button: Button
 var _settings_menu: SettingsMenu
 
@@ -48,7 +49,17 @@ func _build_ui() -> void:
 		_title_label = get_node_or_null("Center/MenuPanel/VBox/Title") as Label
 		_resume_button = get_node_or_null("Center/MenuPanel/VBox/ResumeButton") as Button
 		_settings_button = get_node_or_null("Center/MenuPanel/VBox/SettingsButton") as Button
+		_copy_log_button = get_node_or_null("Center/MenuPanel/VBox/CopyLogButton") as Button
 		_main_menu_button = get_node_or_null("Center/MenuPanel/VBox/MainMenuButton") as Button
+		if _copy_log_button == null and _menu_vbox != null:
+			_copy_log_button = Button.new()
+			_copy_log_button.name = "CopyLogButton"
+			_copy_log_button.text = "Copy Run Log"
+			_copy_log_button.custom_minimum_size = Vector2(0.0, 42.0)
+			_copy_log_button.focus_mode = Control.FOCUS_NONE
+			_menu_vbox.add_child(_copy_log_button)
+			if _main_menu_button != null:
+				_menu_vbox.move_child(_copy_log_button, _main_menu_button.get_index())
 		_settings_menu = get_node_or_null("Center/SettingsMenu") as SettingsMenu
 		_connect_signals()
 		return
@@ -104,6 +115,13 @@ func _build_ui() -> void:
 	_settings_button.focus_mode = Control.FOCUS_NONE
 	_menu_vbox.add_child(_settings_button)
 
+	_copy_log_button = Button.new()
+	_copy_log_button.name = "CopyLogButton"
+	_copy_log_button.text = "Copy Run Log"
+	_copy_log_button.custom_minimum_size = Vector2(0.0, 42.0)
+	_copy_log_button.focus_mode = Control.FOCUS_NONE
+	_menu_vbox.add_child(_copy_log_button)
+
 	_main_menu_button = Button.new()
 	_main_menu_button.name = "MainMenuButton"
 	_main_menu_button.text = "Quit to Main Menu"
@@ -124,6 +142,8 @@ func _connect_signals() -> void:
 		_resume_button.pressed.connect(_on_resume_pressed)
 	if _settings_button != null and not _settings_button.pressed.is_connected(_on_settings_pressed):
 		_settings_button.pressed.connect(_on_settings_pressed)
+	if _copy_log_button != null and not _copy_log_button.pressed.is_connected(_on_copy_log_pressed):
+		_copy_log_button.pressed.connect(_on_copy_log_pressed)
 	if _main_menu_button != null and not _main_menu_button.pressed.is_connected(_on_main_menu_pressed):
 		_main_menu_button.pressed.connect(_on_main_menu_pressed)
 	if _settings_menu != null and not _settings_menu.closed.is_connected(_on_settings_closed):
@@ -146,6 +166,8 @@ func open_menu() -> void:
 		_settings_menu.visible = false
 	if _menu_panel != null:
 		_menu_panel.visible = true
+	if _copy_log_button != null:
+		_copy_log_button.text = "Copy Run Log"
 
 	var clock: Node = get_node_or_null("/root/SimClock")
 	if clock != null and not bool(clock.get("paused")):
@@ -230,6 +252,9 @@ func quit_to_main_menu() -> void:
 		clock.call("set_paused", false)
 	var gs: Node = get_node_or_null("/root/GameState")
 	if gs != null:
+		var rec: PlaytestRecorder = gs.call("ensure_playtest_recorder") as PlaytestRecorder
+		if rec != null:
+			rec.finalize_active_run("quit_to_menu")
 		gs.call("cancel_build_mode")
 		gs.call("select_placed_tower", null)
 	visible = false
@@ -256,3 +281,14 @@ func _on_settings_closed() -> void:
 
 func _on_main_menu_pressed() -> void:
 	quit_to_main_menu()
+
+
+func _on_copy_log_pressed() -> void:
+	var gs: Node = get_node_or_null("/root/GameState")
+	if gs == null:
+		return
+	var rec: PlaytestRecorder = gs.call("ensure_playtest_recorder") as PlaytestRecorder
+	if rec != null:
+		rec.copy_run_log_to_clipboard("in_game_menu")
+		if _copy_log_button != null:
+			_copy_log_button.text = "Copied Run Log!"
