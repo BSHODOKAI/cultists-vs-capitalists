@@ -56,9 +56,9 @@ JSON exports.
 Quick manual check (replace the URL):
 
 ```bash
-curl -i https://cvc-analytics.<your-subdomain>.workers.dev/ \
+curl -i https://cvc-analytics.gi-dev.workers.dev \
   -H 'Content-Type: application/json' \
-  -d '{"key":"","sdk":"manual","events":[{"id":"b8f9c2a1-7d3e-4a55-9c21-0a1b2c3d4e5f","name":"session_start","ts":1794422879000,"session_id":"1a2b3c4d-5e6f-4a1b-8c2d-3e4f5a6b7c8d","player_id":"9f8e7d6c-5b4a-4392-8170-abcdef012345","source":"player","platform":"Windows","props":{}}]}'
+  -d '{"key":"feb33189aead971796af5564594ee382d220e1c31af2d22d","sdk":"manual","events":[{"id":"b8f9c2a1-7d3e-4a55-9c21-0a1b2c3d4e5f","name":"session_start","ts":1794422879000,"session_id":"1a2b3c4d-5e6f-4a1b-8c2d-3e4f5a6b7c8d","player_id":"9f8e7d6c-5b4a-4392-8170-abcdef012345","source":"player","platform":"Windows","props":{}}]}'
 ```
 
 Expect `HTTP/2 202` with `{"accepted":1}`. Then:
