@@ -1,11 +1,26 @@
 ---
 name: create-tower-type
-description: Use when adding a new cultist tower, modifying an existing tower, or authoring tower upgrades in cultists-vs-capitalists. Covers theme and role uniqueness rules, TowerData and 5-node UpgradeNode resources, TowerLibrary and TowerBehaviorRegistry wiring, 3D meshes under 1.5 height, 2D procedural icons, audio cues, and non-regression testing.
+description: Use when adding a new cultist tower, modifying an existing tower, or authoring tower upgrades in cultists-vs-capitalists. Covers theme and role uniqueness rules, TowerData and 7-node UpgradeNode resources, the TOWERS.md register, TowerLibrary and TowerBehaviorRegistry wiring, 3D meshes under 1.5 height, 2D procedural icons, audio cues, and non-regression testing.
 ---
 
 # Adding & Maintaining Towers
 
-Every tower in **Cultists vs. Capitalists** is a data-driven `TowerData` resource (`res://data/towers/<tower_id>.tres`) paired with **5 `UpgradeNode` resources** (`res://data/upgrades/<upgrade_id>.tres`), a 3D procedural model (`PlaceholderModels`), a 2D procedural icon (`PlaceholderIcons`), and audio cue routing (`AudioCueSystem` + `AudioBalanceData`).
+Every tower in **Cultists vs. Capitalists** is a data-driven `TowerData` resource (`res://data/towers/<tower_id>.tres`) paired with **7 `UpgradeNode` resources** (`res://data/upgrades/<upgrade_id>.tres`) — `1 T2 + 2 Revealed + 2 Rigged + 2 Rite` — a 3D procedural model (`PlaceholderModels`), a 2D procedural icon (`PlaceholderIcons`), and audio cue routing (`AudioCueSystem` + `AudioBalanceData`).
+
+---
+
+## 0. Documentation Register — Keep `TOWERS.md` In Sync
+
+[`TOWERS.md`](../../../TOWERS.md) at the repo root is the human-readable register of **every** tower and upgrade node (ids, costs, currencies, Corruption/Jank side-effects, per-node effects, node index).
+
+**Any change to a `TowerData` or `UpgradeNode` resource — a new tower, a retune, a new node, a cost change — MUST update `TOWERS.md` in the same change.** A tower change is not complete until the register matches the data. Specifically:
+
+- Adding a tower: add its **overview row** (§1), its **detail section** (§3, with its full 7-node upgrade table), and its **node-index row** (§4).
+- Changing a node: update that node's row in the tower's detail table (cost, currency, Corruption/Jank, effect).
+- Changing counts or shared numbers: update the **totals** in §1/§4 and the shared figures in §2.
+- New towers or node-count changes also require updating the roster assertions in `res://tests/test_tower_system.gd` and `res://tests/test_build_menu_ui.gd`.
+
+Do not treat `TOWERS.md` as optional prose: it is the roster-of-record a designer reads instead of opening 88 `.tres` files.
 
 ---
 
@@ -22,7 +37,9 @@ Before creating or changing a tower, verify it satisfies these design rules:
    - Never add a tower that merely duplicates an existing tower's targeting cadence + damage tag + role with slightly different numbers.
    - Every tower must occupy a distinct mechanical niche (targeting mode, range band, damage tag, status/synergy hook, or placement constraint).
 
-### Current 10-Tower Inventory Reference
+### Current 11-Tower Inventory Reference
+
+> The canonical, always-current version of this table (with costs, currencies, per-node effects, and the full node index) lives in [`TOWERS.md`](../../../TOWERS.md).
 
 | # | `id` | Build Cost | Range | `targeting_mode` | Primary Role & Unique Hook |
 |---|---|---|---|---|---|
@@ -159,12 +176,21 @@ Every tower needs audio feedback for construction, upgrading, attacking, and coo
 4. **New Cue Definitions (`AudioBalanceData`):**
    - If adding a new cue constant to `res://scripts/audio/audio_balance_data.gd`, add its default entry in `build_default_cues()` **and** add it to `res://data/audio_balance.tres` with a valid `.wav` path, `volume_db`, `min_interval`, `max_voices`, `pitch_min`, `pitch_max`, and `active_duration`.
 
+### Step 8: Update the Tower Register (`TOWERS.md`)
+
+Before you call the change done, update [`TOWERS.md`](../../../TOWERS.md) (see §0):
+
+1. **New tower:** add the §1 overview row, the §3 detail section (base stats + the full 7-node upgrade table), and the §4 node-index row. Bump the totals (`11 towers · 77 nodes` → the new counts).
+2. **Modified node or stat:** correct the affected detail-table row and/or base stat line, and §2 shared figures if a balance constant changed.
+3. Re-read the register against the data (`TowerLibrary.load_towers()` / `load_upgrades()`) so no row is stale. A register that disagrees with the `.tres` files is a bug.
+
 ---
 
 ## 4. Verification & Non-Regression Checklist
 
 Whenever you add or modify a tower, run the headless test suites via `run_tests` to confirm nothing broke:
 
+0. **Update the register (`TOWERS.md`).** Add or correct the affected overview row, detail section, upgrade table, and node-index row, and the totals (§0, Step 8). Do this in the same change as the data.
 1. **Update Roster Expectations (if tower or node count changed):**
    - Update `EXPECTED_TOWERS` and the catalog count assertions in `res://tests/test_tower_system.gd` and `res://tests/test_build_menu_ui.gd`. Current truth: **11 towers, 77 upgrade nodes** (`test_01_data_validation_11_towers_77_nodes_references_and_costs`). Node count per tower is **5, or 7 when the tower carries a Rite branch** — `RITE_TOWERS` in that test lists which ones do (currently all of them).
 2. **Run Core Test Suites:**

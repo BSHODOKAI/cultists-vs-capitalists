@@ -85,7 +85,7 @@ All player currency spending must route through the single choke point `GameStat
 
 ## 5. Towers, Upgrade Trees, Corruption & Jank
 
-All 11 cult towers live in `res://data/towers/*.tres` and their upgrade resources (`11 x [1 T2 + 2 T3 + 2 T4]`, plus the optional Rite branch below, for 77 total) live in `res://data/upgrades/*.tres`.
+All 11 cult towers live in `res://data/towers/*.tres` and their upgrade resources (`11 x [1 T2 + 2 T3 + 2 T4]`, plus the optional Rite branch below, for 77 total) live in `res://data/upgrades/*.tres`. A full human-readable accounting of every tower and node lives in [`TOWERS.md`](TOWERS.md).
 
 - **Placement & Adjacency Rules:**
 - 1 hex per tower on a `BUILDABLE`, non-path, non-reserved, unoccupied hex within hex distance `<= 2` of the committed path.
@@ -164,7 +164,7 @@ All eleven towers carry it. Each scales **the stat it actually has** — damage 
 
 ## 6. Factions, Enemy Units, Bosses & Leveling
 
-All 16 regular units live in `res://data/units/*.tres` and all 5 bosses live in `res://data/units/bosses/*.tres`, loaded via `UnitLibrary` (`res://scripts/units/unit_library.gd`).
+All 16 regular units live in `res://data/units/*.tres` and all 5 bosses live in `res://data/units/bosses/*.tres`, loaded via `UnitLibrary` (`res://scripts/units/unit_library.gd`). A full human-readable accounting — including the Rogue Entity and the ability-component reference — lives in [`UNITS.md`](UNITS.md).
 
 - **Per-Unit-Type Kill Leveling (`UnitLeveling` & `UnitBalanceData`):**
 - Kills are counted per `unit_id` across all factions (Bosses do not accumulate kill levels).
@@ -389,6 +389,8 @@ Full reference and future `WaveDirector` integration recipes live in `res://PLAY
 ```text
 res://
 ├── AGENTS.md
+├── TOWERS.md            # Register: all 11 towers + 77 upgrade nodes (ids, costs, effects, node index)
+├── UNITS.md             # Register: all 16 units + 5 bosses + Rogue Entity + ability reference
 ├── PLAYTEST_TELEMETRY_AND_DIRECTOR_API.md
 ├── data/
 │   ├── audio_balance.tres
