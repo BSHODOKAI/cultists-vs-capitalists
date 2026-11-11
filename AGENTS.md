@@ -353,6 +353,10 @@ Full reference and future `WaveDirector` integration recipes live in `res://PLAY
 - Emits `run_started`, `wave_completed`, `boss_outcome`, `reckoning_triggered`, and `run_ended` (followed by `ZivaAnalytics.flush()`) during live interactive runs; automatically suppressed during headless tests, bot simulations, and `replay_command_log()`.
 - Optional Playtester Handle on `MainMenu` is persisted in `user://playtest_profile.cfg` and passed to `ZivaAnalytics.identify()`.
 - Any F3 `DebugPanel` cheat or `--start-*` launch override marks `GameState.debug_tainted = true` and logs a `debug_action` event so debug runs are distinguishable from organic playtest data.
+- **Stopgap Collector Mirror (`AnalyticsMirror` Autoload — `res://scripts/telemetry/analytics_mirror.gd`):**
+- Dual-send companion to `ZivaAnalytics`. When `playtest/collector/endpoint` is set, `PlaytestRecorder` mirrors every telemetry event (`track` / `identify` / `flush`) to that collector too, using the identical `{key, sdk, events:[...]}` wire format, so a collector built for either channel ingests both. `playtest/collector/key` is an optional shared secret.
+- Empty `playtest/collector/endpoint` (the default) leaves the mirror **inert**: no network, safe to ship dormant. It is suppressed in headless runs and during replays, like the recorder.
+- A ready-to-deploy Cloudflare Worker + D1 collector (CORS-safe for web builds) lives in `res://tools/analytics-collector/`. Remove the mirror once Ziva's own ingest is healthy.
 - **Persistent Command Logs & Deterministic JSON Replay (`user://playtest_logs/*.json`):**
 - `GameState._log_command()` records `tick`, `wave`, `state`, and spatial placement context (`is_overlap_hex`, `min_path_dist`, `path_progress_ratio`).
 - `PlaytestRecorder` auto-saves full run JSON files to `user://playtest_logs/` on Game Over, run restart, Quit to Main Menu, and window close, and provides **"Copy Run Log"** buttons on `GameOverScreen`, `InGameMenu`, and `DebugPanel`.

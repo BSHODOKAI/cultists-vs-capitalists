@@ -103,6 +103,11 @@ func _identify_analytics_player(handle: String) -> void:
 		za.call("identify", handle, {
 			"debug_build": OS.is_debug_build(),
 		})
+	var mirror: Node = _get_analytics_mirror()
+	if mirror != null and mirror.has_method("identify"):
+		mirror.call("identify", handle, {
+			"debug_build": OS.is_debug_build(),
+		})
 
 
 # --- Run Lifecycle & Signal Handlers -----------------------------------------
@@ -497,6 +502,12 @@ func _get_ziva_analytics() -> Node:
 	return get_node_or_null("/root/ZivaAnalytics")
 
 
+func _get_analytics_mirror() -> Node:
+	if not is_inside_tree():
+		return null
+	return get_node_or_null("/root/AnalyticsMirror")
+
+
 func _track_event(event_name: String, props: Dictionary) -> void:
 	if not _should_emit_analytics():
 		return
@@ -508,6 +519,10 @@ func _track_event(event_name: String, props: Dictionary) -> void:
 	var za: Node = _get_ziva_analytics()
 	if za != null and za.has_method("track"):
 		za.call("track", event_name, safe_props)
+	# Mirror to the stopgap collector, if one is configured (see AnalyticsMirror).
+	var mirror: Node = _get_analytics_mirror()
+	if mirror != null and mirror.has_method("track"):
+		mirror.call("track", event_name, safe_props)
 
 
 func _flush_analytics() -> void:
@@ -516,3 +531,6 @@ func _flush_analytics() -> void:
 	var za: Node = _get_ziva_analytics()
 	if za != null and za.has_method("flush"):
 		za.call("flush")
+	var mirror: Node = _get_analytics_mirror()
+	if mirror != null and mirror.has_method("flush"):
+		mirror.call("flush")

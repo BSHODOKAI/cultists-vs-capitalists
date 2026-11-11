@@ -1,0 +1,16 @@
+name = "cvc-analytics"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+
+# Created by:  wrangler d1 create cvc_analytics
+# Paste the returned database_id here.
+[[d1_databases]]
+binding = "DB"
+database_name = "cvc_analytics"
+# Full UUID from `wrangler d1 create` (or `wrangler d1 list`) - 8-4-4-4-12 hex chars.
+database_id = "4d03053d-78aa-467f-acef-abb93e7d37b7"
+
+[vars]
+# "" = open endpoint. If you set a secret here, put the SAME value in the game's
+# playtest/collector/key, or the Worker answers 401 and the mirror disables itself.
+INGEST_KEY = "feb33189aead971796af5564594ee382d220e1c31af2d22d"
