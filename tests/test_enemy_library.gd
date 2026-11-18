@@ -631,3 +631,51 @@ func test_06_loss_report_contains_all_fields_on_game_over() -> void:
 	assert(int(report.coverage_per_unit_tag[_C.UnitTag.GROUND]) == 2, "Both placed towers cover GROUND (2)")
 	assert(int(report.coverage_per_unit_tag[_C.UnitTag.AIR]) == 1, "Only hexed_nail_gun covers AIR at T1 (1)")
 	assert(int(report.coverage_per_unit_tag[_C.UnitTag.CLOAKED]) == 1, "Only chanting_choir covers CLOAKED detection (1)")
+
+
+# --- Test 7: A boss's auxiliary helpers die with their owner (no wave stall) ---
+
+## Regression for the Raider / Bid Drone softlock: a stationary Bid Drone orphaned by its
+## boss's death neither dies nor leaks, so a wave can never clear. When the boss dies, every
+## helper it owns must be destroyed so no living enemy remains and the wave resolves.
+func test_07_boss_death_destroys_owned_helpers_and_clears_wave() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 4242
+
+	var sys := _make_test_system()
+	var target_t: TowerInstance = sys.place_tower(Vector2i(8, 1), "watcher_in_the_billboard")
+	target_t.def = target_t.def.duplicate()
+	target_t.def.fire_rate = 0.0
+
+	# Spawn The Raider stationary and let it fire one Leveraged Buyout beam, which spawns
+	# the 150 HP Bid Drone helper it owns.
+	var raider: CombatUnit = sys.spawn_unit_from_data("the_raider", 8.0, 1, rng)
+	raider.speed = 0.0
+	raider.convert_cooldown_timer = 0.1
+	sys.step(0.2, rng)
+	assert(raider.active_bid_drone_id > 0, "The Raider must spawn a Bid Drone helper to reproduce the stall setup")
+	var drone_still_alive_before: bool = false
+	for u: CombatUnit in sys.units:
+		if u != null and u.unit_id == raider.active_bid_drone_id and u.is_alive():
+			drone_still_alive_before = true
+	assert(drone_still_alive_before, "The Bid Drone helper must be alive before the boss dies")
+
+	# Kill the BOSS, not the drone. The orphaned drone must be destroyed with its owner.
+	sys.deal_damage_from_tower(null, raider, raider.hp + 1.0, _C.DamageTag.KINETIC, true, false, rng)
+	assert(not raider.is_alive(), "The Raider boss must be dead after lethal damage")
+
+	var living: int = 0
+	for u: CombatUnit in sys.units:
+		if u != null and u.is_alive():
+			living += 1
+	assert(
+		living == 0,
+		"No living enemies may remain after the boss dies: an orphaned Bid Drone pins the wave open (got %d)" % living
+	)
+
+	# The helper must be gone from the unit list after the tick cleanup, and the boss's
+	# runtime reference to it cleared, so the wave-clear check sees zero enemies.
+	sys.step(0.1, rng)
+	for u: CombatUnit in sys.units:
+		assert(not u.is_bid_drone, "The Bid Drone helper must be removed once its boss is dead")
+	assert(raider.active_bid_drone_id < 0, "The dead boss's active_bid_drone_id reference must be cleared")

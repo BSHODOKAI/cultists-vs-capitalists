@@ -2028,9 +2028,36 @@ func _handle_unit_death(unit: CombatUnit, killer_tower: TowerInstance, from_gutt
 					var hit_amt: float = calculate_hit_damage(killer_tower, other, exp_dmg, _C.DamageTag.CORROSIVE, true)
 					deal_damage_from_tower(killer_tower, other, hit_amt, _C.DamageTag.CORROSIVE, false, true)
 
+	# A boss's auxiliary helpers (Bid Drone, Supply Pod) die with their owner. This is
+	# load-bearing for wave clearance: a stationary Bid Drone left alive after The Raider's
+	# Leveraged Buyout resolves would never die or leak, so GameState would never see zero
+	# living enemies and the wave would stall forever (a hard softlock, especially in
+	# headless runs). Helpers do not count for kill leveling or economy.
+	if unit.is_boss():
+		_destroy_owned_helpers(unit)
+
 	enemy_died.emit(unit.unit_id)
 	if unit.is_boss():
 		boss_killed.emit(current_wave)
+
+
+## Destroys every living auxiliary helper owned by [param boss_unit] (matched via
+## [member CombatUnit.owner_boss_unit_id]). Called when the owning boss dies so no helper
+## can outlive its boss and pin a wave open. Each helper is destroyed through the normal
+## death path so its own cleanup (clearing a boss's active-bid-drone reference, releasing a
+## converted tower) still runs.
+func _destroy_owned_helpers(boss_unit: CombatUnit) -> void:
+	if boss_unit == null:
+		return
+	for helper: CombatUnit in units:
+		if helper == null or helper == boss_unit or not helper.is_alive():
+			continue
+		if helper.owner_boss_unit_id != boss_unit.unit_id:
+			continue
+		if not (helper.is_bid_drone or helper.is_supply_pod):
+			continue
+		helper.hp = 0.0
+		_handle_unit_death(helper, null, false)
 
 
 # --- Congregation Blockers ---------------------------------------------------
