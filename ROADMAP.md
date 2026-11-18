@@ -83,6 +83,9 @@ Ideas to ponder — **not** a mandate to replace systems that work:
   turn on them. Worth pondering whether a future mode leans into that.
 - **Multiplayer?** Out of scope here, but if co-op is ever considered, the faction/cult split and
   the deterministic seeded systems are assets — note it and move on.
+- **Pacing:** What are the target waves and minutes for new and experienced players? Where should a smooth rise become an intentional endless-mode wall? Verify against the current build (§§7, 14).
+- **Progression:** Should any unlock gate content the Director can field? Keep base-tower gating deferred until threat coverage is proven (§13).
+- **Competition:** Is sharing a seed with friends enough, or is a leaderboard worth building?
 
 ---
 
@@ -117,13 +120,13 @@ Addendum:
 
 *Draft sections to append to ROADMAP.md, numbered 7 onward to follow the existing sections. Same rules as the rest of that file: these are ideas to ponder, not commitments. Names in quotes are working titles in the game's own voice.*
 
-**Starting context:** runs are currently endless with nothing persisted between them; difficulty tends to spiral around wave 30; bosses arrive every 10 waves, so a typical run sees about three bosses and never reaches the Coalition interval. The audience is the developer and close friends, so large content lifts (new factions, new cults) stay deferred.
+**Historical context:** This addendum predates the shipped pacing changes. Runs are endless; the intended audience remains the developer and close friends, so large content lifts (new factions, new cults) stay deferred.
 
 ---
 
-## 7. Pacing: The Difficulty Curve and Boss Interval (Prerequisite for Everything Below)
+## 7. Pacing: Difficulty Curve and Boss Interval
 
-Every idea in sections 8 to 13 assumes a run has a sensible shape. Today most of the content past wave 30 is never seen, so unlocks, a codex, and meta payouts tied to late content would be unreachable.
+**Shipped:** the candidate A scaling changes and five-wave boss cadence, with the first boss still at wave 10 and boss HP anchored to wave number. See the [candidate experiments](tests/baselines/phase2_candidates.md) and [interval experiment](tests/baselines/interval_experiment.md). Those are historical measurements, not current human reach targets. Next is reliability and pacing verification (§14), not another tuning pass by default. The options below are retained as design history or future ideas.
 
 **Ideas to ponder**
 
@@ -274,20 +277,78 @@ Starting with a smaller roster would help onboarding and give early runs an arc.
 
 ---
 
-## 14. Suggested Sequencing (not a commitment)
+## 14. Now / Next / Later (recommended order, not a commitment)
 
-1. Pacing and difficulty curve (section 7), proven by the test plan.
-2. Quarterly Report, tower stats, and Dossier (sections 10 and 11). Most of the data already exists, and it feeds all balancing work.
-3. Creeds (section 8).
-4. Firsts-based unlocks and codex (section 9), then Fine Print.
-5. Pacts, Subcontracts, affixes (section 12).
-6. The Ledger and any tower gating (sections 9 and 13), only after the unlock-safety experiments pass.
+### Now — Run reliability and pacing verification
+
+- Recheck the recorded Raider/Bid Drone stall (balanced bot, seed 4242, historically wave 20). If it reproduces, fix the helper lifecycle and add a wave-clear regression before taking a fresh seeded baseline. Track stalls separately from losses.
+- Pair that baseline with a small human playtest: record time to first boss, first meaningful growth decision, and Coalition reach. Preserve the fast early economy. Only reopen tuning if completed runs show a repeatable problem.
+
+### Next — Explain the run, then test whether geography changes it
+
+1. **Quarterly Report + Dossier (§§10–11):** One post-run debrief using existing run logs and Director rationale. Start with wave reached, cause of loss, boss and Reckoning outcomes, and one or two evidence-backed explanations of enemy picks. Include direct tower damage and kills where reliably attributable. Defer indirect support attribution (auras, slows, blockers) and live coverage Intel: they answer different questions and need different accounting or presentation.
+2. **Cooling Basin vertical slice (§16):** Keep the boss-growth preview, terrain seam, local objectives, operator signage, main-lane Skyline affinity, and confirmed attacker Intel in one playtestable package. Use the debrief to distinguish district-influenced faction assignment from adaptive unit counter-picks. Validate deterministic preview and commit across routes from day one, but defer secondary-lane affinity, the Greenbelt, and the Write-Off Belt until the main-lane slice proves the hook. Include the art and UI polish needed to read the slice; keep unrelated menu, music, and asset work separate.
+
+### Later — Run identity, then something worth unlocking
+
+- Try a small **Creeds** pack (§8). If players want more decisions between waves, try **Subcontracts** (§12) as the first mid-run bargain. Keep their implementations separate: one affects setup and the other affects wave locking. Don't build a shared framework before the ideas prove themselves.
+- Group **Firsts, codex, and unlocks** (§9) as one progression package once there is meaningful content to unlock. Fine Print can follow. Defer base-tower gating, cross-run debt, and corporate memory.
+- Keep new factions, bosses, events, affixes, and playable cults out of the Basin experiment. Revisit additional air-control towers only if playtests identify a roster gap rather than an Intel or balance problem.
 
 ---
 
-## 15. Open Questions to Add to Section 5
+## 15. Open Questions
 
-- What is the target run length (waves and minutes) for a new player and for an experienced one?
-- Is the late-game spiral a designed wall or an accident?
-- Should meta-progression gate anything the director can field, or only things it cannot?
-- Is a shared-seed comparison between friends enough competition, or is a leaderboard wanted?
+Consolidated in §5.
+
+---
+
+## 16. Biomes: Follow the Corporate Roads Out of the City
+
+**Design draft, not a production commitment.** The Sanctum stays in Urban Center. Post-boss path growth reveals the same metropolis's outskirts: where the city discards its equipment, whose land it takes, and what it drains to stay online. These are neighboring districts in one run, not map skins or mandatory stages. A run need not visit all of them.
+
+### Districts and corporate operators
+
+| District | Terrain kit and silhouette | Usual operator and pressure |
+|---|---|---|
+| **Urban Center** (existing) | Neon avenues, glass towers, loading courts, and cramped street lots. | **Iron Board** runs property security. Branded checkpoints and armor fit the district, but the opening faction roll stays unchanged. |
+| **The Write-Off Belt** (Wastelander) | Rust-orange vehicle stacks, open salvage markets, patched settlements, buckled freight asphalt, and cleared work pads. Inhabited and improvised; people make a living from assets the companies wrote off but still claim. | **Swarm Syndicate** pays per recovered asset; **Iron Board** handles high-value repossessions. Dispatch boards, gig vans, and fast couriers make the freight road feel active. |
+| **The Unceded Greenbelt** (Forest) | Dark canopy clusters, open glades, ranger cabins, survey stakes, and a readable, continuous firebreak. Survivalists and separatists live here; they aren't a new enemy faction. | **Hostile Takeover Inc.** buys access on paper and sends contractors to enforce it. Easement notices foreshadow cloak and tower disruption; the canopy itself never makes an enemy untargetable or grants Cloak. |
+| **The Cooling Basin** (Desolate Landscape) | Chalk-white lakebed, dead intake canals, and immaculate cooling works that still hum. Where the Belt is crowded with reused equipment, the Basin is empty because extraction is still running. | **Skyline Logistics** supplies a water-starved data campus by air; **Iron Board** guards the intake works. Drone pads marked `SURFACE DELIVERY SUSPENDED` foreshadow the air threat without creating a terrain rule. |
+
+**Coalition:** a joint enforcement order, not a biome. Companies own different pieces of the same corridor. Preserve the existing mixed interval and Holding Company boss even when the ground has a clear operator.
+
+### Objectives: local landmarks, familiar rules
+
+Use the existing three mechanical kinds in the first pass. Give each district a distinct physical landmark, name, description, and seizure message for each kind; keep the kind glyph and ownership colors consistent. Put a plain effect line in site intel (e.g. `Reservoir · Enables Draw Rite while held`). Seizure text says `corporate` or describes what the site does; it never names a company that may not be attacking.
+
+| District | Ley Line: local Revealed damage | Data Center: shorter local Rigged jams | Reservoir: Corruption headroom and Draw Rite access |
+|---|---|---|---|
+| Urban Center | **Ley Line** | **Converted Data Center** | **Corruption Reservoir** |
+| Write-Off Belt | **Axle-Bone Cairn** — stacked wrecks over a fault that hums when engines idle. | **Salvage Relay** — a dispatch mast built from repossessed truck radios. | **The Black Sump** — a lined salvage pit collecting something absent from the manifests. |
+| Unceded Greenbelt | **Witness Grove** — a stand of trees older than the deeds that claim it. | **Firewatch Exchange** — a lookout tapped into the local radio network. | **The Root Cistern** — an old water collector whose roots draw up more than water. |
+| Cooling Basin | **The Subsidence Fault** — a fracture opened when the aquifer collapsed. | **Emergency Failover Yard** — a switchyard that keeps patched rigs running or reroutes corporate traffic. | **Spent Coolant Well** — a sealed disposal shaft the cult can draw from and the corporation can pump. |
+
+The same upkeep applies: keep a tower in claim range to hold the site. Under corporate capture, the Ley Line variants make local enemies tougher, the Data Center variants make them faster, and Reservoir variants do both. Neither owning nor attacking factions get a special site multiplier. Resolve the variant from the **actual site hex** after choosing a legal placement, not from the lane name or spawn district: a site on the urban side of a seam still looks urban. Separate the seeded effect-kind draw from presentation so adding another landmark doesn't change effect odds or turn two consecutive rolls of the same kind into false variety. Preserve reservoir recognition and access wherever the site looks different.
+
+### How a district enters play
+
+1. **Survey at the existing growth preview.** For the first transition, target the wave-10 clear or the next successful eligible growth if the route stays in settled city ground. Annotate the ghost route with its destination and local operator, e.g. `COOLING BASIN · SKYLINE FREIGHT CORRIDOR`. The operator is a fact about the land, not a roster promise. Don't move a legal route to force a reveal or promise an exact site before placement.
+2. **Commit the selected route, then settle the district.** Reveal a coherent patch around newly opened ground, not just the road. Use a short seam of shared props (loading yards into salvage, street edges into firebreaks, storm drains into intake canals). Once revealed, ground keeps its identity across growths, fork selection, and chunk streaming. Preserve building and path legality. No successful growth means no new district or site.
+3. **Keep fork choices honest.** If viable candidates reach different districts, report that alongside condemnation and bounty in Intel. Keep route buttons short and put district/operator details in wrapping copy. Two valid routes can lead to the same district. Switching the preview must not repaint ground, consume a faction roll, or create a site.
+4. **Confirm the attacker after commit.** Use the actual locked assignment in post-boss intel, e.g. `SKYLINE LOGISTICS ASSIGNED — REVIEW AIR COVERAGE`. If the next interval is Coalition, say so even if the route crosses Skyline property. A Greenbelt route can likewise stay under a different faction's current contract.
+
+### Faction affinity: test as a preference, not a lock
+
+- For the next eligible **regular** interval, bias the roll using the committed biome at the **main-lane spawn**, not whichever fork opened most recently. Trial weights: **3** for the local operator, **2** for a listed secondary contractor, **1** for other eligible factions. Exclude the previous regular faction first. Keep early urban scheduling unchanged; leave unassigned affinities neutral. The Coalition slot always wins.
+- When the existing secondary lane assignments activate, apply the preference using each fork's own spawn district. Keep the current distinct-faction exclusions and readiness/budget rules. Don't bring this behavior forward into early forks.
+- Lock assignments once per interval, using a seeded draw that preview and UI queries cannot perturb. The Director currently caches future schedule entries; a prototype must resolve the affected assignment from committed ground before the post-boss announcement or first roster of that interval. A speculative schedule lookup must never bind the choice, and a committed route must never rewrite a locked wave.
+- Keep budgets, boss cadence, tower rules, events, terrain blockage, and roster constraints unchanged. The effect should be a planning signal (e.g. consider anti-air in the Basin), not a guarantee or an additional enemy stat bonus.
+
+### Prototype and acceptance checks
+
+1. **Prove the seam: Urban Center → Cooling Basin.** Use seeded district lookup per hex rather than the current run-wide biome. Keep the existing chunk renderer and batch by biome plus archetype where they meet. Build a minimal kit: dry canal roadbed and matching connectors, open salt flats, blocked intake works, cleared tower pad, an urban-edge transition, three site landmarks, and Skyline freight signage. Keep path arrows, construction overlays, and objective state glyphs legible at normal zoom; don't spawn a node per tile.
+2. **Prove the director hook in the same slice.** Compare identical seeds with affinity on and off. Skyline should appear more often at eligible Basin spawns, never bypass a faction exclusion or replace Coalition, and the Intel assignment must match the locked roster. Check roster constraints, early-wave parity, and seeded replay across preview, commit, and fork selections. In a live playtest, check whether players recognize the Basin's landmarks and consider anti-air because of the confirmed assignment rather than assuming every Basin wave is Skyline.
+3. **Expand after the slice reads well.** Greenbelt next for canopy/firebreak contrast; Write-Off Belt after its inhabited salvage look is unmistakable next to the Basin. Defer biome-wide hazards and unique faction-site rules. If districts still need more tactical identity, prototype one bespoke site before modifying a whole biome.
+
+**Later candidate:** **The Premium Floodplain** — rooftop roads and breakwater shadows in a district that flooded because private levees rerouted the water downhill.
