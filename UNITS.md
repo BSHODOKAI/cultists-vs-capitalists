@@ -180,7 +180,8 @@ the arrival **wave** (§1.2), not the boss index.
 - **The Raider — LeveragedBuyout:** every **20s**, after a **4s** beam telegraph, channels on the
   **highest-cost** tower within **4 hex** and spawns a **150 HP `bid_drone`**; converts the tower for
   **10s** unless the drone is killed, the channel is interrupted, or it is cleansed for 50% of base cost.
-  (A leaked/orphaned `bid_drone` can stall a wave — see memory `project-bid-drone-wave-stall`.)
+  (A boss's helpers, Bid Drone and Supply Pod, are destroyed when the boss dies, so an orphaned
+  `bid_drone` can no longer stall a wave — see memory `project-bid-drone-wave-stall`.)
 - **The Prime Dispatcher — SameDayDelivery:** every **15s**, drops **2 `supply_pod`s** (150 HP) with a
   **2s** reticle that open after **3s** into **3 `courier_drone`s** each (cap 2 pods).
 - **The Holding Company — HoldingCompany:** switches between the four faction-boss mechanics every **25%

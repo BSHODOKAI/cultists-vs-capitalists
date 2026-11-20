@@ -9,16 +9,16 @@ WAVE-anchored, so the shorter cadence adds more bosses WITHOUT inflating their H
 
 | Preset | Mean wave reached | Lift vs baseline | Mean bosses seen | Mean growths |
 | --- | --- | --- | --- | --- |
-| baseline | 23.3 | +0.0 | 3.3 | 2.5 |
-| long_interval | 23.7 | +0.3 | 1.8 | 1.0 |
+| baseline | 24.7 | +0.0 | 3.5 | 2.2 |
+| long_interval | 25.2 | +0.5 | 2.0 | 1.0 |
 
 ## Per-archetype detail
 
 | Preset | Archetype | Mean reached | Median WOD | Deaths | Stalls | Censored | Bosses | Growths |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| baseline | balanced | 24.5 | 29.0 | 1 | 1 | 0 | 3.5 | 2.5 |
+| baseline | balanced | 27.0 | 27.0 | 2 | 0 | 0 | 4.0 | 2.5 |
 | baseline | mono_kinetic | 22.5 | 26.0 | 2 | 0 | 0 | 3.0 | 2.5 |
-| baseline | turtle | 23.0 | 26.0 | 1 | 1 | 0 | 3.5 | 2.5 |
-| long_interval | balanced | 24.0 | 28.0 | 1 | 1 | 0 | 2.0 | 1.0 |
-| long_interval | mono_kinetic | 23.0 | 29.0 | 2 | 0 | 0 | 1.5 | 1.0 |
-| long_interval | turtle | 24.0 | 28.0 | 1 | 1 | 0 | 2.0 | 1.0 |
+| baseline | turtle | 24.5 | 25.0 | 2 | 0 | 0 | 3.5 | 1.5 |
+| long_interval | balanced | 27.0 | 30.0 | 2 | 0 | 0 | 2.5 | 1.0 |
+| long_interval | mono_kinetic | 22.5 | 28.0 | 2 | 0 | 0 | 1.5 | 1.0 |
+| long_interval | turtle | 26.0 | 28.0 | 2 | 0 | 0 | 2.0 | 1.0 |
