@@ -21,6 +21,7 @@ GameState="*res://scripts/core/game_state.gd"
 UiScale="*res://scripts/core/ui_scale_controller.gd"
 ZivaAnalytics="*res://addons/ziva_analytics/ziva_analytics.gd"
 AnalyticsMirror="*res://scripts/telemetry/analytics_mirror.gd"
+PlayerInput="*res://scripts/core/window_input_gate.gd"
 
 [display]
 

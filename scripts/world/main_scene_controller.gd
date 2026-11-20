@@ -138,6 +138,9 @@ func _process(_delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	var gate: WindowInputGate = get_node_or_null("/root/PlayerInput") as WindowInputGate
+	if gate != null and not gate.accepts_player_input():
+		return
 	var gs: Node = get_node_or_null("/root/GameState")
 	var clock: Node = get_node_or_null("/root/SimClock")
 	if gs == null:

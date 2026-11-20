@@ -48,6 +48,7 @@ const ZOOM_STEP_FACTOR: float = 0.14
 @export var pan_bounds_extra_hexes: float = 3.0
 
 var camera: Camera3D
+var _input_gate: WindowInputGate
 var _middle_dragging: bool = false
 var _last_drag_world: Vector3 = Vector3.ZERO
 var _active_touches: Dictionary = {}
@@ -70,10 +71,29 @@ func _ready() -> void:
 		add_child(camera)
 	camera.current = true
 	_apply_camera_transform()
+	_input_gate = get_node_or_null("/root/PlayerInput") as WindowInputGate
+	if _input_gate != null:
+		_input_gate.input_availability_changed.connect(_on_input_availability_changed)
+
+
+func _on_input_availability_changed(allowed: bool) -> void:
+	if allowed:
+		return
+	_middle_dragging = false
+	_last_drag_world = Vector3.ZERO
+	_active_touches.clear()
+	_touch_start_positions.clear()
+	_touch_drag_distance = 0.0
+	_is_touch_panning = false
+	_last_handled_touch_event = null
+	_last_touch_event_consumed = false
 
 
 func _process(delta: float) -> void:
-	var move_dir := Vector3.ZERO
+	# Input singleton polling bypasses Viewport.gui_disable_input.
+	if not _accepts_player_input():
+		return
+	var move_dir: Vector3 = Vector3.ZERO
 	if Input.is_action_pressed("camera_left") or Input.is_physical_key_pressed(KEY_A):
 		move_dir -= _ground_right()
 	if Input.is_action_pressed("camera_right") or Input.is_physical_key_pressed(KEY_D):
@@ -102,7 +122,13 @@ func _process(delta: float) -> void:
 		_emit_view_moved()
 
 
+func _accepts_player_input() -> bool:
+	return _input_gate == null or _input_gate.accepts_player_input()
+
+
 func _unhandled_input(event: InputEvent) -> void:
+	if not _accepts_player_input():
+		return
 	if event.is_action_pressed("camera_zoom_in"):
 		set_ortho_size(ortho_size / (1.0 + ZOOM_STEP_FACTOR))
 		get_viewport().set_input_as_handled()
@@ -125,7 +151,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			else:
 				_is_touch_panning = true
 		else:
-			var was_panning: bool = _is_touch_panning or st.canceled or _active_touches.size() > 1
+			var was_panning: bool = not _active_touches.has(st.index) or _is_touch_panning or st.canceled or _active_touches.size() > 1
 			if _touch_start_positions.has(st.index):
 				var start_pos: Vector2 = _touch_start_positions[st.index] as Vector2
 				if st.position.distance_to(start_pos) >= touch_drag_threshold_px:
@@ -145,12 +171,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		var sd: InputEventScreenDrag = event as InputEventScreenDrag
 		_last_handled_touch_event = event
 		_last_touch_event_consumed = true
-		var prev_pos: Vector2 = sd.position
-		if _active_touches.has(sd.index):
-			prev_pos = _active_touches[sd.index] as Vector2
-			if prev_pos == sd.position and sd.relative != Vector2.ZERO:
-				prev_pos = sd.position - sd.relative
-		elif sd.relative != Vector2.ZERO:
+		# A gesture interrupted by focus loss must begin with a fresh press.
+		if not _active_touches.has(sd.index):
+			get_viewport().set_input_as_handled()
+			return
+		var prev_pos: Vector2 = _active_touches[sd.index] as Vector2
+		if prev_pos == sd.position and sd.relative != Vector2.ZERO:
 			prev_pos = sd.position - sd.relative
 		var step_dist: float = sd.position.distance_to(prev_pos)
 		_touch_drag_distance += step_dist

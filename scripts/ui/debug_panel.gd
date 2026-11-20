@@ -34,7 +34,8 @@ func _ready() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not OS.is_debug_build():
+	var gate: WindowInputGate = get_node_or_null("/root/PlayerInput") as WindowInputGate
+	if not OS.is_debug_build() or (gate != null and not gate.accepts_player_input()):
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		if (event as InputEventKey).keycode == KEY_F3:
