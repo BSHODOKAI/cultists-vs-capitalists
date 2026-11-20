@@ -310,6 +310,8 @@ static func _build_tower_meshes(tower_id: String, tier: int) -> Dictionary:
 			base.add_cyl(0.14, 0.18, 0.36, Vector3(0.0, 0.28, 0.0), mid_stone, Vector3.ZERO, 8)
 			# Heavy pneumatic nail gun body (industrial yellow-ochre)
 			base.add_box(Vector3(0.30, 0.26, 0.48), Vector3(0.0, 0.58, 0.04), Color(0.82, 0.60, 0.18))
+			# Dark salvaged backing plate gives the pale cult seal contrast.
+			base.add_box(Vector3(0.28, 0.014, 0.13), Vector3(0.0, 0.711, 0.214), Color(0.14, 0.12, 0.10))
 			# Rear air compressor tank
 			base.add_cyl(0.12, 0.12, 0.28, Vector3(0.0, 0.58, 0.30), rust_metal, Vector3(0.0, 0.0, 90.0), 8)
 			# Twin nail-rail barrels pointing forward/slightly up (-Z)
@@ -761,7 +763,7 @@ static func get_unit_mesh(unit_id: String, fac_col: Color = Color(0.95, 0.78, 0.
 			m.add_cyl(0.08, 0.09, 0.44, Vector3(0.32, 0.48, -0.16), tire_black, Vector3(90.0, 0.0, 0.0), 8)
 			# Neon Sponsor Billboard mounted above shoulders
 			m.add_box(Vector3(0.48, 0.22, 0.08), Vector3(0.0, 0.82, 0.04), gold_trim)
-			m.add_box(Vector3(0.42, 0.16, 0.10), Vector3(0.0, 0.82, 0.04), neon_pink)
+			m.add_box(Vector3(0.42, 0.16, 0.10), Vector3(0.0, 0.82, 0.04), Color(0.07, 0.14, 0.23))
 
 		# --- HOSTILE TAKEOVER INC. (Sabotage, Stealth & Anti-Magic) -----------
 		"taser_skirmisher":

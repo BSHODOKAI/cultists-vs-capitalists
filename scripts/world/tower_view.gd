@@ -115,6 +115,22 @@ func refresh_from_instance() -> void:
 	_base_mesh.mesh = _PlaceholderModels.get_tower_base_mesh(tid, clamped_tier)
 	_top_mesh.mesh = _PlaceholderModels.get_tower_accent_mesh(tid, clamped_tier)
 	_base_mat.albedo_color = Color.WHITE
+	if tid == "hexed_nail_gun":
+		_base_mat.roughness = 0.83
+		_base_mat.metallic = 0.18
+	if tid == "hexed_nail_gun" and not _base_mesh.has_node("CultSeal"):
+		var seal: Sprite3D = Sprite3D.new()
+		seal.name = "CultSeal"
+		seal.texture = preload("res://graphics_generation/sanctum/assets/spike_cult_seal.res")
+		seal.axis = Vector3.AXIS_Y
+		# The hopper covers the housing center; put the seal on the exposed rear deck.
+		seal.pixel_size = 0.00105
+		seal.position = Vector3(0.0, 0.721, 0.214)
+		seal.scale.z = 0.46
+		_base_mesh.add_child(seal)
+	var cult_seal: Sprite3D = _base_mesh.get_node_or_null("CultSeal") as Sprite3D
+	if cult_seal != null:
+		cult_seal.visible = tid == "hexed_nail_gun" and clamped_tier == 1
 
 	if tower_instance.branch == _UpgradeNode.Branch.REVEALED:
 		_top_mat.albedo_color = theme_data.branch_revealed_color

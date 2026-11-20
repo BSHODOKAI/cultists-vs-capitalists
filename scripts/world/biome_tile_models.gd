@@ -314,7 +314,7 @@ static func _build_street_lot_utility(acc: _PlaceholderModels.MeshAccumulator, b
 
 static func _build_road_tile(acc: _PlaceholderModels.MeshAccumulator, b: BiomeData) -> void:
 	# Deep obsidian asphalt roadbed for strong contrast against grey city blocks
-	_add_hex_prism(acc, _HexMath.HEX_SIZE * 0.97, 0.14, -0.16, Color(0.06, 0.07, 0.11))
+	_add_hex_prism(acc, _HexMath.HEX_SIZE * 0.97, 0.14, -0.16, Color(0.72, 0.76, 0.84))
 	# High-visibility hazard curb ring + inner neon gutter strip
 	_add_hex_ring(acc, _HexMath.HEX_SIZE * 0.96, _HexMath.HEX_SIZE * 0.84, 0.012, Color(0.92, 0.62, 0.16))
 	_add_hex_ring(acc, _HexMath.HEX_SIZE * 0.84, _HexMath.HEX_SIZE * 0.78, 0.015, Color(0.25, 0.88, 1.0))

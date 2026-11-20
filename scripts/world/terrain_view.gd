@@ -42,7 +42,11 @@ func _ready() -> void:
 
 	_road_material = StandardMaterial3D.new()
 	_road_material.vertex_color_use_as_albedo = true
-	_road_material.roughness = 0.65
+	_road_material.roughness = 0.88
+	_road_material.albedo_texture = preload("res://assets/generated/urban_repaired_asphalt.png")
+	_road_material.uv1_triplanar = true
+	_road_material.uv1_world_triplanar = true
+	_road_material.uv1_scale = Vector3.ONE * 0.8
 
 
 ## Lowers the opacity of urban buildings/skyscrapers while in tower-placement build mode
@@ -101,6 +105,22 @@ func get_active_biome() -> BiomeData:
 ##   • Open buildable/urban hex -> urban district ("*_district")
 func get_hex_tile_archetype(hex: Vector2i, grid: HexGrid, _pgen: PathGenerator = null) -> String:
 	var b: BiomeData = get_active_biome()
+	# The Sanctum's footprint draws NO ground tile at all, and this check comes BEFORE the path check:
+	# the path runs into the base hexes, and its road tile must not be drawn across the compound's
+	# platform. The platform covers all seven base hexes exactly (radius 1.005 hexes against a hex of
+	# 1.0), so omitting the tile is invisible from every angle -- except through the stairwell, where a
+	# ground tile would floor the pit at sea level and hide the descent. The platform IS the ground
+	# here, and the pit may go below z=0 because the height cap only counts what is above it.
+	if grid.is_base_hex(hex):
+		# The compound's platform covers all seven base hexes exactly, so omitting the ground tile is
+		# invisible from every angle -- except through the stairwell, where a lot would floor the pit at
+		# sea level and hide the descent. That is only true while the model is actually importable,
+		# though: with the GLB missing, omitting the tile leaves a HOLE IN THE WORLD. So the base falls
+		# back to its street lot instead. Checked directly rather than through a flag set by PathView,
+		# so there is no ordering dependency on which of the two loads first.
+		if ResourceLoader.exists(PathView.SANCTUM_GLB_PATH, "PackedScene"):
+			return ""
+		return b.pick_street_lot_variant(grid.run_seed, hex)
 	if grid.is_path_hex(hex):
 		return "road_tile"
 	if grid.is_blocked(hex):
@@ -186,8 +206,15 @@ func _build_or_update_chunk(chunk_coord: Vector2i, grid: HexGrid, pgen: PathGene
 	for h: Vector2i in hexes:
 		var is_path: bool = grid.is_path_hex(h)
 		var is_blk: bool = grid.is_blocked(h) and not is_path
-		var in_zone: bool = pgen.is_in_build_zone(h) and not is_path and not is_blk
+		# Reserved base hexes are NOT build zones. Rendering them with the lightened build-zone
+		# street lot put a pale halo under the Sanctum - the brightest thing on screen once the
+		# compound went dark, and it read as a lit platform the model was standing on rather than
+		# as ground. They are reserved, so the plain (dark) lot is also the honest tile.
+		var in_zone: bool = pgen.is_in_build_zone(h) \
+			and not is_path and not is_blk and not grid.is_base_hex(h)
 		var archetype_id: String = get_hex_tile_archetype(h, grid, pgen)
+		if archetype_id == "":
+			continue   # no ground tile here (the Sanctum's footprint; its own platform covers it)
 		var bucket_key: String = "%s|%s" % [archetype_id, "1" if in_zone else "0"]
 
 		if not buckets.has(bucket_key):

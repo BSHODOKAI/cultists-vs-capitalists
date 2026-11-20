@@ -66,12 +66,38 @@ These are consequences of writing the bible down, not features anyone requested:
 Long-term, the visual/audio layer is placeholder-driven (procedural meshes, icons, and sounds).
 Ideas to ponder — **not** a mandate to replace systems that work:
 
-- Authored 3D meshes for towers/units/bosses that keep the existing silhouette rules
+- ✅ **DONE (first asset) — Authored 3D meshes.** The pipeline exists and has produced one
+  shipped asset, the Cult Sanctum, which is now the fidelity baseline. See the subsection below.
+  The remaining work is bringing towers, units and bosses up to that level.
+- **Authored meshes for the rest of the roster**, keeping the existing silhouette rules
   (towers < 1.5 height, units grounded and facing travel).
 - A **title/menu identity pass** — the menu is a plain centered VBox; the theme is strong enough to
   carry a more atmospheric title screen.
 - Music/ambience that sits the *corporate* and *occult* registers against each other.
 - Localization-ready strings (the two-register voice in Design Bible §4 should survive translation).
+
+### The 3D asset pipeline (established; the Sanctum is its first result)
+
+The "visual spike" folder is now the project's real graphics pipeline. Use it, don't rebuild it.
+
+- **The concepts are the target, at their own value.** The eleven images in
+  [`graphics_generation/concepts/`](graphics_generation/concepts/) define what "finished" looks
+  like. The shipped Sanctum is an approximation of them. Match the concept; never darken an asset
+  to suit a terrain tile, and never restyle a tile to suit an asset.
+  [`concepts/README.md`](graphics_generation/concepts/README.md) carries the reconstructed style
+  brief — **and the story of why it had to be reconstructed** (the original prompts were never
+  recorded; recording them is now a hard rule in the skill).
+- **The entry point for a new asset is the `create-3d-asset` skill**
+  (`.ziva/skills/create-3d-asset/SKILL.md`): the Blender → GLB pipeline, per-asset scale and
+  height budgets read from code, the cult's salvaged-infrastructure vocabulary and its banned
+  medieval forms, texture generation and map derivation, the self-checking build, the capture
+  harness, and the traps. `graphics_generation/sanctum/BUILD.md` documents the one worked
+  example it was derived from, and `RESULTS.md` there is the revision record.
+- **Rules that are not negotiable, because ignoring them already cost hours:** measure the
+  artifact that ships rather than the scene that built it; a height cap measured from z = 0 up
+  (depth below is free); metallic ≤ 0.10 (there is no reflection source, so metal renders black);
+  a normal map derives from its own albedo; one constant for the asset path; bump `BUILD_TAG` on
+  every rebuild.
 
 ---
 
@@ -208,11 +234,9 @@ Every run currently starts identically: same resources, same full roster, same o
 
 ## 10. Director Legibility: The "Dossier"
 
-The adaptive director is the game's most distinctive system, and today it is invisible. A death caused by the director learning from the player reads as bad luck.
+**Shipped: Post-run Dossier.** The Quarterly Report explains up to two picks for units that deployed, using the Director's recorded reasons. It distinguishes low measured damage from lack of an answer and does not claim a pick caused the loss.
 
-**Ideas to ponder**
-
-- **Post-run Dossier.** A debrief section listing what the corporation learned about the player and what it did about it, for example: "No coverage against Cloaked; Ghost Contractors prioritized."
+**Still deferred**
 - **Live coverage readout.** A small intel view of the player's current coverage by enemy tag, so the player can see the gap before the director exploits it.
 - **Events stay hidden.** Legibility applies to the director's reasoning, not to the event deck. Event cards remain unadvertised, in keeping with the design bible.
 
@@ -224,7 +248,9 @@ The adaptive director is the game's most distinctive system, and today it is inv
 
 ## 11. Scoring, the "Quarterly Report", and Tower Stats
 
-**Primary score:** quarters survived (waves reached remains the underlying number). Secondary figures in the debrief: Reckonings survived, peak Corruption, leaks, bosses slain, cause of loss.
+**Shipped: Quarterly Report.** One Game Over debrief with wave reached, cause of loss, boss and Reckoning outcomes, and directly attributable damage and finishing blows by tower instance.
+
+**Still deferred:** quarters as a score, additional run metrics, and role-aware tower accounting below.
 
 **Per-tower stats, shown as two numbers**
 
@@ -281,12 +307,12 @@ Starting with a smaller roster would help onboarding and give early runs an arc.
 
 ### Now — Run reliability and pacing verification
 
-- Recheck the recorded Raider/Bid Drone stall (balanced bot, seed 4242, historically wave 20). If it reproduces, fix the helper lifecycle and add a wave-clear regression before taking a fresh seeded baseline. Track stalls separately from losses.
+- ✅ **DONE — Raider/Bid Drone stall.** Reproduced (balanced bot, seed 4242, wave 20; an orphaned speed-0 `bid_drone` at full HP pinned the wave open). Fixed the helper lifecycle: when a boss dies, `TowerSystem._destroy_owned_helpers()` destroys every living helper it owns (Bid Drone, Supply Pod) through the normal death path. Regression `test_enemy_library.gd::test_07` kills the boss and asserts zero living enemies remain. Stalls already tracked separately from losses by `BalanceBaseline` (`outcome: "stalled"`, its own column/section, excluded from wave means). Fresh seeded baseline re-taken: 9 archetypes × 2 seeds, 0 stalls, "Stalls" reads "(none)".
 - Pair that baseline with a small human playtest: record time to first boss, first meaningful growth decision, and Coalition reach. Preserve the fast early economy. Only reopen tuning if completed runs show a repeatable problem.
 
 ### Next — Explain the run, then test whether geography changes it
 
-1. **Quarterly Report + Dossier (§§10–11):** One post-run debrief using existing run logs and Director rationale. Start with wave reached, cause of loss, boss and Reckoning outcomes, and one or two evidence-backed explanations of enemy picks. Include direct tower damage and kills where reliably attributable. Defer indirect support attribution (auras, slows, blockers) and live coverage Intel: they answer different questions and need different accounting or presentation.
+1. ✅ **DONE — Quarterly Report + Dossier (§§10–11).** The Game Over debrief shows wave reached, cause of loss, executive and Reckoning outcomes, up to two verified deployment notes, and a ledger of directly attributable tower damage and kills. Raw logs and analytics remain available. Indirect support attribution (auras, slows, blockers) and live coverage Intel are still deferred. See `AGENTS.md` §10.
 2. **Cooling Basin vertical slice (§16):** Keep the boss-growth preview, terrain seam, local objectives, operator signage, main-lane Skyline affinity, and confirmed attacker Intel in one playtestable package. Use the debrief to distinguish district-influenced faction assignment from adaptive unit counter-picks. Validate deterministic preview and commit across routes from day one, but defer secondary-lane affinity, the Greenbelt, and the Write-Off Belt until the main-lane slice proves the hook. Include the art and UI polish needed to read the slice; keep unrelated menu, music, and asset work separate.
 
 ### Later — Run identity, then something worth unlocking

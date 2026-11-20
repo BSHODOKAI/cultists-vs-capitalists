@@ -132,8 +132,21 @@ func bind_unit(p_unit: CombatUnit, p_theme: VisualThemeData) -> void:
 		fac_col = Color(0.35, 0.90, 1.0, 1.0)
 
 	_body_mat.albedo_color = Color.WHITE
+	_body_mat.roughness = 0.38 if unit.unit_type_id == "sponsor_mech" else 0.45
+	_body_mat.metallic = 0.28 if unit.unit_type_id == "sponsor_mech" else 0.0
 	_occlusion_mat.albedo_color = Color(fac_col.r, fac_col.g, fac_col.b, 0.26)
 	_body_mesh.mesh = _PlaceholderModels.get_unit_mesh_for_combat_unit(unit, fac_col)
+	if unit.unit_type_id == "sponsor_mech" and not _body_mesh.has_node("SponsorMark"):
+		var mark: Sprite3D = Sprite3D.new()
+		mark.name = "SponsorMark"
+		mark.texture = preload("res://graphics_generation/sanctum/assets/spike_iron_board.res")
+		mark.pixel_size = 0.00055
+		mark.shaded = true
+		mark.position = Vector3(0.0, 0.82, 0.092)
+		_body_mesh.add_child(mark)
+	var sponsor_mark: Sprite3D = _body_mesh.get_node_or_null("SponsorMark") as Sprite3D
+	if sponsor_mark != null:
+		sponsor_mark.visible = unit.unit_type_id == "sponsor_mech"
 	_last_info_text = ""
 	_last_status_text = ""
 	_last_cloaked_translucent = -1
