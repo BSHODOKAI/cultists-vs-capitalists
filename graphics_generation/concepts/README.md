@@ -35,6 +35,9 @@ them, and where the two disagree, the concept wins.
 | `shrine_b_equipment_pad.png` | The small-shrine treatment on a salvaged equipment pad. |
 | `shrine_c_pallet_dais.png` | The small-shrine treatment on a pallet dais. |
 
+> **Tower concepts live in [`towers/`](towers/README.md)** — 33 images (3 takes × the 11 cult
+> towers), each generated from the same style brief on this page. Their prompts ARE recorded there.
+
 ---
 
 ## The style brief
