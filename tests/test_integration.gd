@@ -216,6 +216,8 @@ func test_03_fsm_transitions_and_game_over_conditions() -> void:
 	gs.tower_system.step(0.2, gs._combat_rng)
 	assert(gs.lives == 0, "Lives must be 0 after leaking leak_cost=20 unit")
 	assert(gs.current_state == _GameState.RunState.GAME_OVER, "State must be GAME_OVER when lives reach 0")
+	assert(gs.tower_system.last_loss_report.leaked_unit_id == "gig_runner")
+	assert(gs.event_log.back()["payload"]["leaked_unit_id"] == "gig_runner", "Finalized diagnostics must already identify the fatal regular unit")
 
 	# Illegal transition out of GAME_OVER (except RUN_SETUP via start_new_run)
 	assert(not gs.transition_to(_GameState.RunState.INTERMISSION), "Cannot transition from GAME_OVER to INTERMISSION directly")
@@ -949,4 +951,58 @@ func test_12_late_wave_45_multi_lane_performance_stress() -> void:
 	main_ctrl.queue_free()
 	gs.god_mode = false
 	clock.manual_mode = false
+
+
+# --- Test 13: Sanctum footprint is reserved, off the path, and unbuildable ----
+
+func test_13_base_footprint_reserved_off_path_and_unbuildable() -> void:
+	var gs: GameStateNode = _get_game_state()
+	gs.start_new_run(2024)
+
+	var pgen: PathGenerator = gs.path_generator
+	var grid: HexGrid = gs.hex_grid
+	var path: Array[Vector2i] = pgen.path_hexes
+	assert(path.size() >= 2, "Initial path must have at least 2 hexes")
+
+	var base: Vector2i = path[0]
+	var footprint: Array[Vector2i] = grid.get_base_hexes()
+	assert(
+		footprint.size() == 6,
+		"Base footprint must be exactly 6 hexes (radius-1 disc minus the path exit), got %d: %s" % [footprint.size(), str(footprint)]
+	)
+	assert(
+		not footprint.has(path[1]),
+		"The hex the path exits through must NOT be reserved, or the path cannot leave the base"
+	)
+
+	# Every footprint hex is a neighbour of the base (or the base itself) and reads as reserved, so
+	# every existing guard covers it without having been taught about the footprint.
+	for h: Vector2i in footprint:
+		assert(
+			_HexMath.distance(base, h) <= 1,
+			"Footprint hex %s must be the base or adjacent to it" % str(h)
+		)
+		assert(grid.is_reserved(h), "Footprint hex %s must read as reserved" % str(h))
+
+	# The path starts ON the base hex (it is the leak point) and must never otherwise enter the
+	# footprint -- the exit hex is excluded precisely so the path can leave.
+	for h: Vector2i in path:
+		if h == base:
+			continue
+		assert(
+			not grid.is_base_hex(h),
+			"Path hex %s must not be inside the base footprint" % str(h)
+		)
+
+	# And the player cannot build on it, with a reason that names the cause.
+	var build_target: Vector2i = base
+	for h: Vector2i in footprint:
+		if h != base and not grid.is_path_hex(h):
+			build_target = h
+			break
+	var r_base: Dictionary = gs.validate_placement(build_target, "hexed_nail_gun")
+	assert(
+		not bool(r_base["ok"]) and String(r_base["reason"]) == "base_hex",
+		"Footprint hex %s must be rejected with 'base_hex', got %s" % [str(build_target), str(r_base)]
+	)
 

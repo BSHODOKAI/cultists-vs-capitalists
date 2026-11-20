@@ -34,6 +34,9 @@ var _path_hexes: Dictionary = {}
 var _tower_hexes: Dictionary = {}
 ## Hexes reserved by a pending preview: Vector2i(q, r) -> true.
 var _reserved_hexes: Dictionary = {}
+## Cult Sanctum footprint hexes: Vector2i(q, r) -> true. Unlike _reserved_hexes these are
+## persistent -- nothing clears them -- and is_reserved() reports them as well.
+var _base_hexes: Dictionary = {}
 
 ## Cached relative axial offsets within distance 2 (19 hexes).
 static var _disk_2_offsets: Array[Vector2i] = []
@@ -299,6 +302,9 @@ func can_unload_chunk(chunk_coord: Vector2i) -> bool:
 	for h: Vector2i in _reserved_hexes.keys():
 		if hex_to_chunk(h) == chunk_coord:
 			return false
+	for h: Vector2i in _base_hexes.keys():
+		if hex_to_chunk(h) == chunk_coord:
+			return false
 	return true
 
 
@@ -326,6 +332,8 @@ func unload_unused_chunks() -> int:
 	for h: Vector2i in _tower_hexes.keys():
 		pinned[hex_to_chunk(h)] = true
 	for h: Vector2i in _reserved_hexes.keys():
+		pinned[hex_to_chunk(h)] = true
+	for h: Vector2i in _base_hexes.keys():
 		pinned[hex_to_chunk(h)] = true
 
 	var to_unload: Array[Vector2i] = []
@@ -396,7 +404,31 @@ func clear_reserved_hexes() -> void:
 
 
 func is_reserved(hex: Vector2i) -> bool:
-	return _reserved_hexes.has(hex)
+	# Base footprint hexes answer True here too. Every guard in the project already consults
+	# is_reserved() -- path stepping, preview validation, tower placement, objective sites -- so
+	# folding the Sanctum footprint into it makes the footprint off-limits everywhere at once,
+	# and a guard added later cannot forget about it.
+	return _reserved_hexes.has(hex) or _base_hexes.has(hex)
+
+
+## Sets the Cult Sanctum's persistent footprint. Never cleared by clear_reserved_hexes(), and
+## reported by is_reserved() so every placement/path guard covers it.
+func set_base_hexes(hexes: Array[Vector2i]) -> void:
+	_base_hexes.clear()
+	for h: Vector2i in hexes:
+		_base_hexes[h] = true
+		ensure_chunk(hex_to_chunk(h))
+
+
+func is_base_hex(hex: Vector2i) -> bool:
+	return _base_hexes.has(hex)
+
+
+func get_base_hexes() -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	for h: Vector2i in _base_hexes.keys():
+		out.append(h)
+	return out
 
 
 func get_reserved_hexes() -> Array[Vector2i]:

@@ -339,6 +339,9 @@ func start_new_run(seed_val: int = -1) -> void:
 
 	# Bootstrap the initial path (INITIAL_PATH_LENGTH hexes) as extension 0
 	path_generator.generate_initial_path(Vector2i.ZERO, INITIAL_PATH_LENGTH)
+	# The Sanctum's footprint is reserved before anything renders or steps a tick, so terrain never
+	# draws a district under the base and the path can never run through it.
+	_sync_base_footprint()
 
 	unit_leveling = _UnitLeveling.new()
 	coverage_tracker = _CoverageTracker.new()
@@ -595,7 +598,11 @@ func start_wave() -> bool:
 			reckoning_spawn_world
 		)
 
-	_log_event("wave_started", {"wave": current_wave})
+	_log_event("wave_started", {
+		"wave": current_wave,
+		"pick_rationales": locked_roster.pick_rationales,
+		"fairness_swaps": locked_roster.fairness_swaps,
+	})
 	wave_started.emit(current_wave)
 
 	# Immediately spawn any units scheduled at t <= 0.0
@@ -963,6 +970,30 @@ func _record_spend(currency: int, amount: int, reason: String, ok: bool) -> void
 
 # --- Placement & Player Actions (Routed through GameState.spend) -------------
 
+## Reserves the Cult Sanctum's footprint: a radius-1 disc around the base hex (7 hexes, "3 hexes
+## wide") minus the hex the path exits through, which leaves exactly 6.
+##
+## The base hex is `path_hexes[0]` -- and it is also the leak point -- and the path has to be able
+## to step out of it, so the exit hex cannot be reserved. Every other hex in the disc is, which is
+## what keeps the path from running through the Sanctum and stops the player building on it. The
+## hard path constraints already forbid the path from wandering back in: H3 rejects any path hex
+## adjacent to a non-consecutive one, so a later path hex cannot touch the base.
+##
+## Called from start_new_run, so live runs and replays both get it.
+func _sync_base_footprint() -> void:
+	if hex_grid == null or path_generator == null:
+		return
+	var path_hexes: Array[Vector2i] = path_generator.path_hexes
+	var footprint: Array[Vector2i] = []
+	if not path_hexes.is_empty():
+		var base: Vector2i = path_hexes[0]
+		var exit_hex: Vector2i = path_hexes[1] if path_hexes.size() > 1 else base
+		for h: Vector2i in _HexMath.disk(base, 1):
+			if h != exit_hex:
+				footprint.append(h)
+	hex_grid.set_base_hexes(footprint)
+
+
 ## Validates placement at [param hex] for [param tower_id_or_def] and returns
 ## { "ok": bool, "reason": String, "cost": int }.
 func validate_placement(hex: Vector2i, tower_id_or_def: Variant = null) -> Dictionary:
@@ -975,6 +1006,9 @@ func validate_placement(hex: Vector2i, tower_id_or_def: Variant = null) -> Dicti
 		return {"ok": false, "reason": "occupied_hex", "cost": 0}
 	if hex_grid.is_path_hex(hex) or path_generator.path_hexes.has(hex):
 		return {"ok": false, "reason": "path_hex", "cost": 0}
+	# is_reserved() also reports the base footprint; name it precisely instead.
+	if hex_grid.is_base_hex(hex):
+		return {"ok": false, "reason": "base_hex", "cost": 0}
 	if hex_grid.is_reserved(hex):
 		return {"ok": false, "reason": "reserved_hex", "cost": 0}
 	if hex_grid.is_blocked(hex):

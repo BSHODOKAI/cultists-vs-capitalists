@@ -149,6 +149,10 @@ func _init(p_seed: int = 1, p_grid: HexGrid = null) -> void:
 func generate_initial_path(base_hex: Vector2i = Vector2i.ZERO, initial_length: int = 0) -> Array[Vector2i]:
 	_reset_state()
 	grid.set_terrain_override(base_hex, _C.Terrain.BUILDABLE)
+	# The exit hex is forced BUILDABLE too, so the fixed first step is never rejected. That step is
+	# what aims the road at the Sanctum's gate, and a blocked hex under it would quietly fall back
+	# to a path leaving through a wall.
+	grid.set_terrain_override(base_hex + _C.BASE_EXIT_DIR, _C.Terrain.BUILDABLE)
 	grid.ensure_chunks_around(base_hex, terrain_margin + _C.INITIAL_MAX_LENGTH)
 
 	var rng := RandomNumberGenerator.new()
@@ -194,6 +198,10 @@ func _reset_state() -> void:
 	_pending_preview_result.clear()
 	_growth_committed_for_wave.clear()
 	grid.clear_reserved_hexes()
+	# The base footprint is a SEPARATE persistent set that GameState re-derives after generation.
+	# A stale one left over from the previous run would still be reserved while the new path is
+	# built, and would reject the forced first step. Cleared here so the two cannot disagree.
+	grid.set_base_hexes([])
 	grid.set_path_hexes([])
 
 
@@ -201,8 +209,10 @@ func _build_initial_chain(base_hex: Vector2i, target_len: int, rng: RandomNumber
 	for attempt in range(64):
 		var chain: Array[Vector2i] = [base_hex]
 		var used: Dictionary = {base_hex: 0}
-		var dir_idx: int = (rng.randi() + attempt) % _C.HEX_DIRECTIONS.size()
-		var cur_dir: Vector2i = _C.HEX_DIRECTIONS[dir_idx]
+		# The FIRST step is fixed rather than random: it is the direction the Sanctum's gate faces,
+		# so the committed road leaves the base through the one opening in its wall. Every later
+		# step is still drawn from the RNG, so the path's variety is unaffected.
+		var cur_dir: Vector2i = _C.BASE_EXIT_DIR
 		var straight_count: int = 0
 		var has_corner: bool = false
 		var ok: bool = true
@@ -254,7 +264,9 @@ func _build_initial_chain(base_hex: Vector2i, target_len: int, rng: RandomNumber
 				return chain
 
 	# Guaranteed straight fallback if random attempts hit dense blocked clusters
-	var fallback_dir: Vector2i = _C.HEX_DIRECTIONS[0]
+	# The fallback straight run uses the same fixed direction, so even the dense-blocked-cluster
+	# case exits through the gate rather than out of a wall.
+	var fallback_dir: Vector2i = _C.BASE_EXIT_DIR
 	var fallback_chain: Array[Vector2i] = []
 	for i in range(target_len):
 		var h: Vector2i = base_hex + fallback_dir * i

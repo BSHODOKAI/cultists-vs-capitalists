@@ -59,14 +59,30 @@ const BOSS_SLOW_DOT_STRENGTH: float = 0.50
 
 # --- Hex grid & chunk constants ----------------------------------------------
 ## 6 axial directions (q, r) in 60-degree cyclic order.
+##
+## Angles are measured in WORLD space from +X toward +Z -- exactly what `HexMath.hex_to_world`
+## returns. The earlier comments here had the sign of the angle flipped, which is the kind of
+## mislabelling that ends with a gate facing a wall. Checked against the printed values.
 const HEX_DIRECTIONS: Array[Vector2i] = [
-	Vector2i(1, 0),   # 0: 0 deg
-	Vector2i(1, -1),  # 1: +60 deg
-	Vector2i(0, -1),  # 2: +120 deg
-	Vector2i(-1, 0),  # 3: 180 deg
-	Vector2i(-1, 1),  # 4: -120 deg (240 deg)
-	Vector2i(0, 1),   # 5: -60 deg (300 deg)
+	Vector2i(1, 0),   # 0:  +0 deg
+	Vector2i(1, -1),  # 1: -60 deg
+	Vector2i(0, -1),  # 2: -120 deg
+	Vector2i(-1, 0),  # 3: +180 deg
+	Vector2i(-1, 1),  # 4: +120 deg
+	Vector2i(0, 1),   # 5: +60 deg
 ]
+
+## The hex the path leaves the player's base through.
+##
+## The Sanctum is a walled compound with ONE opening in it, so the committed road has to leave
+## through that opening rather than out of a wall. Three things have to agree and nothing in the
+## type system connects them, so `tests/test_base_gate_alignment.gd` asserts it instead:
+##   * the model's gate is built on Blender 300 deg (`GATE_ANG` in build_sanctum_compound.py),
+##     which glTF maps to a Godot direction of +60 deg;
+##   * `PathView` mounts the compound at rotation.y = 0, leaving the gate at +60 deg -- which is
+##     also the direction the fixed camera (yaw 45) sees it best from, 15 deg off axis;
+##   * this direction, HEX_DIRECTIONS[5] = (0, 1), which `hex_to_world` puts at +60 deg as well.
+const BASE_EXIT_DIR: Vector2i = Vector2i(0, 1)
 
 ## Radius of each lazy terrain chunk in axial coordinates.
 const CHUNK_RADIUS: int = 8
