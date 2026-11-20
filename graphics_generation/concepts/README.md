@@ -37,6 +37,13 @@ them, and where the two disagree, the concept wins.
 
 > **Tower concepts live in [`towers/`](towers/README.md)** — 33 images (3 takes × the 11 cult
 > towers), each generated from the same style brief on this page. Their prompts ARE recorded there.
+>
+> **Per-tower upgrade-path concepts** get their own subfolder, e.g.
+> [`towers/hexed_nail_gun/`](towers/hexed_nail_gun/README.md) (the 7 upgrade nodes on the take-B base).
+>
+> **Re-dos of a single concept at in-game dimensions** also get their own subfolder, e.g.
+> [`court_b_shrine/`](court_b_shrine/README.md) — the shrine court rebuilt as the real Sanctum base
+> (low & wide, 7-hex union) instead of the original's tall stone walls.
 
 ---
 

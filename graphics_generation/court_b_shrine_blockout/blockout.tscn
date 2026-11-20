@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://cb0lck0utc0rt"]
+
+[ext_resource type="Script" path="res://graphics_generation/court_b_shrine_blockout/blockout.gd" id="1_bl"]
+
+[node name="Blockout" type="Node3D"]
+script = ExtResource("1_bl")

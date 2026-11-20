@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>A4 — provably in dimension</title>
+<style>
+ html,body{margin:0;background:#111114;color:#e8e4dc;font-family:system-ui,sans-serif;font-size:12px;padding:8px}
+ h1{font-size:14px;margin:0 0 2px} p.sub{margin:0 0 8px;color:#9a958c;font-size:11px}
+ .wrap{position:relative;width:600px;height:600px;border:1px solid #333;border-radius:6px;overflow:hidden;background:#000}
+ .wrap img{position:absolute;inset:0;width:600px;height:600px}
+ .wrap svg{position:absolute;inset:0;width:600px;height:600px}
+ .key{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0;font-size:11px;color:#c9c6c0}
+ .key i{display:inline-block;width:14px;height:3px;vertical-align:middle;margin-right:4px}
+ table{border-collapse:collapse;font-size:11px;width:100%;margin-top:6px}
+ td{border-bottom:1px solid #2a2a2e;padding:3px 6px;color:#c9c6c0} td:first-child{color:#9a958c;white-space:nowrap}
+ .k{font-family:ui-monospace,monospace;color:#e8e4dc}
+ .caveat{margin-top:8px;color:#9a958c;font-size:11px;line-height:1.4}
+</style>
+</head>
+<body>
+<h1>A4 — provably in dimension</h1>
+<p class="sub">Exact geometry from <span class="k">graphics_generation/sanctum/sources/build_sanctum_compound.py</span>, aligned to the painted ground plane.</p>
+<div class="wrap">
+<img src="../a4_basalt_idol.png" alt="A4 basalt idol concept">
+<svg id="ov" viewBox="0 0 768 768" aria-label="dimension overlay"></svg>
+</div>
+<div class="key">
+<span><i style="background:#5fd0ff"></i>7-hex platform (R 1.005)</span>
+<span><i style="background:#ffd27a"></i>boundary (apothem 2.40)</span>
+<span><i style="background:#ff6b5a"></i>gate edge (300&#176;)</span>
+<span><i style="background:#fff"></i>stairwell</span>
+<span><i style="background:#8dffb0"></i>shrine position</span>
+</div>
+<table>
+<tr><td>Art scale (measured)</td><td class="k">1 u &#8776; 160 px &#183; fence 4.80 u fills the 768 px frame &#183; platform 5.49 u is cropped</td></tr>
+<tr><td>Platform</td><td class="k">7 hexes, R 1.005 &#183; &#8776;5.49 u across bracket edges</td></tr>
+<tr><td>Boundary</td><td class="k">apothem 2.40 &#183; corner R 2.771</td></tr>
+<tr><td>Heights</td><td class="k">deck 0.34 &#183; parapet 0.60 &#183; rail 1.10 &#183; ridge &#8776;1.36 &#183; cap 1.50 &#183; shaft &#8722;0.50</td></tr>
+<tr><td>Discrepancy</td><td class="k">art centred the idol; the model's shrine is offset to (1.35, 1.30) &#8212; see the green marker</td></tr>
+</table>
+<p class="caveat">Geometry is exact; the alignment to the painted ground plane is fitted, because the generator's camera is not the game's orthographic camera and the art is cropped at the sides. Scale is pinned by the measured fence width, not guessed.</p>
+<script>
+const cx=383, cy=489.6, s=160, k=89.3;
+function P(x,y){return [cx + s*x, cy - k*y];}
+function hexPts(hx,hy,r){const a=[];for(let i=0;i<6;i++){const t=(30+60*i)*Math.PI/180;a.push(P(hx+r*Math.cos(t), hy+r*Math.sin(t)));}return a;}
+function poly(pts,attrs){return '<polygon points="'+pts.map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ')+'" '+attrs+'/>';}
+let out="";
+const centers=[[0,0]];for(let k2=0;k2<6;k2++){const a=60*k2*Math.PI/180;centers.push([1.7407*Math.cos(a),1.7407*Math.sin(a)]);}
+for(const c of centers){out+=poly(hexPts(c[0],c[1],1.005),'fill="none" stroke="#5fd0ff" stroke-width="1.5" stroke-opacity="0.9"');}
+const b=hexPts(0,0,2.77128);
+out+=poly(b,'fill="none" stroke="#ffd27a" stroke-width="2.6"/>');
+out+='<line x1="'+b[4][0]+'" y1="'+b[4][1]+'" x2="'+b[5][0]+'" y2="'+b[5][1]+'" stroke="#ff6b5a" stroke-width="4.5"/>';
+const c1=P(-0.32,-1.29), c2=P(0.92,0.61);
+const rx=Math.min(c1[0],c2[0]), ry=Math.min(c1[1],c2[1]);
+out+='<rect x="'+rx+'" y="'+ry+'" width="'+Math.abs(c2[0]-c1[0])+'" height="'+Math.abs(c2[1]-c1[1])+'" fill="none" stroke="#ffffff" stroke-width="1.6" stroke-dasharray="5 4"/>';
+const sp=P(1.35,1.30);
+out+='<circle cx="'+sp[0]+'" cy="'+sp[1]+'" r="8" fill="none" stroke="#8dffb0" stroke-width="2.6"/>';
+out+='<line x1="'+sp[0]+'" y1="'+sp[1]+'" x2="'+(sp[0]-70)+'" y2="'+(sp[1]-24)+'" stroke="#8dffb0" stroke-width="1.5"/>';
+out+='<text x="'+(sp[0]-72)+'" y="'+(sp[1]-28)+'" fill="#8dffb0" font-size="15" text-anchor="end" font-family="system-ui">shrine (1.35, 1.30)</text>';
+const y0=730, x0=20;
+out+='<line x1="'+x0+'" y1="'+y0+'" x2="'+(x0+160)+'" y2="'+y0+'" stroke="#ffffff" stroke-width="3"/>';
+out+='<line x1="'+x0+'" y1="'+(y0-6)+'" x2="'+x0+'" y2="'+(y0+6)+'" stroke="#ffffff" stroke-width="3"/>';
+out+='<line x1="'+(x0+160)+'" y1="'+(y0-6)+'" x2="'+(x0+160)+'" y2="'+(y0+6)+'" stroke="#ffffff" stroke-width="3"/>';
+out+='<text x="'+(x0+80)+'" y="'+(y0-10)+'" fill="#fff" font-size="15" text-anchor="middle" font-family="system-ui">1 u = 160 px</text>';
+document.getElementById('ov').innerHTML=out;
+</script>
+</body>
+</html>
