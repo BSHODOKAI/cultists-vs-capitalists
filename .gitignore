@@ -31,3 +31,16 @@ addons/ziva_agent/
 .DS_Store
 Thumbs.db
 *.swp
+
+# Blender autosave backups
+*.blend1
+
+# Godot's glTF importer EXTRACTS a .glb's embedded textures to sidecar PNGs beside it
+# (sanctum_compound_tex_*.png / _mr_*.png) and the imported scene references those, so they
+# are required at runtime -- but the importer regenerates them from the .glb on import, so
+# they are build output, not source. Ignore the pair; the .glb itself is still tracked.
+graphics_generation/**/sanctum_compound_*.png
+graphics_generation/**/sanctum_compound_*.import
+
+# Capture-harness output: regenerable by running the capture scenes.
+graphics_generation/**/captures/
