@@ -88,7 +88,7 @@ the comedy is in the collision, never in a wink at the camera.
   *"Corporate Executive Threat"*, *"The Audit Comes Due"*, *"Reckoning: +N"*.
 - Occult speak applied to business: *"the till audits itself"*, *"the song is billed"*,
   *"paid in flesh"*, *"blood tithe"*, *"the plate never empties"*.
-- Failure is stated flatly and finally: *"SANCTUM OVERRUN — GAME OVER."* No whimsy, no apology.
+- Failure is stated flatly and finally: *"SANCTUM OVERRUN."* The **Quarterly Report** files the fall as a final disposition. The **Director Dossier** reads like an intelligence brief: cite what the corporation observed and what that favored, not what it imagines the cult could do. The **Tower Ledger** credits verified damage and finishing blows, never declaring an asset worthless for work it cannot measure.
 
 **Voice rules:**
 - Prefer **short, declarative, slightly ominous** sentences. A tooltip should sound like a warning

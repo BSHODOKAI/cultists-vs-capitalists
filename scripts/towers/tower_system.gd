@@ -135,6 +135,9 @@ var puddles: Array[Dictionary] = []
 ## Total damage logged during simulation runs for easy test inspection.
 var total_damage_dealt: float = 0.0
 var total_hits_count: int = 0
+## Post-run ledger: tower instance ID -> verified HP/shield damage and finishing blows.
+## Kept separately from hit_events, which intentionally retain attempted damage for diagnostics.
+var report_tower_totals: Dictionary = {}
 var hit_events: Array[Dictionary] = []
 ## All telegraph events emitted for UI legibility & test assertions.
 var telegraph_events: Array[Dictionary] = []
@@ -1810,7 +1813,15 @@ func deal_damage_from_tower(
 	if not bypass_shield and unit.shield_regen_delay > 0.0:
 		unit.shield_regen_timer = unit.shield_regen_delay
 
+	var effective_damage: float = (amount - actual_damage) + minf(unit.hp, actual_damage)
 	unit.hp = maxf(0.0, unit.hp - actual_damage)
+	if tower != null and tower.tower_id > 0 and not game_over and not unit.is_bid_drone and not unit.is_supply_pod:
+		if not report_tower_totals.has(tower.tower_id):
+			report_tower_totals[tower.tower_id] = {"tower_id": tower.tower_id, "type": tower.get_type_id(), "hex": tower.hex, "damage": 0.0, "kills": 0}
+		var total: Dictionary = report_tower_totals[tower.tower_id]
+		total["damage"] = float(total["damage"]) + effective_damage
+		if unit.hp <= 0.0:
+			total["kills"] = int(total["kills"]) + 1
 	var dealt_total: float = amount
 
 	var tid: int = tower.tower_id if tower != null else 0
@@ -3820,11 +3831,20 @@ func _handle_unit_leak(unit: CombatUnit) -> void:
 		return
 
 	lives = maxi(0, lives - maxi(0, unit.leak_cost))
+	# The GameState leak listener may finalize the run synchronously. Prepare the
+	# fatal unit snapshot before notifying it; still let god mode restore lives.
+	var fatal_report: LossReport = null
+	if lives <= 0:
+		fatal_report = build_loss_report(unit, leak_hex, leak_path_idx)
+		last_loss_report = fatal_report
 	enemy_leaked.emit(unit.unit_id, unit.leak_cost)
 	if lives <= 0:
 		game_over = true
-		last_loss_report = build_loss_report(unit, leak_hex, leak_path_idx)
+		if fatal_report == null:
+			last_loss_report = build_loss_report(unit, leak_hex, leak_path_idx)
 		loss_report_generated.emit(last_loss_report)
+	elif fatal_report != null and last_loss_report == fatal_report:
+		last_loss_report = null # God mode prevented the loss.
 
 
 ## Builds a [LossReport] snapshot at the moment of game over (or on demand):

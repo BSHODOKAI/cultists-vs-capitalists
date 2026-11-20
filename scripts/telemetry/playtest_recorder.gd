@@ -368,6 +368,7 @@ func build_run_payload(outcome: String = "snapshot", report: LossReport = null) 
 			else {}
 		),
 		"command_log": export_dict.get("command_log", []),
+		"event_log": GameStateNode.to_json_safe(_gs.get("event_log")),
 		"spend_log": GameStateNode.to_json_safe(_gs.get("spend_log")),
 	}
 
