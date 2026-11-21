@@ -1,7 +1,10 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/main_menu.gd" id="1_menu"]
 [ext_resource type="Script" path="res://scripts/ui/settings_menu.gd" id="2_settings"]
+[ext_resource type="Texture2D" path="res://assets/menu/menu_background.png" id="3_bg"]
+[ext_resource type="Theme" path="res://themes/menu_theme.tres" id="4_theme"]
+[ext_resource type="Texture2D" path="res://assets/menu/title_logotype.png" id="5_logo"]
 
 [node name="MainMenu" type="Control"]
 layout_mode = 3
@@ -10,6 +13,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+theme = ExtResource("4_theme")
 script = ExtResource("1_menu")
 
 [node name="Background" type="ColorRect" parent="."]
@@ -21,6 +25,26 @@ grow_horizontal = 2
 grow_vertical = 2
 color = Color(0.06, 0.05, 0.09, 1)
 
+[node name="BackgroundArt" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = ExtResource("3_bg")
+expand_mode = 1
+stretch_mode = 6
+
+[node name="Scrim" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.04, 0.04, 0.06, 0.35)
+
 [node name="Center" type="CenterContainer" parent="."]
 layout_mode = 1
 anchors_preset = 15
@@ -30,20 +54,22 @@ grow_horizontal = 2
 grow_vertical = 2
 
 [node name="VBox" type="VBoxContainer" parent="Center"]
-custom_minimum_size = Vector2(320, 0)
+custom_minimum_size = Vector2(460, 0)
 layout_mode = 2
 theme_override_constants/separation = 16
 
-[node name="Title" type="Label" parent="Center/VBox"]
+[node name="Title" type="TextureRect" parent="Center/VBox"]
+custom_minimum_size = Vector2(0, 140)
 layout_mode = 2
-theme_override_colors/font_color = Color(0.88, 0.65, 1, 1)
-theme_override_font_sizes/font_size = 28
-text = "CULTISTS vs CAPITALISTS"
-horizontal_alignment = 1
+expand_mode = 1
+stretch_mode = 5
+texture = ExtResource("5_logo")
 
 [node name="Subtitle" type="Label" parent="Center/VBox"]
 layout_mode = 2
 theme_override_colors/font_color = Color(0.68, 0.72, 0.82, 1)
+theme_override_colors/font_outline_color = Color(0.03, 0.02, 0.05, 1)
+theme_override_constants/outline_size = 5
 theme_override_font_sizes/font_size = 14
 text = "Hex-Grid Endless Sanctum Defense"
 horizontal_alignment = 1
@@ -54,7 +80,7 @@ theme_override_constants/separation = 8
 
 [node name="TesterLabel" type="Label" parent="Center/VBox/TesterBox"]
 layout_mode = 2
-text = "Playtester:"
+text = "PLAYTESTER"
 
 [node name="TesterInput" type="LineEdit" parent="Center/VBox/TesterBox"]
 layout_mode = 2
@@ -67,7 +93,7 @@ theme_override_constants/separation = 8
 
 [node name="SeedLabel" type="Label" parent="Center/VBox/SeedBox"]
 layout_mode = 2
-text = "Run Seed:"
+text = "RUN SEED"
 
 [node name="SeedInput" type="LineEdit" parent="Center/VBox/SeedBox"]
 layout_mode = 2
@@ -77,17 +103,17 @@ placeholder_text = "Blank = random seed"
 [node name="StartButton" type="Button" parent="Center/VBox"]
 custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
-text = "Start Game"
+text = "START GAME"
 
 [node name="SettingsButton" type="Button" parent="Center/VBox"]
 custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
-text = "Settings"
+text = "SETTINGS"
 
 [node name="QuitButton" type="Button" parent="Center/VBox"]
 custom_minimum_size = Vector2(0, 38)
 layout_mode = 2
-text = "Quit"
+text = "QUIT"
 
 [node name="SettingsMenu" type="PanelContainer" parent="Center"]
 visible = false

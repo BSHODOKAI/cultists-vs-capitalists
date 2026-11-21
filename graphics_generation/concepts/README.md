@@ -44,6 +44,21 @@ them, and where the two disagree, the concept wins.
 > **Re-dos of a single concept at in-game dimensions** also get their own subfolder, e.g.
 > [`court_b_shrine/`](court_b_shrine/README.md) — the shrine court rebuilt as the real Sanctum base
 > (low & wide, 7-hex union) instead of the original's tall stone walls.
+>
+> **Objective-site concepts live in [`objectives/`](objectives/README.md)** — claimable sites as
+> visually distinct, **biome-matched** hex tiles: 3 mechanical kinds × 4 districts = 12 landmarks
+> (`ley_line`, `converted_data_center`, `corruption_reservoir`, each localised per district).
+>
+> **Terrain / district concepts live in [`biomes/`](biomes/README.md)** — a 6-tile kit (2 terrain,
+> 2 obstacle, road, work pad) for each district [`ROADMAP.md` §16](../../ROADMAP.md) proposes beyond
+> Urban Center: the Write-Off Belt, the Unceded Greenbelt and the Cooling Basin.
+>
+> **Enemy concepts live in [`units/`](units/README.md)** — the other half of the visual language:
+> sleek, mass-produced, sponsor-branded corporate hardware, deliberately the *opposite* of the cult's
+> jagged salvaged junk (see [`units/README.md`](units/README.md) for the comparison table and the
+> corporate style block). It also holds the **one exception** — the **Rogue Entity**, the cult's own
+> Corruption woken up, which is neither corporate nor a static cult compound but a **third, eldritch**
+> register (its own style block lives there too).
 
 ---
 

@@ -15,6 +15,10 @@ signal quit_to_main_menu_requested
 
 const MAIN_MENU_SCENE_PATH := "res://scenes/main_menu.tscn"
 const _SettingsMenu = preload("res://scripts/ui/settings_menu.gd")
+## One shared theme so the in-game menu dresses its buttons like the main menu.
+const _MenuTheme = preload("res://themes/menu_theme.tres")
+## The game's logotype, used as this menu's title (same art as the main menu).
+const _TitleLogo = preload("res://assets/menu/title_logotype.png")
 
 ## True if quitting to the main menu should call get_tree().change_scene_to_file().
 ## Tests can set this to false to inspect the signal/state without unloading the test scene.
@@ -26,7 +30,7 @@ var _dimmer: ColorRect
 var _center: CenterContainer
 var _menu_panel: PanelContainer
 var _menu_vbox: VBoxContainer
-var _title_label: Label
+var _title_logo: TextureRect
 var _resume_button: Button
 var _settings_button: Button
 var _copy_log_button: Button
@@ -36,7 +40,14 @@ var _settings_menu: SettingsMenu
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# Match the main menu: the shared theme dresses every button and line edit.
+	theme = _MenuTheme
 	_build_ui()
+	# Corporate register (DESIGN_BIBLE §4): menu button labels are ALL-CAPS.
+	if _menu_vbox != null:
+		for child in _menu_vbox.get_children():
+			if child is Button:
+				(child as Button).text = (child as Button).text.to_upper()
 	visible = false
 
 
@@ -46,7 +57,11 @@ func _build_ui() -> void:
 		_center = get_node_or_null("Center") as CenterContainer
 		_menu_panel = get_node_or_null("Center/MenuPanel") as PanelContainer
 		_menu_vbox = get_node_or_null("Center/MenuPanel/VBox") as VBoxContainer
-		_title_label = get_node_or_null("Center/MenuPanel/VBox/Title") as Label
+		var existing_title: Node = get_node_or_null("Center/MenuPanel/VBox/Title")
+		if existing_title is Label:
+			(existing_title as Label).text = "CULTISTS vs CAPITALISTS"
+		elif existing_title is TextureRect:
+			(existing_title as TextureRect).texture = _TitleLogo
 		_resume_button = get_node_or_null("Center/MenuPanel/VBox/ResumeButton") as Button
 		_settings_button = get_node_or_null("Center/MenuPanel/VBox/SettingsButton") as Button
 		_copy_log_button = get_node_or_null("Center/MenuPanel/VBox/CopyLogButton") as Button
@@ -81,9 +96,9 @@ func _build_ui() -> void:
 	_menu_panel.custom_minimum_size = Vector2(360.0, 0.0)
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.08, 0.07, 0.12, 0.98)
-	style.border_color = Color(0.55, 0.38, 0.75, 0.92)
+	style.border_color = Color(0.6, 0.34, 0.92, 0.92)
 	style.set_border_width_all(2)
-	style.set_corner_radius_all(8)
+	style.set_corner_radius_all(4)
 	style.set_content_margin_all(22)
 	_menu_panel.add_theme_stylebox_override("panel", style)
 	_center.add_child(_menu_panel)
@@ -93,13 +108,15 @@ func _build_ui() -> void:
 	_menu_vbox.add_theme_constant_override("separation", 14)
 	_menu_panel.add_child(_menu_vbox)
 
-	_title_label = Label.new()
-	_title_label.name = "Title"
-	_title_label.text = "IN-GAME MENU"
-	_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_title_label.add_theme_font_size_override("font_size", 22)
-	_title_label.add_theme_color_override("font_color", Color(0.88, 0.65, 1.0, 1.0))
-	_menu_vbox.add_child(_title_label)
+	# The title is the game's logotype, not a text label — the same lockup as the main menu.
+	_title_logo = TextureRect.new()
+	_title_logo.name = "Title"
+	_title_logo.texture = _TitleLogo
+	_title_logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_title_logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_title_logo.custom_minimum_size = Vector2(0.0, 96.0)
+	_title_logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_menu_vbox.add_child(_title_logo)
 
 	_resume_button = Button.new()
 	_resume_button.name = "ResumeButton"
@@ -167,7 +184,7 @@ func open_menu() -> void:
 	if _menu_panel != null:
 		_menu_panel.visible = true
 	if _copy_log_button != null:
-		_copy_log_button.text = "Copy Run Log"
+		_copy_log_button.text = "COPY RUN LOG"
 
 	var clock: Node = get_node_or_null("/root/SimClock")
 	if clock != null and not bool(clock.get("paused")):
@@ -291,4 +308,4 @@ func _on_copy_log_pressed() -> void:
 	if rec != null:
 		rec.copy_run_log_to_clipboard("in_game_menu")
 		if _copy_log_button != null:
-			_copy_log_button.text = "Copied Run Log!"
+			_copy_log_button.text = "COPIED RUN LOG!"
