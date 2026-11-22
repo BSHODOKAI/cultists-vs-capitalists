@@ -97,6 +97,10 @@ var fork_candidates_late: int = _C.FORK_CANDIDATES_LATE
 var fork_min_ext: int = _C.FORK_MIN_EXT
 var fork_max_ext: int = _C.FORK_MAX_EXT
 var fork_max_join_index: int = _C.FORK_MAX_JOIN_INDEX
+## 0 = use the run's actual generated initial path length (see [constant PathConstants.MIN_LANE_LENGTH_FLOOR]).
+var min_lane_length_floor: int = _C.MIN_LANE_LENGTH_FLOOR
+var condemn_max_hexes: int = _C.CONDEMN_MAX_HEXES
+var score_condemn_penalty_per_hex: float = _C.SCORE_CONDEMN_PENALTY_PER_HEX
 var forks_enabled: bool = true
 
 ## Logs of fallback relaxations and errors for diagnostics and tests.
@@ -131,6 +135,12 @@ var _total_extension_hexes: int = 0
 var _completed_extensions: int = 0
 var _previous_turn_sequences: Array[String] = []
 var _pending_preview_result: Dictionary = {}
+## Base-to-spawn hex count of the run's ORIGINAL path. Every lane must reach this length.
+## Set at the end of generate_initial_path; 0 until then.
+var initial_path_length: int = 0
+## When true the growth candidate search ignores tower and BLOCKED occupancy -- those hexes
+## become condemnation targets cleared on commit. Reserved hexes are NEVER ignored.
+var _search_ignores_obstacles: bool = false
 
 
 func _init(p_seed: int = 1, p_grid: HexGrid = null) -> void:
@@ -168,6 +178,8 @@ func generate_initial_path(base_hex: Vector2i = Vector2i.ZERO, initial_length: i
 	grid.set_path_hexes(path_hexes)
 	_refresh_persistent_overlaps()
 	extension_index = 1
+	# The floor every lane must reach: the length of the path the run started with.
+	initial_path_length = path_hexes.size()
 	return path_hexes.duplicate()
 
 
@@ -197,6 +209,8 @@ func _reset_state() -> void:
 	_previous_turn_sequences.clear()
 	_pending_preview_result.clear()
 	_growth_committed_for_wave.clear()
+	initial_path_length = 0
+	_search_ignores_obstacles = false
 	grid.clear_reserved_hexes()
 	# The base footprint is a SEPARATE persistent set that GameState re-derives after generation.
 	# A stale one left over from the previous run would still be reserved while the new path is
@@ -558,6 +572,20 @@ func generate_extension_candidate(ext_idx: int = -1) -> Dictionary:
 		)
 		top_qualifying = _collect_lookahead_survivors(reduced_h1235, 0, top_candidate_pool)
 
+	# Fallback 2.5: condemn obstacles. No clean route exists, so let the new stretch pass through
+	# tower hexes and BLOCKED rubble, which the commit clears (towers crushed into the lane-0
+	# bounty pool). Reserved/base hexes and every H1/H3/H4 constraint still hold; the least
+	# destructive route is preferred and the cap bounds how much may be bulldozed.
+	if top_qualifying.is_empty():
+		var condemn_res: Dictionary = _search_condemn_candidates(rng, min_ext, max_ext)
+		total_tried += int(condemn_res["tried"])
+		var condemn_survivors: Array[Dictionary] = condemn_res["survivors"]
+		if not condemn_survivors.is_empty():
+			relaxations.append("condemn_obstacles")
+			var msg25: String = "Extension %d (seed %d): no clean route; condemning obstacles to grow" % [use_idx, ext_seed]
+			relaxation_logs.append(msg25)
+			top_qualifying = condemn_survivors
+
 	# Fallback 3: skip growth and log an error (never relax H1-H5)
 	if top_qualifying.is_empty():
 		relaxations.append("skip_growth")
@@ -577,6 +605,8 @@ func generate_extension_candidate(ext_idx: int = -1) -> Dictionary:
 			"seed": ext_seed,
 			"candidates_tried": total_tried,
 			"relaxations_applied": relaxations,
+			"condemned_tower_hexes": empty_hexes,
+			"cleared_blocked_hexes": empty_hexes,
 		}
 
 	# Pick randomly (seeded) among the top 3
@@ -592,6 +622,8 @@ func generate_extension_candidate(ext_idx: int = -1) -> Dictionary:
 		"seed": ext_seed,
 		"candidates_tried": total_tried,
 		"relaxations_applied": relaxations,
+		"condemned_tower_hexes": _collect_condemned_tower_hexes(chosen["new_hexes"]),
+		"cleared_blocked_hexes": _collect_blocked_hexes(chosen["new_hexes"]),
 	}
 
 
@@ -651,6 +683,38 @@ func _search_candidates(rng: RandomNumberGenerator, cur_min_ext: int, cur_max_ex
 		"tried": tried,
 		"survivors": survivors,
 	}
+
+
+## Condemnation fallback: re-runs the growth search IGNORING tower and BLOCKED occupancy, keeps
+## only routes that need at most [member condemn_max_hexes] obstacles cleared, scores them with a
+## per-obstacle penalty (least destructive first), and returns the top lookahead survivors.
+##
+## Called only when no clean route exists. Reserved hexes (including the Sanctum's base footprint)
+## are still obstacles, and every H1/H3/H4 constraint still holds. Restores
+## [member _search_ignores_obstacles] before returning, so the flag is never left set.
+func _search_condemn_candidates(rng: RandomNumberGenerator, cur_min_ext: int, cur_max_ext: int) -> Dictionary:
+	_search_ignores_obstacles = true
+	var batch: Dictionary = _search_candidates(rng, cur_min_ext, cur_max_ext)
+	var scored: Array[Dictionary] = []
+	for cand: Dictionary in batch["survivors"]:
+		var new_hexes: Array[Vector2i] = cand["new_hexes"]
+		var towers: Array[Vector2i] = _collect_condemned_tower_hexes(new_hexes)
+		var blocked: Array[Vector2i] = _collect_blocked_hexes(new_hexes)
+		var obstacle_count: int = towers.size() + blocked.size()
+		# A route needing no clearing is a clean route (the caller already exhausted those);
+		# refuse to bulldoze more than the cap.
+		if obstacle_count == 0 or obstacle_count > condemn_max_hexes:
+			continue
+		cand["condemned_tower_hexes"] = towers
+		cand["cleared_blocked_hexes"] = blocked
+		cand["score"] = _score_candidate(cand) - float(obstacle_count) * score_condemn_penalty_per_hex
+		scored.append(cand)
+	scored.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return float(a["score"]) > float(b["score"])
+	)
+	var survivors: Array[Dictionary] = _collect_lookahead_survivors(scored, 0, top_candidate_pool)
+	_search_ignores_obstacles = false
+	return {"tried": int(batch["tried"]), "survivors": survivors}
 
 
 func _build_candidate_walk(
@@ -990,10 +1054,10 @@ func _sort_dirs_by_skim_and_openness(
 func _probe_openness(start_hex: Vector2i, dir: Vector2i, cand_index_map: Dictionary) -> float:
 	var free_count: float = 0.0
 	var p1: Vector2i = start_hex + dir
-	if not _path_index_map.has(p1) and not cand_index_map.has(p1) and not grid.is_blocked(p1) and not grid.is_tower_occupied(p1) and not grid.is_reserved(p1):
+	if not _path_index_map.has(p1) and not cand_index_map.has(p1) and not _hex_blocks_step(p1):
 		free_count += 1.0
 		var p2: Vector2i = p1 + dir
-		if not _path_index_map.has(p2) and not cand_index_map.has(p2) and not grid.is_blocked(p2) and not grid.is_tower_occupied(p2) and not grid.is_reserved(p2):
+		if not _path_index_map.has(p2) and not cand_index_map.has(p2) and not _hex_blocks_step(p2):
 			free_count += 1.0
 	return free_count
 
@@ -1011,7 +1075,7 @@ func _can_continue_straight(
 		var idx: int = first_idx + s
 		if _path_index_map.has(h) or cand_index_map.has(h) or h == first_hex:
 			return false
-		if grid.is_blocked(h) or grid.is_tower_occupied(h) or grid.is_reserved(h):
+		if _hex_blocks_step(h):
 			return false
 		for nd: Vector2i in _C.HEX_DIRECTIONS:
 			var nb: Vector2i = h + nd
@@ -1027,12 +1091,34 @@ func _can_continue_straight(
 	return true
 
 
+## The minimum length (base-to-spawn hex count) EVERY lane must reach: an explicit tunable floor,
+## else the run's original path length. A lane may never be a shortcut to the Sanctum.
+func _lane_length_floor() -> int:
+	if min_lane_length_floor > 0:
+		return min_lane_length_floor
+	if initial_path_length > 0:
+		return initial_path_length
+	return maxi(1, path_hexes.size())
+
+
+## True when [param hex] cannot be a growth step. BLOCKED terrain and tower-occupied hexes are
+## obstacles EXCEPT during a condemnation pass ([member _search_ignores_obstacles]), where they
+## become targets the commit clears. Reserved hexes -- which include the Sanctum's base footprint
+## -- are ALWAYS obstacles and are never bulldozed.
+func _hex_blocks_step(hex: Vector2i) -> bool:
+	if grid.is_reserved(hex):
+		return true
+	if _search_ignores_obstacles:
+		return false
+	return grid.is_blocked(hex) or grid.is_tower_occupied(hex)
+
+
 func _is_valid_candidate_step(next_hex: Vector2i, next_combined_idx: int, cand_index_map: Dictionary) -> bool:
 	# H1: never revisit an existing or candidate path hex
 	if _path_index_map.has(next_hex) or cand_index_map.has(next_hex):
 		return false
-	# H5: never step on BLOCKED, tower-occupied, or reserved hexes
-	if grid.is_blocked(next_hex) or grid.is_tower_occupied(next_hex) or grid.is_reserved(next_hex):
+	# H5: never step on a blocked/reserved hex -- nor a tower hex unless condemning.
+	if _hex_blocks_step(next_hex):
 		return false
 	# H3: never step adjacent to a non-consecutive path hex
 	for d: Vector2i in _C.HEX_DIRECTIONS:
@@ -1269,7 +1355,7 @@ func _dfs_lookahead_arbitrary(
 	for d: Vector2i in dirs:
 		var nh: Vector2i = cur_hex + d
 		grid.ensure_chunks_around(nh, terrain_margin)
-		if path_map.has(nh) or sim_map.has(nh) or grid.is_blocked(nh) or grid.is_tower_occupied(nh):
+		if path_map.has(nh) or sim_map.has(nh) or _hex_blocks_step(nh):
 			continue
 		var sep_ok: bool = true
 		for nd: Vector2i in _C.HEX_DIRECTIONS:
@@ -1425,6 +1511,15 @@ func _collect_condemned_tower_hexes(hex_list: Array[Vector2i]) -> Array[Vector2i
 	return out
 
 
+## Returns all BLOCKED-terrain hexes on [param hex_list] (rubble a condemning growth would clear).
+func _collect_blocked_hexes(hex_list: Array[Vector2i]) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	for h: Vector2i in hex_list:
+		if grid.is_blocked(h):
+			out.append(h)
+	return out
+
+
 ## Returns the tower-occupied hexes on the currently selected fork preview route (empty if not a fork).
 func get_condemned_tower_hexes() -> Array[Vector2i]:
 	if not preview_is_fork or ghost_path_hexes.is_empty():
@@ -1538,20 +1633,27 @@ func _search_new_lane_fork_candidates(
 	var results: Array[Dictionary] = []
 	var seen_sigs: Dictionary = {}
 	var target_lane_id: int = get_lane_count()
+	var floor_len: int = _lane_length_floor()
+	# A new lane's length is (join_idx + 1) + target_len. Prefer a low join index (branch near the
+	# base), but RAISE the cap when the floor cannot be met from the preferred indices: with the
+	# shortest allowed extension the join index must reach floor_len - 1 - cur_min_len.
 	var join_cap: int = max_join_override if max_join_override >= 0 else fork_max_join_index
+	join_cap = maxi(join_cap, maxi(0, floor_len - 1 - cur_min_len))
 	var max_join: int = mini(join_cap, maxi(0, path_hexes.size() - 2))
 	var center: Vector2 = _bounding_center()
 	grid.ensure_chunks_around(path_hexes[0], cur_max_len + terrain_margin + 8)
 
 	for join_idx in range(max_join + 1):
 		var anchor_hex: Vector2i = path_hexes[join_idx]
+		# Lengthen the extension as needed so even this low join index reaches the lane floor.
+		var per_join_min: int = maxi(cur_min_len, floor_len - (join_idx + 1))
 		for dir_idx in range(_C.HEX_DIRECTIONS.size()):
 			var start_dir: Vector2i = _C.HEX_DIRECTIONS[dir_idx]
 			var first_hex: Vector2i = anchor_hex + start_dir
 			if not _is_valid_fork_step(first_hex, 0, join_idx, {}):
 				continue
 			for attempt in range(18):
-				var target_len: int = rng.randi_range(cur_min_len, maxi(cur_min_len, cur_max_len))
+				var target_len: int = rng.randi_range(per_join_min, maxi(per_join_min, cur_max_len))
 				var walk: Dictionary = _build_fork_walk_from(
 					first_hex, start_dir, join_idx, target_len, attempt, center, rng
 				)
@@ -1565,6 +1667,9 @@ func _search_new_lane_fork_candidates(
 
 				var lane_hexes: Array[Vector2i] = path_hexes.slice(0, join_idx + 1)
 				lane_hexes.append_array(new_hexes)
+				# A lane shorter than the original path is a shortcut to the Sanctum: refuse it.
+				if lane_hexes.size() < floor_len:
+					continue
 				var overlaps: Array[Vector2i] = _compute_new_overlap_hexes(new_hexes, walk["cand_index_map"] as Dictionary)
 				var condemned: Array[Vector2i] = _collect_condemned_tower_hexes(new_hexes)
 				var relaxations: Array[String] = []
@@ -1642,6 +1747,10 @@ func _search_existing_fork_extension_candidates(
 
 				var lane_hexes: Array[Vector2i] = base_lane.duplicate()
 				lane_hexes.append_array(new_hexes)
+				# Existing lanes only grow, so they are already at/above the floor; keep the guard
+				# explicit so the invariant cannot be broken by a future change here.
+				if lane_hexes.size() < _lane_length_floor():
+					continue
 				var overlaps: Array[Vector2i] = _compute_new_overlap_hexes(new_hexes, walk["cand_index_map"] as Dictionary)
 				var condemned: Array[Vector2i] = _collect_condemned_tower_hexes(new_hexes)
 				var relaxations: Array[String] = []
@@ -1933,6 +2042,11 @@ func commit_extension() -> Dictionary:
 	grid.clear_reserved_hexes()
 
 	if not new_hexes.is_empty():
+		# Clear BLOCKED rubble a condemning growth routed through BEFORE the hexes are registered
+		# as path, so is_blocked() is already false for the overlap/build-zone bookkeeping below.
+		# The override persists across chunk reloads, so the rubble cannot reappear.
+		for cleared_h: Vector2i in (result.get("cleared_blocked_hexes", []) as Array):
+			grid.set_terrain_override(cleared_h, _C.Terrain.BUILDABLE)
 		if is_fork_commit:
 			var is_new_l: bool = bool(result.get("is_new_lane", get_lane_count() < max_lanes))
 			var target_lid: int = int(result.get("target_lane_id", get_lane_count()))

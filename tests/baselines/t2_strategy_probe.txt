@@ -1,0 +1,7 @@
+T2-only strategy probe -- max_wave 40
+place          seed   wave bosses growth  towers    leaks   kills    cause
+best        5472350     40      7      4     334        4    1353 survived
+best           1337     40      7      5     350        5    1378 survived
+synergy     5472350     40      7      5     348       11    1336 survived
+synergy        1337     40      7      5     329        4    1344 survived
+spread      5472350     40      7      5     320        0    1355 survived

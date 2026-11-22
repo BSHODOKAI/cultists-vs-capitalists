@@ -64,6 +64,10 @@ signal path_preview_ready(preview_result: Dictionary)
 signal fork_preview_ready(candidates: Array, selected_index: int)
 signal fork_candidate_selected(selected_index: int, candidate: Dictionary)
 signal towers_crushed_by_fork(lane_id: int, crushed_towers: Array, bounty_offerings: int, bounty_scrap: int)
+## Emitted when a MAIN-lane growth had to condemn (crush) towers that blocked it entirely
+## (the spawn end was carpeted). `condemn_bounty_ratio` (default 70%) of their invested value
+## feeds the lane bounty pool.
+signal towers_crushed_by_growth(lane_id: int, crushed_towers: Array, bounty_offerings: int, bounty_scrap: int)
 signal lane_bounty_claimed(lane_id: int, unit_id: int, offerings_paid: int, scrap_paid: int)
 signal tower_damaged_enemy(tower_id: int, tower_type: String, unit_id: int, unit_tags: Array, amount: float, damage_tag: int)
 
@@ -1367,8 +1371,17 @@ func _commit_growth_and_crush() -> Dictionary:
 	for h_var: Variant in (growth_res.get("new_hexes", []) as Array):
 		new_hexes.append(h_var as Vector2i)
 
-	if is_fork and tower_system != null and not new_hexes.is_empty():
-		var crush_res: Dictionary = tower_system.crush_towers_on_hexes(new_hexes, lid)
+	# A fork commit crushes EVERY tower on the committed fork hexes; a main-lane condemn commit
+	# crushes only the towers its starving route had to pass through.
+	var condemned_towers: Array[Vector2i] = []
+	if is_fork:
+		condemned_towers = new_hexes
+	else:
+		for cv: Variant in (growth_res.get("condemned_tower_hexes", []) as Array):
+			condemned_towers.append(cv as Vector2i)
+
+	if tower_system != null and not condemned_towers.is_empty():
+		var crush_res: Dictionary = tower_system.crush_towers_on_hexes(condemned_towers, lid)
 		var crushed_list: Array = crush_res.get("crushed", []) as Array
 		var bounty_off: int = int(crush_res.get("bounty_offerings_added", 0))
 		var bounty_scr: int = int(crush_res.get("bounty_scrap_added", 0))
@@ -1389,14 +1402,23 @@ func _commit_growth_and_crush() -> Dictionary:
 				"scrap_refund": 0,
 			})
 		if not crushed_list.is_empty():
-			_log_event("towers_crushed_by_fork", {
-				"wave": current_wave,
-				"lane_id": lid,
-				"crushed_count": crushed_list.size(),
-				"bounty_offerings": bounty_off,
-				"bounty_scrap": bounty_scr,
-			})
-			towers_crushed_by_fork.emit(lid, crushed_list, bounty_off, bounty_scr)
+			if is_fork:
+				_log_event("towers_crushed_by_fork", {
+					"wave": current_wave,
+					"lane_id": lid,
+					"crushed_count": crushed_list.size(),
+					"bounty_offerings": bounty_off,
+					"bounty_scrap": bounty_scr,
+				})
+				towers_crushed_by_fork.emit(lid, crushed_list, bounty_off, bounty_scr)
+			else:
+				_log_event("towers_crushed_by_growth", {
+					"wave": current_wave,
+					"crushed_count": crushed_list.size(),
+					"bounty_offerings": bounty_off,
+					"bounty_scrap": bounty_scr,
+				})
+				towers_crushed_by_growth.emit(lid, crushed_list, bounty_off, bounty_scr)
 
 	if tower_system != null:
 		tower_system.set_lanes(path_generator.lanes)

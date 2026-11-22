@@ -245,9 +245,15 @@ func test_06_extensions_never_use_tower_occupied_blocked_or_reserved_hexes() -> 
 		var cand: Dictionary = gen.generate_extension_candidate()
 		var new_hexes: Array[Vector2i] = cand["new_hexes"]
 		assert(not new_hexes.is_empty(), "Extension %d must succeed around obstacles" % step)
+		var condemned: Array = cand.get("condemned_tower_hexes", [])
+		var cleared: Array = cand.get("cleared_blocked_hexes", [])
 		for h: Vector2i in new_hexes:
-			assert(not gen.grid.is_blocked(h), "Extension must never use a BLOCKED hex %s" % str(h))
-			assert(not gen.grid.is_tower_occupied(h), "Extension must never use a tower-occupied hex %s" % str(h))
+			# H5: a growth may ONLY use a BLOCKED or tower hex if it is explicitly condemning it
+			# (and the commit then clears/crushes it). Reserved hexes are never used.
+			if gen.grid.is_blocked(h):
+				assert(cleared.has(h), "Extension may only use a BLOCKED hex it is clearing: %s" % str(h))
+			if gen.grid.is_tower_occupied(h):
+				assert(condemned.has(h), "Extension may only use a tower hex it is condemning: %s" % str(h))
 			assert(not gen.grid.is_reserved(h), "Extension must never use a reserved hex %s" % str(h))
 
 		gen.grid.clear_reserved_hexes()

@@ -161,7 +161,26 @@ const FORK_CANDIDATES_LATE: int = 3
 const FORK_MIN_EXT: int = 10
 const FORK_MAX_EXT: int = 15
 ## Maximum base-approach index (0..3) on lane 0 from which a new fork lane may branch outward.
+## This is only the PREFERRED cap: when the minimum-lane-length floor below cannot be met from a
+## low join index, the fork search raises it (branching further from the base) rather than
+## shipping a short lane.
 const FORK_MAX_JOIN_INDEX: int = 3
+
+## Minimum length (base-to-spawn hex count) of EVERY lane, expressed in the run's ORIGINAL
+## path length. 0 = use the run's actual generated initial path length (GameState passes
+## INITIAL_PATH_LENGTH = 18). A lane may never be a shortcut to the Sanctum: a new fork lane
+## must reach this many hexes, and the fork search raises its join index to get there instead
+## of committing a lane shorter than the path the run started with.
+const MIN_LANE_LENGTH_FLOOR: int = 0
+
+# --- Growth condemnation (anti-starvation) -----------------------------------
+## When no clean growth route exists -- the spawn end is carpeted with towers and/or walled by
+## BLOCKED rubble -- growth may condemn obstacles in its way and clear them on commit. Score
+## penalty per condemned/cleared hex, so among condemning routes the least destructive wins.
+const SCORE_CONDEMN_PENALTY_PER_HEX: float = 45.0
+## Hard cap on obstacles (towers + BLOCKED hexes) a single growth may condemn. Above it, growth
+## still fails (skip_growth) rather than bulldozing an arbitrarily large swath of the map.
+const CONDEMN_MAX_HEXES: int = 8
 
 # --- Lookahead constants -----------------------------------------------------
 ## Number of rollout attempts used by H4 lookahead to confirm a valid next extension.

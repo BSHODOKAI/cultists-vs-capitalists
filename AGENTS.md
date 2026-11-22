@@ -70,15 +70,16 @@ All player currency spending must route through the single choke point `GameStat
 - Initial path starts at the player's base (`Vector2i.ZERO`, path index `0`) and extends `INITIAL_PATH_LENGTH = 18` hexes to the initial spawn hex.
 - **Preview (`PREVIEW_LEAD_WAVES = 2`):** Generated at the intermission before wave `8, 13, 18...` (2 waves before each boss). Immediately reserves `ghost_path_hexes` and any hex in the 2-hex build zone *only* of the previewed extension.
 - **Commit:** Happens once after each boss wave in `POST_BOSS` (only when the boss is dead and no enemies remain). Commits the *exact* previewed extension (`10..16` hexes, `MIN_EXT..MAX_EXT`) from the spawn end.
+- **Minimum lane length (`MIN_LANE_LENGTH_FLOOR`, `0` = auto):** every lane must reach the run's ORIGINAL path length (`INITIAL_PATH_LENGTH = 18`, captured in `PathGenerator.initial_path_length`). A new fork lane is `(join_index + 1) + extension`, so the fork search lengthens the extension and, when needed, **raises its join index** (branching further from the base, sharing more of the mature route) rather than committing a lane that is a shortcut to the Sanctum. The floor is relative to the ORIGINAL length, not the grown main lane. A lane that would still be too short is refused by `_search_new_lane_fork_candidates`.
 - **Hard Constraints (H1–H5 — never relaxed):**
 - **H1:** Single non-branching chain; no hex visited twice.
 - **H2:** Corner spacing: at least `2` straight (non-corner) hexes between consecutive corners, including across the join with the existing path; allowed turns are `±60°` and `±120°`.
 - **H3:** Separation: no path hex may be adjacent to a non-consecutive path hex (at least 1 buildable hex separates distinct stretches).
 - **H4:** No dead ends / self-trapping: 2-extension DFS lookahead confirms a valid escape path exists from the new spawn end.
-- **H5:** Never uses `BLOCKED`, tower-occupied, or reserved hexes.
+- **H5:** Never uses `BLOCKED`, tower-occupied, or reserved hexes. **One exception — CONDEMNATION:** when *no clean route exists at all* (the spawn end is carpeted with towers and/or walled by rubble), a final fallback (`_search_condemn_candidates`) may route through tower and `BLOCKED` hexes. The commit then clears them: towers are crushed into the lane-0 kill bounty pool (`crush_towers_on_hexes`, `condemn_bounty_ratio` = **70%** of invested value, `TowerBalanceData.DEFAULT_CONDEMN_BOUNTY_RATIO`), rubble is cleared via `HexGrid.set_terrain_override` (persists across chunk reloads). Reserved hexes — **including the Sanctum base footprint** — are NEVER condemned, and bulldozing is capped at `CONDEMN_MAX_HEXES = 8` with a per-hex score penalty (`SCORE_CONDEMN_PENALTY_PER_HEX`) so the least destructive route wins.
 - **Overlap Hexes:**
 - Unoccupied, buildable, non-path hexes within hex distance `2` of path hexes from at least two distinct stretches (path indices differ by `>= PASS_GAP = 6`).
-- Extensions require `>= OVERLAP_MIN (3)` new overlap hexes (soft max `8`), with ordered fallbacks: lower `OVERLAP_MIN` to `0` -> reduce extension length (`3..11`) -> skip growth and log error.
+- Extensions require `>= OVERLAP_MIN (3)` new overlap hexes (soft max `8`), with ordered fallbacks: lower `OVERLAP_MIN` to `0` -> reduce extension length (`3..11`) -> **condemn obstacles** (route through towers/rubble and clear them on commit) -> skip growth and log error.
 - Exposes UI hooks: `ghost_path_hexes`, `preview_overlap_hexes`, and `persistent_overlap_hexes`.
 
 ---

@@ -40,3 +40,8 @@ const _C = preload("res://scripts/path/path_constants.gd")
 @export var fork_min_ext: int = _C.FORK_MIN_EXT
 @export var fork_max_ext: int = _C.FORK_MAX_EXT
 @export var fork_max_join_index: int = _C.FORK_MAX_JOIN_INDEX
+## 0 = use the run's actual generated initial path length (see PathConstants.MIN_LANE_LENGTH_FLOOR).
+@export var min_lane_length_floor: int = _C.MIN_LANE_LENGTH_FLOOR
+
+@export var condemn_max_hexes: int = _C.CONDEMN_MAX_HEXES
+@export var score_condemn_penalty_per_hex: float = _C.SCORE_CONDEMN_PENALTY_PER_HEX

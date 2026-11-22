@@ -710,12 +710,14 @@ func get_total_bounty_pool() -> Dictionary:
 	return {"offerings": tot_off, "scrap": tot_scr}
 
 
-## Preview helper: computes 100% of total invested Offerings & Scrap for any towers on [param hexes].
+## Preview helper: computes the bounty (condemn_bounty_ratio of invested) Offerings & Scrap for any
+## towers on [param hexes] -- what a condemning path would pay into the lane pool.
 func compute_condemned_bounty_for_hexes(hexes: Array[Vector2i]) -> Dictionary:
 	var count: int = 0
 	var off_sum: int = 0
 	var scr_sum: int = 0
 	var ids: Array[int] = []
+	var ratio: float = balance.condemn_bounty_ratio if balance != null else TowerBalanceData.DEFAULT_CONDEMN_BOUNTY_RATIO
 	for h: Vector2i in hexes:
 		if towers_by_hex.has(h):
 			var inst: TowerInstance = towers_by_hex[h] as TowerInstance
@@ -723,8 +725,8 @@ func compute_condemned_bounty_for_hexes(hexes: Array[Vector2i]) -> Dictionary:
 				count += 1
 				var o_inv: int = inst.total_offerings_spent if inst.total_offerings_spent > 0 else (inst.def.cost if inst.def != null and not inst.def.is_scrap_build_cost() else 0)
 				var s_inv: int = inst.total_scrap_spent if inst.total_scrap_spent > 0 else (inst.def.cost if inst.def != null and inst.def.is_scrap_build_cost() else 0)
-				off_sum += o_inv
-				scr_sum += s_inv
+				off_sum += roundi(float(o_inv) * ratio)
+				scr_sum += roundi(float(s_inv) * ratio)
 				ids.append(inst.tower_id)
 	return {
 		"tower_count": count,
@@ -734,12 +736,14 @@ func compute_condemned_bounty_for_hexes(hexes: Array[Vector2i]) -> Dictionary:
 	}
 
 
-## Crushes all placed towers standing on [param hexes] when a fork commits on [param lane_id].
-## Adds 100% of each crushed tower's invested Offerings & Scrap into [member lane_bounty_pools][lane_id].
+## Crushes all placed towers standing on [param hexes] (fork commit, or a starving main-lane
+## condemn). Adds `condemn_bounty_ratio` (default 70%) of each crushed tower's invested Offerings
+## & Scrap into [member lane_bounty_pools][lane_id]. The tower is destroyed regardless of the ratio.
 func crush_towers_on_hexes(hexes: Array[Vector2i], lane_id: int) -> Dictionary:
 	var crushed_list: Array[Dictionary] = []
 	var added_off: int = 0
 	var added_scr: int = 0
+	var ratio: float = balance.condemn_bounty_ratio if balance != null else TowerBalanceData.DEFAULT_CONDEMN_BOUNTY_RATIO
 
 	for h: Vector2i in hexes:
 		if not towers_by_hex.has(h):
@@ -749,8 +753,9 @@ func crush_towers_on_hexes(hexes: Array[Vector2i], lane_id: int) -> Dictionary:
 			continue
 		var o_inv: int = inst.total_offerings_spent if inst.total_offerings_spent > 0 else (inst.def.cost if inst.def != null and not inst.def.is_scrap_build_cost() else 0)
 		var s_inv: int = inst.total_scrap_spent if inst.total_scrap_spent > 0 else (inst.def.cost if inst.def != null and inst.def.is_scrap_build_cost() else 0)
-		added_off += o_inv
-		added_scr += s_inv
+		# Only the ratio is banked; 1 - ratio is lost with the tower.
+		added_off += roundi(float(o_inv) * ratio)
+		added_scr += roundi(float(s_inv) * ratio)
 
 		for b: Dictionary in inst.active_blockers:
 			var bid: int = int(b["id"])

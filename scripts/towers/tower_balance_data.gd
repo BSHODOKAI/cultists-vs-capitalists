@@ -13,6 +13,11 @@ const DEFAULT_STARTING_SCRAP: int = 40
 const DEFAULT_STARTING_LIVES: int = 20
 const DEFAULT_BUILD_DISTANCE: int = 2
 const DEFAULT_SELL_REFUND_RATIO: float = 0.70
+## Fraction of a crushed tower's invested Offerings/Scrap paid into the lane bounty pool when the
+## path grows over it (fork condemnation OR a starving main-lane condemn). 0.70 matches the sell
+## ratio, so being condemned costs the same 30% loss as selling -- deliberately less than 100% so
+## carpet-building is not a risk-free way to bank value into a bounty pool.
+const DEFAULT_CONDEMN_BOUNTY_RATIO: float = 0.70
 const DEFAULT_COST_ESCALATION_PER_COPY: float = 0.10
 const DEFAULT_COST_ESCALATION_START_COPIES: int = 10
 
@@ -108,6 +113,7 @@ const CC_DR_STEP_3_MULT: float = 0.25
 @export var starting_lives: int = DEFAULT_STARTING_LIVES
 @export var build_distance: int = DEFAULT_BUILD_DISTANCE
 @export var sell_refund_ratio: float = DEFAULT_SELL_REFUND_RATIO
+@export var condemn_bounty_ratio: float = DEFAULT_CONDEMN_BOUNTY_RATIO
 @export var cost_escalation_per_copy: float = DEFAULT_COST_ESCALATION_PER_COPY
 @export var cost_escalation_start_copies: int = DEFAULT_COST_ESCALATION_START_COPIES
 

@@ -197,7 +197,8 @@ static func all_archetype_ids() -> Array[String]:
 ##   draw_rites          draw Rites whenever a Reservoir is held
 ##   penance             buy Penance when Corruption is high
 ##   maintenance         buy Rigged-tower Maintenance
-##   placement           "best" (max path coverage) | "random"
+##   placement           "best" (max path coverage) | "random" | "base" (killbox near Sanctum)
+##                       | "spread" (cover path hexes no tower reaches) | "synergy" (next to diverse towers)
 static func get_archetype(id: String) -> Dictionary:
 	match id:
 		ARCH_BALANCED:
@@ -359,7 +360,8 @@ func run_run(
 	clock: Node,
 	arch: Dictionary,
 	run_seed: int,
-	max_wave: int
+	max_wave: int,
+	deadline_usec: int = 0
 ) -> Dictionary:
 	_ensure_maps()
 	gs.start_new_run(run_seed)
@@ -487,6 +489,13 @@ func run_run(
 					stall_units.append("%s hp=%.0f/%.0f pos=%.2f spd=%.2f root=%.1f" % [
 						u.unit_type_id, u.hp, u.max_hp, u.path_position, u.speed, u.root_timer,
 					])
+			break
+
+		# Wall-clock guard: stop between waves and label the run HONESTLY as time-capped (NOT a
+		# survival), so a deep run that outran the budget is never read as "reached the ceiling".
+		if deadline_usec > 0 and Time.get_ticks_usec() >= deadline_usec:
+			if outcome == "survived_cap":
+				outcome = "time_capped"
 			break
 
 	if gs.enemy_leaked.is_connected(_on_enemy_leaked):
@@ -770,6 +779,15 @@ func _pick_build_hex(
 
 	var path: Array[Vector2i] = gs.path_generator.path_hexes
 	var plen: int = path.size()
+	# For "spread", precompute which path hexes existing towers already cover.
+	var covered: Dictionary = {}
+	if placement == "spread":
+		for t: TowerInstance in gs.tower_system.towers.values():
+			if t == null or t.def == null:
+				continue
+			for i in range(plen):
+				if _HexMath.distance(t.hex, path[i]) <= t.def.range_hexes:
+					covered[i] = true
 	var best: Vector2i = INVALID_HEX
 	var best_score: int = -1
 	for h: Vector2i in candidates:
@@ -777,14 +795,48 @@ func _pick_build_hex(
 			continue
 		if not bool(gs.validate_placement(h, tower_id).get("ok", false)):
 			continue
-		var score: int = 0
-		for i in range(plen):
-			if _HexMath.distance(h, path[i]) <= def.range_hexes:
-				score += plen - i
+		var score: int = _placement_score(gs, h, def, placement, path, covered)
 		if score > best_score:
 			best_score = score
 			best = h
 	return best
+
+
+## Scores a candidate build hex for the given placement strategy. Higher is better.
+##   best    max weighted path coverage (weight falls off toward the spawn end)
+##   base    like best but the weight is SQUARED, so towers cluster a killbox near the Sanctum
+##   spread  reward path hexes no other tower covers yet (broad area denial)
+##   synergy reward standing next to many DIFFERENT tower types (variety bonus + buff auras)
+func _placement_score(
+	gs: GameStateNode, h: Vector2i, def: TowerData, placement: String,
+	path: Array[Vector2i], covered: Dictionary
+) -> int:
+	var plen: int = path.size()
+	var cov: int = 0
+	var cov_sq: int = 0
+	var new_hexes: int = 0
+	for i in range(plen):
+		if _HexMath.distance(h, path[i]) <= def.range_hexes:
+			var w: int = plen - i
+			cov += w
+			cov_sq += w * w
+			if not covered.has(i):
+				new_hexes += 1
+	match placement:
+		"base":
+			return cov_sq
+		"spread":
+			return new_hexes * 10000 + cov
+		"synergy":
+			var types: Dictionary = {}
+			for t: TowerInstance in gs.tower_system.towers.values():
+				if t == null or t.def == null:
+					continue
+				if _HexMath.distance(t.hex, h) <= 3:
+					types[t.def.id] = true
+			return types.size() * 10000 + cov
+		_:
+			return cov
 
 
 func _claim_objectives(gs: GameStateNode, arch: Dictionary, rng: RandomNumberGenerator) -> void:
