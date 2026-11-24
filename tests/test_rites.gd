@@ -8,6 +8,8 @@ extends Node
 
 const _HexGrid = preload("res://scripts/path/hex_grid.gd")
 const _TowerSystem = preload("res://scripts/towers/tower_system.gd")
+const _GameState = preload("res://scripts/core/game_state.gd")
+const _SimClock = preload("res://scripts/core/sim_clock.gd")
 
 
 func _make_system() -> TowerSystem:
@@ -166,3 +168,46 @@ func test_07_spending_rites_decrements_the_bank() -> void:
 	assert(ts.rites == 1, "Spending must decrement the bank")
 	assert(not ts.spend_rites(5), "Cannot overspend the Rite bank")
 	assert(ts.rites == 1, "A failed spend must not change the bank")
+
+
+# --- Test 8: a held Reservoir is a Rite DISCOUNT, not a gate -------------------
+
+func test_08_reservoir_is_a_discount_on_the_rite_cost() -> void:
+	var ts: TowerSystem = _make_system()
+	var base_cost: int = ts.balance.rite_corruption_cost
+	# With no Reservoir, the drawable cost is the base.
+	assert(ts.get_rite_cost() == base_cost, "Without a Reservoir the Rite cost is the base value")
+
+	# A held Reservoir cheapens the draw (pushed as the 4th objective aggregate).
+	ts.apply_objective_effects(0.0, 25, 1.0, 4)
+	assert(
+		ts.get_rite_cost() == maxi(1, base_cost - 4),
+		"A held Reservoir must DISCOUNT the Rite cost (got %d)" % ts.get_rite_cost()
+	)
+
+
+# --- Test 9: Rites are drawable from Corruption ALONE (no Reservoir required) ---
+
+func test_09_rites_drawable_from_corruption_alone_through_game_state() -> void:
+	var gs: GameStateNode = get_node_or_null("/root/GameState") as GameStateNode
+	if gs == null:
+		gs = _GameState.new()
+		gs.name = "GameState"
+		get_tree().root.add_child(gs)
+	var clock: SimClockNode = get_node_or_null("/root/SimClock") as SimClockNode
+	if clock == null:
+		clock = _SimClock.new()
+		clock.name = "SimClock"
+		get_tree().root.add_child(clock)
+	clock.manual_mode = true
+
+	gs.start_new_run(9001)
+	# No Reservoir exists (fresh run, no growth committed), yet the cult can draw once it
+	# has paid enough Corruption. This is the decoupling: the branch must not die to map RNG.
+	gs.tower_system.set_corruption(gs.tower_system.get_rite_cost())
+	assert(
+		gs.can_draw_rites(1),
+		"Rites must be drawable from Corruption alone, with no Reservoir held"
+	)
+	assert(gs.request_draw_rites(1), "Drawing a Rite without a Reservoir must succeed")
+	assert(gs.tower_system.rites == 1, "Drawing must bank a Rite")

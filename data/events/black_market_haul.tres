@@ -9,5 +9,5 @@ display_name = "Black Market Haul"
 description = "A smuggled crate of salvage reaches the cult."
 category = 0
 banner_color = Color(1, 0.65, 0.25, 1)
-instant_scrap = 25
-instant_scaling_per_wave = 0.3
+instant_scrap = 15
+instant_scaling_per_wave = 0.14

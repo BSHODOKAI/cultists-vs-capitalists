@@ -66,13 +66,27 @@ Numbers below live in `res://data/tower_balance.tres` (`TowerBalanceData`). See 
 - **Rite signature:** every Rite node carries `corruption_scaled_damage`/`corruption_scaled_stat`
   (additive bonus per point of *current* Corruption) and a `corruption_per_kill` param, so the branch
   turns the danger meter into a stat and feeds the very meter it draws on.
+- **Drawing Rites** needs Corruption alone. A held `corruption_reservoir` site is a **bonus** (it
+  cheapens each draw and raises the Corruption ceiling), never a gate — so the branch cannot die to
+  map RNG.
 
 ### 2.2 Global Corruption (0..100)
 
-Revealed towers deal **+0.25%** additive damage per Corruption point. At **50+** a random Revealed
-tower has a 10% chance to misfire per wave (20% at **75+**); at **100** hostile **Rogue Entities**
-spawn. A `compliance_officer` negates the Corruption bonus within 2 hexes. Rev. values are augmented
-by the `ley_line` objective (+8% additive Revealed damage, in-region).
+Corruption is a **staged ladder** (`TowerBalanceData.corruption_stages`) rather than a cliff, so the
+first Revealed node is safe to take and the meter teaches itself as it climbs:
+
+| Stage | At Corruption | Revealed payoff | Penalty |
+|---|---|---|---|
+| **Taint** | 0 | +0.25%/pt | none |
+| **Omens** | 25 | +0.30%/pt | none (announces itself at wave start) |
+| **Whispers** | 50 | +0.35%/pt | 10% chance one random Revealed tower misfires per wave |
+| **Withering** | 75 | +0.40%/pt | 20% misfire |
+
+At **100** hostile **Rogue Entities** spawn. The payoff RAMPS with the depth, so the climb is
+rewarding before it is deadly; crossing a stage boundary emits `GameState.corruption_stage_changed`
+and `TelegraphLayer` banners it (the "omen"). A `compliance_officer` negates the Corruption bonus
+within 2 hexes. Rev. values are augmented by the `ley_line` objective (+8% additive Revealed damage,
+in-region).
 
 ### 2.3 Per-tower Jank (0..60%)
 
@@ -119,7 +133,7 @@ Kinetic damage. No special traits at T1 (`get_ability_lines()` is empty — its 
 | Rigged T3 | Drone Feeder (`drone_feeder`) | 30 Scrap | Jank 10% | +40% fire rate; never reloads. |
 | Rigged T4 | Pneumatic Belt Rig (`pneumatic_belt_rig`) | 54 Scrap | Jank 25% | 5-shot bursts; +50% damage vs Armored. |
 | Rite T3 | Nail of Accounting (`nail_of_accounting`) | 1 Rite | +1 Corruption/kill | +30% damage; +0.5% per Corruption. **The Ledger:** each consecutive shot on the same target adds +8% damage (up to +96%), resetting on target switch. |
-| Rite T4 | The Audit Comes Due (`the_audit_comes_due`) | 2 Rites | +2 Corruption/kill · +2 Off/kill | +45% damage, +30% fire rate; +0.8% per Corruption. **The Audit Collects:** every kill pays 2 extra Offerings. |
+| Rite T4 | The Audit Comes Due (`the_audit_comes_due`) | 2 Rites | +2 Corruption/kill · +2 Off/kill | +45% damage, +30% fire rate; +0.8% per Corruption. **The Audit Comes Due:** when the ledger fills (12 stacks) it is settled at once as a Void burst of 60% base damage per stack, then the ledger restarts. |
 
 ---
 
@@ -186,7 +200,7 @@ A control tower first and a damage dealer second: a continuous 35% slow aura, a 
 | Rigged T3 | Flood Pump (`flood_pump`) | 35 Scrap | Jank 10% | A 40% slow puddle on path hexes within radius 1; wet hexes conduct Electric. |
 | Rigged T4 | Live Wire Flood (`live_wire_flood`) | 63 Scrap | Jank 25% | Flooded hexes deal 12 Electric/s. |
 | Rite T3 | Drowned Ledger (`drowned_ledger`) | 1 Rite | +1 Corruption/kill | +30% damage, slow aura 45%; +0.5% per Corruption. |
-| Rite T4 | The Fathom Collects (`the_fathom_collects`) | 2 Rites | +2 Corruption/kill · +1 Scrap/kill | +50% damage, slow aura 55%, +1 simultaneous target; +0.8% per Corruption. |
+| Rite T4 | The Fathom Collects (`the_fathom_collects`) | 2 Rites | +2 Corruption/kill · +1 Scrap/kill | +50% damage, slow aura 55%, +1 simultaneous target; +0.8% per Corruption. **The Fathom Collects:** every 6 s the deep drags the most advanced Ground enemy in range back 1 hex and pins it 2 s. |
 
 ---
 
@@ -208,7 +222,7 @@ continuous **Cloak detector**. Costly (70 Scrap) and slow, but the highest per-s
 | Rigged T3 | Rooftop Scope Array (`rooftop_scope_array`) | 70 Scrap | Jank 10% | +25% crit chance (2× damage). |
 | Rigged T4 | Ad Hijack (`ad_hijack`) | 126 Scrap | Jank 25% | Each shot also confuses enemies within 1 hex (reverse-walk 1.5s, not Bosses) and cancels Hacker channels. |
 | Rite T3 | Covetous Gaze (`covetous_gaze`) | 1 Rite | +1 Corruption/kill | +40% damage; +0.5% per Corruption. Damage rises as the target's HP falls, up to +60%. |
-| Rite T4 | The Debt Collector (`the_debt_collector`) | 2 Rites | +2 Corruption/kill · +5% of max HP as Off/kill | +70% damage, +1 range; +1.0% per Corruption. |
+| Rite T4 | The Debt Collector (`the_debt_collector`) | 2 Rites | +2 Corruption/kill · +5% of max HP as Off/kill | +70% damage, +1 range; +1.0% per Corruption. THE SETTLEMENT: every 12s a debt strike deals 15% of max HP (5% to Bosses) as Void to the highest-HP enemy in range — the Rite branch's anti-Tank/Boss shape. |
 
 ---
 
@@ -320,7 +334,7 @@ and prioritizes Air. The natural partner of `dead_air_altar`'s Grounding.
 | Rigged T3 | Substation Tap (`substation_tap`) | 50 Scrap | Jank 10% | +2 chain targets, +25% fire rate. |
 | Rigged T4 | Breaker Cascade (`breaker_cascade`) | 90 Scrap | Jank 25% | Every 5th discharge overloads for +50% damage and a 0.8s stun; +35% damage vs Air, Shielded, and Cybernetic. |
 | Rite T3 | Metered Current (`metered_current`) | 1 Rite | +1 Corruption/kill | +30% Electric damage; +0.5% per Corruption. |
-| Rite T4 | The Grid Forecloses (`the_grid_forecloses`) | 2 Rites | +2 Corruption/kill · +1 Scrap/kill | +50% Electric damage, +25% fire rate; +0.8% per Corruption. |
+| Rite T4 | The Grid Forecloses (`the_grid_forecloses`) | 2 Rites | +2 Corruption/kill · +1 Scrap/kill | +50% Electric damage, +25% fire rate; +0.8% per Corruption. **The Grid Forecloses:** the arc never decays through its chain — each further target is hit 20% harder than the last. |
 
 ---
 

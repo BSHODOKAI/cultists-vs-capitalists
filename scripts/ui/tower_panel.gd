@@ -462,6 +462,8 @@ static func site_effect_summary(data: ObjectiveData, held: bool) -> String:
 			parts.append("Rigged jams shortened %d%%" % roundi((1.0 - data.jam_duration_mult) * 100.0))
 		if data.corruption_cap_bonus > 0:
 			parts.append("+%d Corruption ceiling" % data.corruption_cap_bonus)
+		if data.rite_cost_discount > 0:
+			parts.append("Rites %d Corruption cheaper" % data.rite_cost_discount)
 	else:
 		if data.capture_enemy_speed_bonus > 0.0:
 			parts.append("enemies here move +%d%% faster" % roundi(data.capture_enemy_speed_bonus * 100.0))
@@ -681,9 +683,10 @@ func _create_upgrade_button(inst: TowerInstance, tsys: TowerSystem, node: Upgrad
 	# The price is shown as the currency ICON plus the number (the branch tag already names
 	# the branch, and the icon says what it costs). The full currency word stays in the
 	# tooltip for anyone who does not yet read the icon.
+	var eff_cost: int = tsys.get_effective_upgrade_cost(inst, node)
 	btn.icon = _PlaceholderIcons.get_cost_icon(node.currency, 16)
-	btn.tooltip_text = "Cost: %d %s" % [node.cost, curr_name]
-	btn.text = "Cost: %d%s" % [node.cost, impact_str]
+	btn.tooltip_text = "Cost: %d %s" % [eff_cost, curr_name]
+	btn.text = "Cost: %d%s" % [eff_cost, impact_str]
 	btn.pressed.connect(_on_upgrade_pressed.bind(inst, node.id), CONNECT_DEFERRED)
 	_built_upgrade_buttons[node.id] = btn
 	return btn

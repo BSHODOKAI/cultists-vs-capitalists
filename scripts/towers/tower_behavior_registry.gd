@@ -40,7 +40,7 @@ static func _ensure_initialized() -> void:
 	# effect is declarative (UpgradeNode.corruption_scaled_damage), so these entries
 	# only need to exist for registry validation.
 	_register("nail_of_accounting", {"type": "upgrade", "tower_id": "hexed_nail_gun", "tier": 3, "branch": "rite"})
-	_register("the_audit_comes_due", {"type": "upgrade", "tower_id": "hexed_nail_gun", "tier": 4, "branch": "rite"})
+	_register("the_audit_comes_due", {"type": "upgrade", "tower_id": "hexed_nail_gun", "tier": 4, "branch": "rite", "settle_at_stacks": 12, "settle_damage_per_stack": 0.6})
 
 	# --- 2. chanting_choir upgrades ------------------------------------------
 	_register("deeper_harmony", {"type": "upgrade", "tower_id": "chanting_choir", "tier": 2})
@@ -70,7 +70,7 @@ static func _ensure_initialized() -> void:
 	_register("live_wire_flood", {"type": "upgrade", "tower_id": "tentacle_storm_drain", "tier": 4, "electric_dps": 12.0})
 
 	_register("drowned_ledger", {"type": "upgrade", "tower_id": "tentacle_storm_drain", "tier": 3, "branch": "rite"})
-	_register("the_fathom_collects", {"type": "upgrade", "tower_id": "tentacle_storm_drain", "tier": 4, "branch": "rite"})
+	_register("the_fathom_collects", {"type": "upgrade", "tower_id": "tentacle_storm_drain", "tier": 4, "branch": "rite", "collect_interval": 6.0, "collect_root_duration": 2.0, "collect_drag_hexes": 1.0})
 
 	# --- 5. watcher_in_the_billboard upgrades --------------------------------
 	_register("dilated_pupil", {"type": "upgrade", "tower_id": "watcher_in_the_billboard", "tier": 2})
@@ -80,7 +80,7 @@ static func _ensure_initialized() -> void:
 	_register("ad_hijack", {"type": "upgrade", "tower_id": "watcher_in_the_billboard", "tier": 4, "confuse_duration": 1.5, "confuse_radius": 1})
 
 	_register("covetous_gaze", {"type": "upgrade", "tower_id": "watcher_in_the_billboard", "tier": 3, "branch": "rite"})
-	_register("the_debt_collector", {"type": "upgrade", "tower_id": "watcher_in_the_billboard", "tier": 4, "branch": "rite"})
+	_register("the_debt_collector", {"type": "upgrade", "tower_id": "watcher_in_the_billboard", "tier": 4, "branch": "rite", "debt_strike_interval": 12.0, "debt_strike_hp_ratio": 0.15, "debt_strike_boss_hp_ratio": 0.05})
 
 	# --- 6. rust_censer upgrades ---------------------------------------------
 	_register("heavier_incense", {"type": "upgrade", "tower_id": "rust_censer", "tier": 2})
@@ -130,7 +130,7 @@ static func _ensure_initialized() -> void:
 	_register("breaker_cascade", {"type": "upgrade", "tower_id": "substation_effigy", "tier": 4, "nth_shot": 5, "overload_damage_bonus": 0.50, "stun_duration": 0.8, "tag_damage_bonus": 0.35})
 
 	_register("metered_current", {"type": "upgrade", "tower_id": "substation_effigy", "tier": 3, "branch": "rite"})
-	_register("the_grid_forecloses", {"type": "upgrade", "tower_id": "substation_effigy", "tier": 4, "branch": "rite"})
+	_register("the_grid_forecloses", {"type": "upgrade", "tower_id": "substation_effigy", "tier": 4, "branch": "rite", "chain_damage_growth": 0.2})
 
 	# --- 11. dead_air_altar upgrades -----------------------------------------
 	_register("colder_current", {"type": "upgrade", "tower_id": "dead_air_altar", "tier": 2})

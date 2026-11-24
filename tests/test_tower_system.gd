@@ -766,9 +766,9 @@ func test_03_corruption_and_jank_accounting_and_thresholds() -> void:
 	assert(misfire_count >= 10 and misfire_count <= 32, "At 75 Corruption (~20%%), misfires across 100 waves should be near 20, got %d" % misfire_count)
 
 	# Compliance Officer aura negates the Corruption damage bonus nearby
-	sys.set_corruption(80) # +20% bonus normally
+	sys.set_corruption(80) # Withering stage: +0.40%/pt -> +32% bonus
 	sys.end_wave(100)
-	assert(is_equal_approx(sys.get_revealed_damage_multiplier(rev_tower), 1.20), "At 80 Corruption, Revealed damage mult must be 1.20")
+	assert(is_equal_approx(sys.get_revealed_damage_multiplier(rev_tower), 1.32), "At 80 Corruption (Withering), Revealed damage mult must be 1.32")
 	var officer: CombatUnit = sys.spawn_unit(200.0, [_C.UnitTag.GROUND, _C.UnitTag.AURA], 1.0, 1.0)
 	officer.compliance_aura_radius = 3
 	sys.refresh_compliance_suppression()
@@ -1082,7 +1082,9 @@ func test_06_deterministic_headless_combat_sim_for_each_tower() -> void:
 		)
 
 		if tid == "tithe_box":
-			assert(int(res_a["offerings_gained"]) >= 8, "tithe_box must generate Offerings over a 10 s sim, got %d" % int(res_a["offerings_gained"]))
+			# Trimmed from +4/5s to +2/5s (passive income was a secondary faucet); a 10 s sim at
+			# 2 Offerings every 5 s must still bank at least one tick's worth.
+			assert(int(res_a["offerings_gained"]) >= 2, "tithe_box must generate Offerings over a 10 s sim, got %d" % int(res_a["offerings_gained"]))
 		elif tid == "fever_shrine":
 			assert(float(res_a["shrine_buffed_rate"]) > float(res_a["unbuffed_rate"]), "fever_shrine must buff nearby tower fire rate")
 		elif tid == "dead_air_altar":
@@ -1224,36 +1226,36 @@ func test_07_stars_are_right_and_corruption_stack_additively() -> void:
 	sys.upgrade_tower(tower, "whispering_nails") # Revealed T3
 	assert(tower.is_revealed(), "Tower must be on the Revealed branch")
 
-	# Set Corruption to 100 -> +25% (0.25) Corruption bonus
+	# Set Corruption to 100 -> Withering stage, +0.40%/pt -> +40% Corruption bonus
 	sys.set_corruption(100)
 
-	# No event this wave: only Corruption bonus (+25% -> 1.25x)
+	# No event this wave: only the Corruption bonus (+40% -> 1.40x)
 	sys.start_wave(4, rng)
 	tower.misfired_this_wave = false
 	assert(not sys.stars_are_right_active, "No event is active on wave 4")
 	var mult_no_event: float = sys.get_revealed_damage_multiplier(tower)
-	assert(is_equal_approx(mult_no_event, 1.25), "At 100 Corruption with no event, mult must be 1.25, got %.4f" % mult_no_event)
+	assert(is_equal_approx(mult_no_event, 1.40), "At 100 Corruption with no event, mult must be 1.40, got %.4f" % mult_no_event)
 
-	# Stars Are Right event: +20% (0.20) + +25% (0.25) = +45% (1.45x ADDITIVE, NOT 1.25 * 1.20)
+	# Stars Are Right event: +20% (0.20) + +40% (0.40) = +60% (1.60x ADDITIVE, NOT 1.40 * 1.20)
 	sys.start_wave(5, rng, 20.0, {"event_id": "stars_are_right", "revealed_damage_bonus": 0.20})
 	tower.misfired_this_wave = false
 	assert(sys.stars_are_right_active, "Stars Are Right event must activate")
 	var mult_stars: float = sys.get_revealed_damage_multiplier(tower)
 	assert(
-		is_equal_approx(mult_stars, 1.45),
-		"Stars Are Right + Corruption must stack additively to 1.45, got %.4f" % mult_stars
+		is_equal_approx(mult_stars, 1.60),
+		"Stars Are Right + Corruption must stack additively to 1.60, got %.4f" % mult_stars
 	)
 	assert(
-		not is_equal_approx(mult_stars, 1.50),
-		"Stars Are Right + Corruption must NOT stack multiplicatively (1.50)"
+		not is_equal_approx(mult_stars, 1.68),
+		"Stars Are Right + Corruption must NOT stack multiplicatively (1.40 * 1.20 = 1.68)"
 	)
 
-	# Verify actual hit damage against a dummy enemy on the Stars wave is 8.0 * 1.45 = 11.6
+	# Verify actual hit damage against a dummy enemy on the Stars wave is 8.0 * 1.60 = 12.8
 	var dummy := _CombatUnit.new(999, 500.0, [_C.UnitTag.GROUND], 3.0, 0.0)
 	var hit_dmg: float = sys.calculate_hit_damage(tower, dummy, tower.def.damage, _C.DamageTag.KINETIC)
 	assert(
-		is_equal_approx(hit_dmg, 8.0 * 1.45),
-		"Hit damage must reflect additive 1.45x multiplier (11.6), got %.4f" % hit_dmg
+		is_equal_approx(hit_dmg, 8.0 * 1.60),
+		"Hit damage must reflect additive 1.60x multiplier (12.8), got %.4f" % hit_dmg
 	)
 
 	# the_veil_thins event applies a 1.20x all-tower damage multiplier on top of Revealed.
@@ -1496,6 +1498,244 @@ func test_14_dead_air_altar_slows_air_only_grounds_for_electric_and_scales_with_
 	assert(
 		is_equal_approx(eff_slow, 0.66),
 		"Rite slow must scale with Corruption (0.55 * 1.20 = 0.66), got %.4f" % eff_slow
+	)
+
+
+# --- Test 15: the Corruption LADDER (staged misfire + ramped payoff + omens) ---
+
+func test_15_corruption_ladder_stages_ramp_and_omens() -> void:
+	var sys := _make_test_system()
+
+	# Stage names / indices track the thresholds, and the first stage is pure upside.
+	sys.set_corruption(0)
+	assert(sys.get_corruption_stage_index() == 0, "0 Corruption must be stage 0")
+	assert(sys.get_corruption_stage_name() == "Taint", "Stage 0 must be Taint")
+	assert(is_equal_approx(sys.get_corruption_payoff_per_point(), 0.0025), "Taint payoff must be +0.25%/pt")
+	assert(is_equal_approx(sys.get_corruption_misfire_chance(), 0.0), "Taint must have no misfire penalty")
+
+	sys.set_corruption(24)
+	assert(sys.get_corruption_stage_index() == 0, "24 Corruption is still Taint")
+	sys.set_corruption(25)
+	assert(sys.get_corruption_stage_index() == 1, "25 Corruption must enter stage 1")
+	assert(sys.get_corruption_stage_name() == "Omens", "Stage 1 must be Omens")
+	assert(is_equal_approx(sys.get_corruption_misfire_chance(), 0.0), "Omens must still be penalty-free")
+	assert(is_equal_approx(sys.get_corruption_payoff_per_point(), 0.0030), "Omens payoff must ramp to +0.30%/pt")
+
+	sys.set_corruption(50)
+	assert(sys.get_corruption_stage_name() == "Whispers", "50 Corruption must be Whispers")
+	assert(is_equal_approx(sys.get_corruption_misfire_chance(), 0.10), "Whispers misfire must be 10%")
+
+	sys.set_corruption(75)
+	assert(sys.get_corruption_stage_name() == "Withering", "75 Corruption must be Withering")
+	assert(is_equal_approx(sys.get_corruption_misfire_chance(), 0.20), "Withering misfire must be 20%")
+	assert(is_equal_approx(sys.get_corruption_payoff_per_point(), 0.0040), "Withering payoff must be +0.40%/pt")
+
+	# The payoff RAMPS monotonically with depth: the climb is rewarding before it is deadly.
+	assert(
+		0.0025 < 0.0030 and 0.0030 < 0.0035 and 0.0035 < 0.0040,
+		"Stage payoffs must strictly increase with depth"
+	)
+
+	# Crossing a stage boundary at a wave start announces itself exactly once, for omen stages.
+	var stage_changes: Array[Dictionary] = []
+	var cb := func(idx: int, name: String, omen: bool) -> void:
+		stage_changes.append({"idx": idx, "name": name, "omen": omen})
+	sys.corruption_stage_changed.connect(cb)
+	sys.set_corruption(80) # jump from announced Taint straight into Withering
+	sys.start_wave(20, RandomNumberGenerator.new())
+	sys.corruption_stage_changed.disconnect(cb)
+	assert(stage_changes.size() == 1, "Crossing a stage boundary must emit exactly one corruption_stage_changed")
+	assert(String(stage_changes[0]["name"]) == "Withering", "The announced stage must be Withering")
+	assert(bool(stage_changes[0]["omen"]), "Withering is an omen stage, so the HUD must announce it")
+
+	# No boundary crossed -> no announcement (idempotent across waves in the same stage).
+	var again: int = 0
+	var cb2 := func(_i: int, _n: String, _o: bool) -> void:
+		again += 1
+	sys.corruption_stage_changed.connect(cb2)
+	sys.start_wave(21, RandomNumberGenerator.new())
+	sys.corruption_stage_changed.disconnect(cb2)
+	assert(again == 0, "Staying in the same stage must not re-announce, got %d" % again)
+
+
+# --- Test 16: the_debt_collector (watcher Rite T4) -- a periodic %-max-HP debt strike on the
+# HIGHEST-HP enemy in range. This is the Rite branch's anti-Tank/Boss shape: the payoff a wider
+# net of cheap towers cannot buy -- many small towers chip many bodies, this concentrates on one.
+
+func test_16_the_debt_collector_debt_strike_hits_highest_hp_in_range() -> void:
+	var sys := _make_test_system()
+	sys.rites = 99
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var tick: float = 1.0 / 30.0
+	sys.start_wave(1, rng)
+
+	var watcher: TowerInstance = sys.place_tower(Vector2i(1, 1), "watcher_in_the_billboard")
+	assert(watcher != null, "Watcher must place")
+	assert(sys.upgrade_tower(watcher, "dilated_pupil"), "Buy watcher T2")
+	assert(sys.upgrade_tower(watcher, "covetous_gaze"), "Buy watcher Rite T3")
+	assert(sys.upgrade_tower(watcher, "the_debt_collector"), "Buy watcher Rite T4")
+	assert(watcher.has_behavior("the_debt_collector"), "the_debt_collector behaviour must be registered")
+
+	# Two in-range, parked targets: a FAT one (the highest max HP) and a thin one.
+	var fat: CombatUnit = sys.spawn_unit(100000.0, [_C.UnitTag.GROUND, _C.UnitTag.TANK], 0.0, 2.0)
+	var thin: CombatUnit = sys.spawn_unit(400.0, [_C.UnitTag.GROUND], 0.0, 3.0)
+	assert(fat != null and thin != null, "Both debt-strike targets must spawn")
+	assert(
+		_HexGrid.hex_distance(watcher.hex, sys.get_unit_hex(fat)) <= 6
+			and _HexGrid.hex_distance(watcher.hex, sys.get_unit_hex(thin)) <= 6,
+		"Both targets must START inside the watcher's range"
+	)
+
+	# special_cooldown starts at 0, so the debt strike fires on the first operational step. One
+	# second is well before the second strike (interval 12 s), so the fat target's loss is one
+	# strike of 15% of its max HP (15000) plus a negligible normal shot, while the in-range THIN
+	# target must be untouched by the strike -- which is what proves highest-HP selection.
+	for _i in range(30):
+		sys.step(tick, rng)
+
+	var fat_lost: float = 100000.0 - fat.hp
+	var thin_lost: float = 400.0 - thin.hp
+	assert(
+		fat_lost >= 14000.0,
+		"the_debt_collector must take >=15%% of the highest-HP target's max HP, fat lost %.1f" % fat_lost
+	)
+	assert(
+		thin_lost <= 200.0,
+		"the_debt_collector must NOT strike the lower-HP target, thin lost %.1f" % thin_lost
+	)
+
+
+# --- Test 17: the_audit_comes_due (nail Rite T4) -- when the T3 ledger fills, the whole
+# account is settled at once as a Void burst, then the ledger restarts. The T3 builds the
+# debt; the T4 collects it.
+
+func test_17_the_audit_comes_due_settles_the_ledger_when_full() -> void:
+	var sys := _make_test_system()
+	sys.rites = 99
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11
+	var tick: float = 1.0 / 30.0
+	sys.start_wave(1, rng)
+
+	var nail: TowerInstance = sys.place_tower(Vector2i(1, 1), "hexed_nail_gun")
+	assert(nail != null, "Nail gun must place")
+	assert(sys.upgrade_tower(nail, "rapid_cycling"), "Buy nail T2")
+	assert(sys.upgrade_tower(nail, "nail_of_accounting"), "Buy nail Rite T3")
+	assert(sys.upgrade_tower(nail, "the_audit_comes_due"), "Buy nail Rite T4")
+	assert(nail.has_behavior("the_audit_comes_due"), "the_audit_comes_due behaviour must be registered")
+
+	var settlements: Array[int] = []
+	var cb := func(_tid: int, _ttype: String, ability_id: String, _hex: Vector2i) -> void:
+		if ability_id == "the_audit_comes_due":
+			settlements.append(1)
+	sys.tower_cooldown_used.connect(cb)
+
+	# A big, parked victim at path hex (2,0) so the ledger can fill without dying.
+	var victim: CombatUnit = sys.spawn_unit(100000.0, [_C.UnitTag.GROUND], 0.0, 2.0)
+	assert(victim != null, "Ledger victim must spawn")
+	for _i in range(150): # ~5 s at the nail gun's upgraded rate: the ledger fills once
+		sys.step(tick, rng)
+	sys.tower_cooldown_used.disconnect(cb)
+
+	assert(
+		settlements.size() >= 1,
+		"the_audit_comes_due must settle the ledger at least once in ~5 s, got %d" % settlements.size()
+	)
+	assert(
+		nail.ledger_stacks < 12,
+		"After a settlement the ledger must have restarted, stacks=%d" % nail.ledger_stacks
+	)
+
+
+# --- Test 18: the_fathom_collects (tentacle Rite T4) -- every interval the deep drags the
+# most path-advanced Ground enemy in range back and pins it.
+
+func test_18_the_fathom_collects_drags_the_leader_back() -> void:
+	var sys := _make_test_system()
+	sys.rites = 99
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 13
+	var tick: float = 1.0 / 30.0
+	sys.start_wave(1, rng)
+
+	var drain: TowerInstance = sys.place_tower(Vector2i(1, 1), "tentacle_storm_drain")
+	assert(drain != null, "Tentacle must place")
+	assert(sys.upgrade_tower(drain, "more_grates"), "Buy tentacle T2")
+	assert(sys.upgrade_tower(drain, "drowned_ledger"), "Buy tentacle Rite T3")
+	assert(sys.upgrade_tower(drain, "the_fathom_collects"), "Buy tentacle Rite T4")
+	assert(drain.has_behavior("the_fathom_collects"), "the_fathom_collects behaviour must be registered")
+
+	var collects: Array[int] = []
+	var cb := func(_tid: int, _ttype: String, ability_id: String, _hex: Vector2i) -> void:
+		if ability_id == "the_fathom_collects":
+			collects.append(1)
+	sys.tower_cooldown_used.connect(cb)
+
+	# A parked Ground victim at path hex (2,0); speed 0 so ONLY the fathom can move it.
+	var victim: CombatUnit = sys.spawn_unit(100000.0, [_C.UnitTag.GROUND], 0.0, 2.0)
+	assert(victim != null, "Fathom victim must spawn")
+	var start_pos: float = victim.path_position
+	# The tentacle's own root does not drag (no deep_grasp on a Rite tower), so any backward
+	# movement of a parked unit is the fathom's drag.
+	for _i in range(210): # ~7 s covers the first 6 s collect interval
+		sys.step(tick, rng)
+	sys.tower_cooldown_used.disconnect(cb)
+
+	assert(collects.size() >= 1, "the_fathom_collects must fire at least once, got %d" % collects.size())
+	# Displacement is positive = backward toward the spawn (delaying the leak); two collects
+	# inside ~7 s apply as +1.0 then +0.5 (2nd CC lock = 0.5x DR), so the parked unit moves back.
+	assert(
+		victim.path_position > start_pos,
+		"the_fathom_collects must drag the parked leader back toward the spawn (%.2f -> %.2f)"
+			% [start_pos, victim.path_position]
+	)
+
+
+# --- Test 19: the_grid_forecloses (substation Rite T4) -- the arc stops decaying as it
+# chains and each further target is hit HARDER, so a dense pack is punished most.
+
+func test_19_the_grid_forecloses_hardens_along_the_chain() -> void:
+	var sys := _make_test_system()
+	sys.rites = 99
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 17
+	var tick: float = 1.0 / 30.0
+	sys.start_wave(1, rng)
+
+	var sub: TowerInstance = sys.place_tower(Vector2i(1, 1), "substation_effigy")
+	assert(sub != null, "Substation must place")
+	assert(sys.upgrade_tower(sub, "copper_thieves"), "Buy substation T2")
+	assert(sys.upgrade_tower(sub, "metered_current"), "Buy substation Rite T3")
+	assert(sys.upgrade_tower(sub, "the_grid_forecloses"), "Buy substation Rite T4")
+	assert(sub.has_behavior("the_grid_forecloses"), "the_grid_forecloses behaviour must be registered")
+
+	var amounts: Array[float] = []
+	var cb := func(_tid: int, _ttype: String, _uid: int, _tags: Array, amount: float, _tag: int) -> void:
+		amounts.append(amount)
+	sys.tower_damaged_enemy.connect(cb)
+
+	# Three adjacent, parked, identical Ground units so one volley chains through all three.
+	for h: int in range(1, 4):
+		var u: CombatUnit = sys.spawn_unit(100000.0, [_C.UnitTag.GROUND], 0.0, float(h))
+		assert(u != null, "Chain target at path hex (%d,0) must spawn" % h)
+
+	# Capture the FIRST volley's hits (one step = one volley): a rope of >= 3 hits.
+	var volley: Array = []
+	for _i in range(120):
+		var before: int = amounts.size()
+		sys.step(tick, rng)
+		var batch: Array = amounts.slice(before)
+		if batch.size() >= 3:
+			volley = batch
+			break
+	sys.tower_damaged_enemy.disconnect(cb)
+
+	assert(volley.size() >= 3, "One volley must chain through all three units, got %d hits" % volley.size())
+	assert(
+		float(volley[1]) > float(volley[0]) and float(volley[2]) > float(volley[1]),
+		"the_grid_forecloses must HARDEN along the chain (got %.1f, %.1f, %.1f)"
+			% [float(volley[0]), float(volley[1]), float(volley[2])]
 	)
 
 

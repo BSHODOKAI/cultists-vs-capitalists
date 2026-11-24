@@ -13,7 +13,7 @@
 script = ExtResource("1_td")
 id = "tithe_box"
 display_name = "Tithe Box"
-description = "No attack; generates +4 Offerings every 5 s."
+description = "No attack; generates +2 Offerings every 5 s."
 cost = 35
 range_hexes = 0
 damage = 0.0
@@ -23,7 +23,7 @@ target_tags = Array[int]([])
 targeting_mode = 8
 detects_cloaked = false
 pulse_reveal_duration = 0.0
-income_offerings = 4
+income_offerings = 2
 income_interval = 5.0
 base_behaviors = Array[String](["tithe_box"])
 t2_upgrade = ExtResource("2_t2")

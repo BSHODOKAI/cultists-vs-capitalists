@@ -36,6 +36,10 @@ const KIND_NAMES: Dictionary = {
 @export var revealed_damage_bonus: float = 0.0
 ## Raises the global Corruption ceiling (Reservoir).
 @export var corruption_cap_bonus: int = 0
+## Corruption shaved off each Rite drawn while the site is held (Reservoir). A Reservoir is a
+## BONUS, not the gate: Rites are drawable from Corruption alone, and holding the site makes
+## every draw cheaper.
+@export var rite_cost_discount: int = 0
 ## Multiplier on Rigged-tower jam duration (Data Center); < 1.0 is a buff.
 @export var jam_duration_mult: float = 1.0
 
@@ -60,6 +64,10 @@ func validate() -> String:
 		return "claim_radius_hexes must be >= 1"
 	if corruption_cap_bonus < 0:
 		return "corruption_cap_bonus must be >= 0"
+	if rite_cost_discount < 0:
+		return "rite_cost_discount must be >= 0"
+	if kind == Kind.RESERVOIR and rite_cost_discount <= 0:
+		return "a Reservoir must grant a positive rite_cost_discount"
 	if jam_duration_mult < 0.0:
 		return "jam_duration_mult must be >= 0"
 	if kind == Kind.LEY_LINE and revealed_damage_bonus <= 0.0:

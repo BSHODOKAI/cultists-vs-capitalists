@@ -75,11 +75,22 @@ const _MIN_SEP: int = 3
 ## and a Rogue wave, so the player must be able to read what the number means without a manual.
 const CORRUPTION_TOOLTIP := (
 	"Corruption -- the cult's danger meter (0 up to the cap shown).\n"
-	+ "Revealed towers deal +0.25% damage per point (negated near a Compliance Officer).\n"
-	+ "At 50+ / 75+ a random Revealed tower may misfire for the wave.\n"
+	+ "Revealed towers deal a RISING damage bonus per point; the payoff grows as the meter climbs "
+	+ "(negated near a Compliance Officer).\n"
+	+ "The meter is a LADDER: Taint (safe) -> Omens (25) -> Whispers (50, a tower may misfire) -> "
+	+ "Withering (75, worse misfires).\n"
 	+ "At the Rogue threshold, Rogue Entities wake and attack the Sanctum.\n"
 	+ "Penance pays 40 Offerings to lower Corruption by 5."
 )
+
+## One label color per Corruption stage (Taint -> Withering), so the meter's COLOR telegraphs
+## how deep the cult has gone without widening the label.
+const CORRUPTION_STAGE_COLORS: Array[Color] = [
+	Color(0.82, 0.45, 0.98),  # Taint
+	Color(0.90, 0.42, 0.86),  # Omens
+	Color(0.96, 0.38, 0.60),  # Whispers
+	Color(1.00, 0.32, 0.34),  # Withering
+]
 
 ## Hover explanation for the Reckoning readout -- the number standing between "spend Corruption
 ## now" and "get punished later", which is meaningless without its own explanation.
@@ -410,6 +421,12 @@ func _compute_fit_sig() -> String:
 	]
 
 
+## Maps a Corruption stage index to its label color (clamped, so a retuned ladder of a different
+## length still gets a sensible color).
+func _corruption_stage_color(stage_index: int) -> Color:
+	return CORRUPTION_STAGE_COLORS[clampi(stage_index, 0, CORRUPTION_STAGE_COLORS.size() - 1)]
+
+
 func refresh() -> void:
 	var gs: Node = get_node_or_null("/root/GameState")
 	if gs == null or _lives_label == null:
@@ -443,6 +460,10 @@ func refresh() -> void:
 	if _scrap_chip != null:
 		_scrap_chip.tooltip_text = build_currency_tooltip(PlaceholderIcons.COST_SCRAP, tsys_row)
 	_corruption_label.text = "Corruption: %d/%d" % [corr, corr_cap]
+	if tsys_row != null:
+		_corruption_label.add_theme_color_override(
+			"font_color", _corruption_stage_color(tsys_row.get_corruption_stage_index())
+		)
 	_corruption_bar.max_value = float(corr_cap)
 	_corruption_bar.value = float(corr)
 	if _penance_button != null:
@@ -467,7 +488,8 @@ func refresh() -> void:
 		var rite_cost: int = tsys2.get_rite_cost() if tsys2 != null else 10
 		_draw_rite_button.text = "Draw Rite (%d Corruption)" % rite_cost
 		_draw_rite_button.tooltip_text = (
-			"Bank a Rite by spending %d Corruption. Requires a held Corruption Reservoir.\n"
+			"Bank a Rite by spending %d Corruption.\n"
+			+ "Holding a Corruption Reservoir makes each draw cheaper.\n"
 			+ "Each Rite drawn also adds permanent Attention -- see Reckoning."
 		) % rite_cost
 		var can_draw: bool = bool(gs.call("can_draw_rites", 1))

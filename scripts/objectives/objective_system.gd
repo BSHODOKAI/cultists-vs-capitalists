@@ -468,6 +468,16 @@ func get_corruption_cap_bonus() -> int:
 	return total
 
 
+## Corruption shaved off each Rite drawn, summed across held Reservoir sites. A BONUS, not a
+## gate: Rites are drawable from Corruption alone; holding a Reservoir just makes them cheaper.
+func get_rite_cost_discount() -> int:
+	var total: int = 0
+	for o: ObjectiveInstance in objectives:
+		if o.is_claimed() and o.data != null:
+			total += o.data.rite_cost_discount
+	return total
+
+
 ## Run-summary totals. These are aggregates for reporting, NOT what the live game
 ## applies -- the live game queries the per-hex aura functions above.
 func get_revealed_damage_bonus() -> float:

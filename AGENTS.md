@@ -32,7 +32,7 @@ All player currency spending must route through the single choke point `GameStat
 
 - **Offerings (`Start: 150`):**
 - Used to build Offerings-cost base towers (8 of the 11 archetypes), unlock `REVEALED` T3/T4 upgrades, perform global **Penance** (`40 Offerings -> -5 Corruption`), and cleanse enemy tower conversions early (`50%` of base tower cost).
-- Earned from enemy kills (`round(unit.cost * 1.0)`, boosted by `dark_patron` up to +30%) and `tithe_box` passive income.
+- Earned from enemy kills (`round(unit.cost * 1.0)`, boosted by `dark_patron` up to +30%) and `tithe_box` passive income (`+2 Offerings` per 5 s — trimmed from `+4`, since passive income is a *secondary* faucet; kills are the earned one). Run-Event currency grants (`dark_patron_grant`, `black_market_haul`, `cargo_cult_windfall`) were likewise trimmed ~40-50%, because `scale = 1 + instant_scaling_per_wave * (wave-1)` made them balloon late.
 - **Scrap (`Start: 40`):**
 - Used to build Scrap-cost base towers (`watcher_in_the_billboard` [70 Scrap], `substation_effigy` [50 Scrap], and `rust_censer` [40 Scrap]), unlock `RIGGED` T3/T4 upgrades, perform tower **Maintenance** (`15 Scrap -> -10 Jank`), and pay `solvent_tank` wave upkeep (`4 Scrap/wave`).
 - Dropped by killed enemies (`scrap_value` defaults to `round(cost * 0.5)`, overridable per unit such as `sponsor_mech = 12`, boosted by `scrap_collector` up to +75%).
@@ -99,15 +99,19 @@ All 11 cult towers live in `res://data/towers/*.tres` and their upgrade resource
 - **Rigged Upgrades:** Paid in **Scrap**; set that tower's **Jank** (`T3 -> 10%`, `T4 -> 25%`).
 - **Rite Upgrades:** Paid in **Rites** (`Currency.RITES = 2`) at flat cost `T3 = 1`, `T4 = 2` — deliberately NOT base-cost multiples, since Rites are a scarce Corruption-derived currency and scaling them by an Offering cost is meaningless. They add **no Corruption and no Jank**: the price was already paid when the Rites were drawn (Corruption + permanent Attention). Their signature is `UpgradeNode.corruption_scaled_damage` (additive damage per point of current Corruption, consumed via `TowerSystem.get_rite_corruption_multiplier()`), i.e. the branch turns the danger meter into a damage stat. Rites are **never refunded** on sell (`sell` refunds Offerings and Scrap only), so drawing power and then liquidating cannot launder Attention away. Every Rite node also **feeds the meter on its kills** (`corruption_per_kill`, read generically through `TowerInstance.get_behavior_param_sum()`), so the branch's price and its power are the same currency: a Rite tower accelerates its own damage *and* the Reckoning that punishes it. Some nodes also pay a bounty on the kill (`rite_offerings_per_kill`, `rite_scrap_per_kill`). Because the params are read **by name rather than by behaviour id**, adding a new Rite node requires no new branch in the kill code.
 - **Corruption (Global `0..100`):**
-- Revealed towers deal `+0.25%` additive damage per point (stacks additively with Stars Are Right `+20%`; negated within 2 hexes of a `compliance_officer`).
-- At `50+`: `10%` chance at wave start one random Revealed tower misfires (disabled that wave). At `75+`: `20%`.
+- Corruption is a **staged ladder**, not a 0-to-death cliff (`TowerBalanceData.corruption_stages`, read via `TowerSystem.get_corruption_stage*`). The active stage is the highest whose `threshold <= Corruption`:
+- `0` **Taint** — Revealed towers deal `+0.25%` additive damage per point, **no penalty** (so the first Revealed node is safe to take).
+- `25` **Omens** — payoff ramps to `+0.30%/pt`; still no penalty (the stage announces itself at wave start).
+- `50` **Whispers** — `+0.35%/pt`; `10%` chance at wave start one random Revealed tower misfires (disabled that wave).
+- `75` **Withering** — `+0.40%/pt`; `20%` misfire.
+- The payoff **ramps** with the stages, so the climb is rewarding before it is deadly, and crossing a stage boundary emits `GameState.corruption_stage_changed` so `TelegraphLayer` announces it (the "omen"). Damage stacks additively with Stars Are Right `+20%`; negated within 2 hexes of a `compliance_officer`.
 - At `100`: Spawns hostile **Rogue Entities** (`res://data/units/rogue_entity.tres`: base 550 HP, speed 1.25, 25%–50% all-damage resistance, `Breakthrough`, `TowerDisable` every 5s, `leak_cost = 3+`).
 - Rogue Entities level up `+1` every time one is killed (`1.45^level` HP compounding + wave scaling) and spawn in multiples (`1..5`) as Rogue level and wave number rise.
 - **Penance:** Pay `40 Offerings` to reduce Corruption by `5`.
-- **Rite branch visibility:** the Rite T3 card is **hidden until the cult has received its first Rite** (`TowerSystem.has_ever_drawn_rite()` — holds one, or `rites_drawn_total > 0`). On every tower from wave 1 it was a dead button (0 Rites, no Reservoir) and spoiled the branch. Spending the Rite does **not** re-hide it: the T3 choice is permanent, so a committed player must still see what comes next.
+- **Rite branch visibility:** the Rite T3 card is **hidden until the cult has received its first Rite** (`TowerSystem.has_ever_drawn_rite()` — holds one, or `rites_drawn_total > 0`). On every tower from wave 1 it was a dead button (0 Rites drawn) and spoiled the branch. Spending the Rite does **not** re-hide it: the T3 choice is permanent, so a committed player must still see what comes next.
 - **Rites & the Reckoning (the price of power):**
 - **Rites** are Corruption *spent as a resource*. Drawing a Rite costs `10 Corruption` (`RITE_CORRUPTION_COST`) and banks `1 Rite`. The sink for Rites is the third tower branch.
-- Drawing Rites requires the cult to **hold a Corruption Reservoir** site — the Reservoir is what makes the rot drawable, and is the reason to fight for one.
+- Rites are drawable from **Corruption alone** — gating them behind a Corruption Reservoir site meant the branch could die to map RNG (some seeds never rolled a Reservoir, or the player never held one), which is the accidental dead branch the decoupling removes. A held Reservoir is now a **bonus**: it lowers the per-Rite Corruption cost (`ObjectiveData.rite_cost_discount`, `4` by default) and keeps its `+25` Corruption-ceiling headroom.
 - Each Rite drawn adds `10` **Rite debt** (`RITE_DEBT_PER_RITE`). Debt accrues *since the last reckoning* and scales how bad that reckoning is (`RITE_DEBT_PER_ROGUE_LEVEL = 25` per extra level).
 - **THE RECKONING has three rules, and all three matter:**
   1. **Rogues wake from the Corruption held RIGHT NOW** (`corruption >= get_rogue_entity_threshold()`), so spending Corruption on Rites is a genuine way to back off the brink.
@@ -121,7 +125,10 @@ All 11 cult towers live in `res://data/towers/*.tres` and their upgrade resource
 - At each wave start, each Rigged tower rolls `min(jank, 60)%` chance to jam at a seeded random moment during the wave, disabling it for `10s`.
 - **Maintenance:** Pay `15 Scrap` to lower one Rigged tower's Jank by `10`.
 - **Anti-All-In & Synergy Mechanics:**
-- **Cost Escalation:** Starting at the **10th owned copy** of a tower type (`DEFAULT_COST_ESCALATION_START_COPIES = 10`), each copy raises the build cost of the next copy of that type by `+10%`.
+- **Cost Escalation (two braces, multiplicative):**
+  - **Per-type**: starting at the **10th owned copy** of a tower type (`DEFAULT_COST_ESCALATION_START_COPIES = 10`), each copy raises the next copy's build cost by `+10%`. This only taxes a *monoculture*.
+  - **Global width**: starting at **20 total towers** (`global_cost_escalation_start_towers`), each further tower adds `+7%` (`global_cost_escalation_per_tower`) to EVERY tower's build cost, clamped at `8.0x` (`global_cost_escalation_max_mult`). This is what taxes a *diverse carpet* — the observed run built 198 towers across all 11 types and never tripped the per-type tax. Both are read in `TowerSystem.get_tower_build_cost()`.
+  - **T2 escalation**: the cheap shared T2 node is what a wide-shallow net spams, so it escalates with how many towers of that type already own it (`t2_cost_escalation_start_copies = 4`, `+10%`/copy). T3/T4/Rite are **not** escalated, so depth stays the affordable path. Consumed via `TowerSystem.get_effective_upgrade_cost()` (used by `can_upgrade_tower`, `upgrade_tower`, and the panel).
 - **Variety Bonus:** Each tower gains `+3%` damage per distinct *other* tower type within `3` hexes (max `+12%`).
 - **Entangled:** Ground enemies slowed or rooted by `tentacle_storm_drain` take `+25%` damage from `gutter_ritual_circle` pulses.
 - **Armor Shred:** Each stack adds `+5%` damage taken from all sources (default max `5` stacks; `rust_communion` raises cap to `8` and doubles effect vs `Cybernetic`; `solvent_tank` raises cap to `10`).
@@ -151,13 +158,13 @@ All eleven towers carry it. Each scales **the stat it actually has** — damage 
 
 | Tower | Rite T3 (1 Rite) | Rite T4 (2 Rites) |
 |---|---|---|
-| `hexed_nail_gun` | `nail_of_accounting` (+30% dmg, +0.5%/Corruption) | `the_audit_comes_due` (+45% dmg, +30% rate, +0.8%/Corruption) |
+| `hexed_nail_gun` | `nail_of_accounting` (+30% dmg, +0.5%/Corruption) | `the_audit_comes_due` (+45% dmg, +30% rate, +0.8%/Corruption; **the ledger settles** as a Void burst at 12 stacks, then restarts) |
 | `chanting_choir` | `the_song_is_billed` (+25% dmg, +1 member, +0.4%/Corruption, +1 Corruption/kill) | `unspoken_receipts` (+45% dmg, +1 member, +1 hex, +0.7%/Corruption, +2 Corruption and +1 Offering/kill) |
 | `gutter_ritual_circle` | `the_circle_is_paid` (+25% dmg, +1 hex, +0.3%/Corruption) | `communion_of_the_maw` (+40% dmg, +1 hex, +0.6%/Corruption) |
-| `tentacle_storm_drain` | `drowned_ledger` (+30% dmg, 45% slow aura, +0.5%/Corruption, +1 Corruption/kill) | `the_fathom_collects` (+50% dmg, 55% slow aura, +1 target, +0.8%/Corruption, +2 Corruption and +1 Scrap/kill) |
+| `tentacle_storm_drain` | `drowned_ledger` (+30% dmg, 45% slow aura, +0.5%/Corruption, +1 Corruption/kill) | `the_fathom_collects` (+50% dmg, 55% slow aura, +1 target, +0.8%/Corruption, +2 Corruption and +1 Scrap/kill; **drags the most advanced enemy back 1 hex + roots 2 s every 6 s**) |
 | `watcher_in_the_billboard` | `covetous_gaze` (+40% dmg, +0.5%/Corruption) | `the_debt_collector` (+70% dmg, +1 hex, +1.0%/Corruption) |
 | `rust_censer` | `corroded_receipts` (+30% dmg, 6.0 s DoT, +0.5%/Corruption, +1 Corruption/kill) | `the_rust_audits` (+50% dmg, 8.0 s DoT, Shred cap 8, +0.8%/Corruption, +2 Corruption and +1 Offering/kill) |
-| `substation_effigy` | `metered_current` (+30% dmg, +0.5%/Corruption, +1 Corruption/kill) | `the_grid_forecloses` (+50% dmg, +25% rate, +0.8%/Corruption, +2 Corruption and +1 Scrap/kill) |
+| `substation_effigy` | `metered_current` (+30% dmg, +0.5%/Corruption, +1 Corruption/kill) | `the_grid_forecloses` (+50% dmg, +25% rate, +0.8%/Corruption, +2 Corruption and +1 Scrap/kill; **the arc never decays — each further chained target takes +20%**) |
 | `fever_shrine` | `candles_for_the_ledger` (aura +35% rate, +0.4%/Corruption aura, +1 Corruption/kill) | `the_vigil_pays_interest` (aura +50% rate, +1 hex, +0.7%/Corruption aura, +2 Corruption/kill) |
 | `the_congregation` | `paid_in_flesh` (+1 blocker, +0.4%/Corruption blocker HP, +1 Corruption/kill) | `audit_of_the_flock` (+1 blocker, +60% blocker HP, +0.7%/Corruption blocker HP, +2 Corruption/kill) |
 | `tithe_box` | `the_plate_never_empties` (+40% income, +0.4%/Corruption income, +1 Corruption/kill) | `the_till_audits_itself` (+75% income, +0.7%/Corruption income, +2 Corruption and +1 Offering/kill) |
@@ -216,8 +223,8 @@ Implemented in `WaveDirector`, `WaveRoster`, `CoverageTracker`, `DirectorBalance
 - **Late-Wave Ramp (`w > 15`):** Multiplies budget by `1.0 + 0.02 * (w - 15) + 0.0008 * (w - 15)^2` so waves 20–50+ continue to scale sharply.
 - **Event budget modifier:** the active Run Event's `budget_mult` scales `B(w)` (e.g. Stars Are Right `×1.10`).
 - **Rubber-Banding:** Starts at `1.0` (`[0.80, 1.25]`); `-0.10` if `2+` lives lost last wave; `+0.10` after `3` consecutive zero-leak waves; else moves `0.05` toward `1.0`. Ignored (`max(1.0, rubber_factor)`) on Boss waves.
-- **Boss Waves:** Boss is not bought from budget; escorts receive **60%** of `B(w)` (`40%` withheld) and are capped at `MAX_BOSS_ESCORT_UNITS = 24`.
-- **Unit Cost & Excess Budget:** `effective_cost = cost * (1 + 0.03 * level)`. Regular waves cap at `MAX_UNITS_PER_WAVE = 60`. Once the *effective* cap is reached, leftover budget is spent as `+1` bonus spawn level on chosen unit types, bounded per type by `MAX_BONUS_LEVELS_PER_UNIT = 5` (unbounded levels previously reached `+86..+152` spawn levels, i.e. thousands of × HP). Anything still unspendable is recorded on the roster as `unspent_budget` (never silently discarded) and is reserved for future fork/objective budgets. Boss waves gate on their own `MAX_BOSS_ESCORT_UNITS = 24` cap, so escorts receive the same bonus-level compensation. Never cap unit count below `MAX_UNITS_PER_WAVE` from path length — the compensation phase gates on the effective cap, so a lower cap makes waves weaker, not denser.
+- **Boss Waves:** Boss is not bought from budget; escorts receive **60%** of `B(w)` (`40%` withheld) and are capped at `MAX_BOSS_ESCORT_UNITS = 60`.
+- **Unit Cost & Excess Budget:** `effective_cost = cost * (1 + 0.03 * level)`. Regular waves cap at `MAX_UNITS_PER_WAVE = 120`. Once the *effective* cap is reached, leftover budget is spent as `+1` bonus spawn level on chosen unit types, bounded per type by `MAX_BONUS_LEVELS_PER_UNIT = 5` (unbounded levels previously reached `+86..+152` spawn levels, i.e. thousands of × HP). Anything still unspendable is recorded on the roster as `unspent_budget` (never silently discarded) and is reserved for future fork/objective budgets. Boss waves gate on their own `MAX_BOSS_ESCORT_UNITS = 60` cap, so escorts receive the same bonus-level compensation. Never cap unit count below `MAX_UNITS_PER_WAVE` from path length — the compensation phase gates on the effective cap, so a lower cap makes waves weaker, not denser. **The unit cap and the delivery window are two halves of one budget**: `path_delivery_cap = floor(wave_time_window / min_spawn_interval)` (default `60.0 / 0.5 = 120`), and the effective cap is `min(MAX_UNITS_PER_WAVE, path_delivery_cap)`. Raise one without the other and the smaller silently becomes the real cap. The old `60`/`24` caps flat-lined the threat curve from ~wave 30 — every non-boss wave pinned at 60 bodies while the budget kept growing.
 - **Hard Constraints (H1–H6) & Early-Wave Guards:**
 - Total cost `<= budget`; single unit type `<= 50%` of budget; from wave `6+`, `>= 3` distinct unit types; Air `<= 40%` of budget unless Skyline (or interval 1); Spawners `<= 2` and Healers `<= 2` per wave; never exceed path delivery window.
 - `Cloaked` units are withheld until after the first boss (`wave > 10`). Early Skyline intervals (`wave <= 10`) mix in basic Ground units so wave 1 is never 100% Air.
@@ -295,7 +302,8 @@ counts, guaranteeing claimability).
   `get_capture_speed_mult_at`, `get_capture_damage_taken_mult_at`.
 - **Cult benefits while CLAIMED:** `ley_line` grants `+8%` additive Revealed damage;
   `converted_data_center` halves Rigged jam duration; `corruption_reservoir` raises the
-  Corruption ceiling by `+25` **and is what unlocks drawing Rites** (see §5).
+  Corruption ceiling by `+25` and **cheapens every Rite drawn** (`rite_cost_discount = 4`);
+  Rites themselves are drawable from Corruption alone (see §5).
 - **Corporate penalty while CAPTURED:** the site becomes a dangerous corridor — enemies *inside
   its aura* gain `ley_line` `-15%` damage taken, `converted_data_center` `+20%` speed,
   `corruption_reservoir` `+15%` speed and `-10%` damage taken. This is the "leave it alone and it

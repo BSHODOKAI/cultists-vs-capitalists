@@ -21,6 +21,19 @@ const DEFAULT_CONDEMN_BOUNTY_RATIO: float = 0.70
 const DEFAULT_COST_ESCALATION_PER_COPY: float = 0.10
 const DEFAULT_COST_ESCALATION_START_COPIES: int = 10
 
+# --- Width (tower COUNT) escalation ------------------------------------------
+## Per-type escalation (above) only taxes a MONOCULTURE; a diverse carpet of 11 tower types never
+## trips it. These add a GLOBAL tax on total tower count, so width is expensive regardless of
+## diversity -- the observed run (198 towers across all 11 types) is exactly the build it targets.
+## Additive per tower past `start`, clamped to `max_mult` so it is a brake, not an impassable wall.
+const GLOBAL_COST_ESCALATION_START_TOWERS: int = 20
+const GLOBAL_COST_ESCALATION_PER_TOWER: float = 0.07
+const GLOBAL_COST_ESCALATION_MAX_MULT: float = 8.0
+## The T2 node (the cheap shared node that a wide-shallow net actually spams) escalates with how
+## many towers of that type already own it. T3/T4 stay flat, so depth remains the affordable path.
+const T2_COST_ESCALATION_START_COPIES: int = 4
+const T2_COST_ESCALATION_PER_COPY: float = 0.10
+
 # --- Upgrade Tree Cost & Side-Effect constants -------------------------------
 const T2_COST_MULTIPLIER: float = 0.6
 const T3_COST_MULTIPLIER: float = 1.0
@@ -77,6 +90,25 @@ const RITE_DEBT_PER_ROGUE_LEVEL: int = 25
 ## Hard ceiling on how many Rogues one reckoning can send.
 const MAX_ROGUE_ENTITY_SPAWN_COUNT: int = 8
 
+# --- Staged Corruption ladder -------------------------------------------------
+## The danger meter as a GRADUATED LADDER rather than a 0-to-death cliff. Each entry is a step,
+## keyed by the Corruption value at which it becomes ACTIVE (the highest threshold <= Corruption):
+##   threshold        : Corruption at/above which this stage applies.
+##   name             : player-facing label for the stage.
+##   misfire_chance   : per-wave chance ONE random Revealed tower misfires while in this stage.
+##   payoff_per_point : additive Revealed-tower damage bonus per point of Corruption in this stage.
+##   omen             : true when ENTERING this stage announces itself (a wave-start banner).
+## Design intent: the first Revealed node (Corruption +4) lands in "Taint" -- pure upside, no
+## penalty -- so taking the bargain is safe at first and the meter TEACHES itself as it climbs.
+## The payoff also RAMPS with the stages, so the climb feels rewarding before it feels dangerous.
+## Stages MUST be sorted ascending by threshold; `[0].threshold` should be 0.
+const DEFAULT_CORRUPTION_STAGES: Array = [
+    {"threshold": 0, "name": "Taint", "misfire_chance": 0.0, "payoff_per_point": 0.0025, "omen": false},
+    {"threshold": 25, "name": "Omens", "misfire_chance": 0.0, "payoff_per_point": 0.0030, "omen": true},
+    {"threshold": 50, "name": "Whispers", "misfire_chance": 0.10, "payoff_per_point": 0.0035, "omen": true},
+    {"threshold": 75, "name": "Withering", "misfire_chance": 0.20, "payoff_per_point": 0.0040, "omen": true},
+]
+
 # --- Jank constants ----------------------------------------------------------
 const JANK_MIN: int = 0
 const JANK_CAP: int = 60
@@ -116,6 +148,11 @@ const CC_DR_STEP_3_MULT: float = 0.25
 @export var condemn_bounty_ratio: float = DEFAULT_CONDEMN_BOUNTY_RATIO
 @export var cost_escalation_per_copy: float = DEFAULT_COST_ESCALATION_PER_COPY
 @export var cost_escalation_start_copies: int = DEFAULT_COST_ESCALATION_START_COPIES
+@export var global_cost_escalation_start_towers: int = GLOBAL_COST_ESCALATION_START_TOWERS
+@export var global_cost_escalation_per_tower: float = GLOBAL_COST_ESCALATION_PER_TOWER
+@export var global_cost_escalation_max_mult: float = GLOBAL_COST_ESCALATION_MAX_MULT
+@export var t2_cost_escalation_start_copies: int = T2_COST_ESCALATION_START_COPIES
+@export var t2_cost_escalation_per_copy: float = T2_COST_ESCALATION_PER_COPY
 
 @export var t2_cost_multiplier: float = T2_COST_MULTIPLIER
 @export var t3_cost_multiplier: float = T3_COST_MULTIPLIER
@@ -142,6 +179,14 @@ const CC_DR_STEP_3_MULT: float = 0.25
 @export var rite_debt_per_rite: int = RITE_DEBT_PER_RITE
 @export var rite_debt_per_rogue_level: int = RITE_DEBT_PER_ROGUE_LEVEL
 @export var max_rogue_entity_spawn_count: int = MAX_ROGUE_ENTITY_SPAWN_COUNT
+## Graduated Corruption ladder (see DEFAULT_CORRUPTION_STAGES). Data-driven so the stages and
+## the ramp they carry can be retuned without touching logic.
+@export var corruption_stages: Array[Dictionary] = [
+    {"threshold": 0, "name": "Taint", "misfire_chance": 0.0, "payoff_per_point": 0.0025, "omen": false},
+    {"threshold": 25, "name": "Omens", "misfire_chance": 0.0, "payoff_per_point": 0.0030, "omen": true},
+    {"threshold": 50, "name": "Whispers", "misfire_chance": 0.10, "payoff_per_point": 0.0035, "omen": true},
+    {"threshold": 75, "name": "Withering", "misfire_chance": 0.20, "payoff_per_point": 0.0040, "omen": true},
+]
 @export var rogue_entity_base_hp: float = ROGUE_ENTITY_BASE_HP
 @export var rogue_entity_base_speed: float = ROGUE_ENTITY_BASE_SPEED
 @export var rogue_entity_hp_scale_per_kill: float = ROGUE_ENTITY_HP_SCALE_PER_KILL

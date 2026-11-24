@@ -11,6 +11,11 @@ build_distance = 2
 sell_refund_ratio = 0.7
 cost_escalation_per_copy = 0.1
 cost_escalation_start_copies = 10
+global_cost_escalation_start_towers = 20
+global_cost_escalation_per_tower = 0.07
+global_cost_escalation_max_mult = 8.0
+t2_cost_escalation_start_copies = 4
+t2_cost_escalation_per_copy = 0.1
 t2_cost_multiplier = 0.6
 t3_cost_multiplier = 1.0
 t4_cost_multiplier = 1.8
@@ -26,6 +31,31 @@ corruption_misfire_low_chance = 0.1
 corruption_misfire_high_threshold = 75
 corruption_misfire_high_chance = 0.2
 corruption_rogue_entity_threshold = 100
+corruption_stages = Array[Dictionary]([{
+"misfire_chance": 0.0,
+"name": "Taint",
+"omen": false,
+"payoff_per_point": 0.0025,
+"threshold": 0
+}, {
+"misfire_chance": 0.0,
+"name": "Omens",
+"omen": true,
+"payoff_per_point": 0.003,
+"threshold": 25
+}, {
+"misfire_chance": 0.1,
+"name": "Whispers",
+"omen": true,
+"payoff_per_point": 0.0035,
+"threshold": 50
+}, {
+"misfire_chance": 0.2,
+"name": "Withering",
+"omen": true,
+"payoff_per_point": 0.004,
+"threshold": 75
+}])
 rogue_entity_leak_lives = 3
 rogue_entity_kill_offerings = 10
 rogue_entity_hp_scale_per_kill = 1.28

@@ -6,7 +6,7 @@
 script = ExtResource("1_up")
 id = "the_grid_forecloses"
 display_name = "The Grid Forecloses"
-description = "+50% electric damage, +25% fire rate, and +0.8% damage per point of Corruption. THE GRID FORECLOSES: each kill feeds 2 Corruption into the meter and pulls 1 Scrap out of the exposed wiring."
+description = "+50% electric damage, +25% fire rate, and +0.8% damage per point of Corruption. THE GRID FORECLOSES: the arc stops decaying as it chains -- each further target is hit 20% harder than the last, so a dense pack is punished hardest. Each kill feeds 2 Corruption into the meter and pulls 1 Scrap out of the exposed wiring."
 tower_id = "substation_effigy"
 tier = 4
 branch = 3
@@ -21,5 +21,6 @@ corruption_scaled_damage = 0.008
 behaviors = Array[String](["the_grid_forecloses"])
 behavior_params = {
 "corruption_per_kill": 2,
-"rite_scrap_per_kill": 1
+"rite_scrap_per_kill": 1,
+"chain_damage_growth": 0.2
 }

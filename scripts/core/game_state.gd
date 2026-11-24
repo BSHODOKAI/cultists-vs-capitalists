@@ -89,6 +89,9 @@ signal objective_state_changed(instance: ObjectiveInstance, old_state: int, new_
 signal objectives_changed(objective_system: ObjectiveSystem)
 ## Emitted when Rites are drawn; attention is Corruption + cumulative Rite spending.
 signal rites_changed(rites: int, attention: int)
+## Emitted at wave start when Corruption crosses into a new stage of the ladder. `omen` is true
+## for stages that should announce themselves (so the danger meter teaches itself).
+signal corruption_stage_changed(stage_index: int, stage_name: String, omen: bool)
 signal ability_telegraphed(event: Dictionary)
 ## Emitted the moment Rogue Entities wake at the Corruption threshold (a RECKONING).
 ## Carries everything the danger alert needs so the HUD never has to reach back into
@@ -412,6 +415,13 @@ func _wire_system_signals() -> void:
 	tower_system.loss_report_generated.connect(_on_tower_system_loss_report)
 	tower_system.lane_bounty_paid.connect(_on_tower_system_lane_bounty_paid)
 	tower_system.currency_flow_recorded.connect(_on_tower_system_currency_flow_recorded)
+	tower_system.corruption_stage_changed.connect(_on_corruption_stage_changed)
+
+
+## Re-emits the TowerSystem's stage-crossing as a GameState signal so the HUD/telegraph can
+## announce a new stage of the Corruption ladder (the "omen").
+func _on_corruption_stage_changed(stage_index: int, stage_name: String, omen: bool) -> void:
+	corruption_stage_changed.emit(stage_index, stage_name, omen)
 
 
 ## SINGLE SOURCE OF TRUTH for the boss interval.
@@ -1153,23 +1163,22 @@ func request_penance() -> bool:
 	return true
 
 
-## True when the cult may draw Rites right now: it must HOLD a Corruption
-## Reservoir (the site is what makes the rot spendable) and be able to pay.
+## True when the cult may draw Rites right now: it needs enough Corruption, and nothing else.
+## A held Corruption Reservoir is a DISCOUNT on the draw, not a gate -- gating Rites behind a
+## site that appears at random meant the Rite branch could die to map RNG (some seeds rolled no
+## Reservoir, or the player never held one), which is the accidental dead branch this removes.
 func can_draw_rites(count: int = 1) -> bool:
-	if tower_system == null or objective_system == null:
-		return false
-	if not objective_system.has_claimed_kind(_ObjectiveData.Kind.RESERVOIR):
+	if tower_system == null:
 		return false
 	return tower_system.can_draw_rites(count)
 
 
 ## Player command: draw [param count] Rites, spending Corruption as a resource.
-## Requires the cult to HOLD a Corruption Reservoir: the Reservoir is what makes
-## the rot drawable. Every Rite drawn adds permanent Corporate Attention, which is
-## what wakes the Rogue Entities -- so this trades a spike of risk for a steady one
-## rather than dodging the danger.
+## Drawing needs Corruption only; a held Corruption Reservoir merely cheapens it. Every Rite
+## drawn adds permanent Corporate Attention, which is what wakes the Rogue Entities -- so this
+## trades a spike of risk for a steady one rather than dodging the danger.
 func request_draw_rites(count: int = 1) -> bool:
-	if tower_system == null or objective_system == null:
+	if tower_system == null:
 		return false
 	var n: int = maxi(1, count)
 	if not can_draw_rites(n):
@@ -1569,7 +1578,8 @@ func _sync_objective_effects() -> void:
 	tower_system.apply_objective_effects(
 		objective_system.get_revealed_damage_bonus(),
 		objective_system.get_corruption_cap_bonus(),
-		objective_system.get_jam_duration_mult()
+		objective_system.get_jam_duration_mult(),
+		objective_system.get_rite_cost_discount()
 	)
 
 

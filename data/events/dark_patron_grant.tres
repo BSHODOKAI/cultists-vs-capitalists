@@ -9,5 +9,5 @@ display_name = "Dark Patron's Grant"
 description = "A wealthy benefactor leaves Offerings at the Sanctum."
 category = 0
 banner_color = Color(0.95, 0.78, 0.3, 1)
-instant_offerings = 30
-instant_scaling_per_wave = 0.25
+instant_offerings = 18
+instant_scaling_per_wave = 0.12

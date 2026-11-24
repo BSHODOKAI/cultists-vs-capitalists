@@ -28,8 +28,14 @@ const BUDGET_QUADRATIC_PER_WAVE: float = 0.06
 const BUDGET_CYCLE_SCALING: float = 0.10
 const BOSS_ESCORT_BUDGET_RATIO: float = 0.60
 const BOSS_WITHHELD_BUDGET_RATIO: float = 0.40
-const MAX_UNITS_PER_WAVE: int = 60
-const MAX_BOSS_ESCORT_UNITS: int = 24
+## Hard ceiling on regular units delivered per wave. Raised from 60 to 120 so late waves can
+## actually SPEND their budget as bodies instead of dumping the excess into bonus levels -- the
+## old 60 cap flat-lined the threat curve from ~wave 30 (see UPGRADE_AUDIT.md / the run analysis).
+## Paired with the delivery window below: path_delivery_cap = floor(window / min_spawn_interval)
+## must be >= this, or the window silently becomes the real cap.
+const MAX_UNITS_PER_WAVE: int = 120
+## Boss-wave escort ceiling. Raised from 24 (which made boss waves the LIGHTEST in bodies) to 60.
+const MAX_BOSS_ESCORT_UNITS: int = 60
 
 ## Late-wave difficulty ramp starting after wave 15 so mid-to-late waves (20..50+) scale sharply.
 const LATE_RAMP_START_WAVE: int = 15
@@ -53,7 +59,10 @@ const MIN_DISTINCT_UNIT_TYPES: int = 3
 const MAX_AIR_BUDGET_SHARE: float = 0.40
 const MAX_SPAWNERS_PER_WAVE: int = 2
 const MAX_HEALERS_PER_WAVE: int = 2
-const DEFAULT_WAVE_TIME_WINDOW: float = 36.0
+## Spawn window (seconds) a wave's units are delivered across. Raised from 36 so the delivery cap
+## (`floor(window / min_spawn_interval)`) is large enough for MAX_UNITS_PER_WAVE to bind rather
+## than the window: 60 / 0.5 = 120, matching the unit cap above.
+const DEFAULT_WAVE_TIME_WINDOW: float = 60.0
 const MIN_SPAWN_INTERVAL: float = 0.50
 const DEFAULT_SPAWN_INTERVAL: float = 0.60
 const BOSS_SPAWN_LEAD_GAP: float = 1.50

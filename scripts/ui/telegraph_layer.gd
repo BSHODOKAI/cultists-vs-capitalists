@@ -156,6 +156,8 @@ func _connect_signals() -> void:
 	)
 	gs.connect("ability_telegraphed", _on_ability_telegraphed)
 	gs.connect("reckoning_started", _on_reckoning_started)
+	if gs.has_signal("corruption_stage_changed"):
+		gs.connect("corruption_stage_changed", _on_corruption_stage_changed)
 
 
 func show_banner(text: String, duration: float = 3.0, col: Color = Color(1.0, 0.85, 0.30), emphasis: bool = false) -> void:
@@ -213,6 +215,21 @@ func _animate_banner_in(emphasis: bool) -> void:
 ## tower-disabling, 3-lives-a-leak units just entered from the far spawn end. Banner
 ## states the number and the per-leak cost; the vignette makes it felt from anywhere;
 ## the edge arrow shows WHERE they came in (usually off-camera).
+## The Corruption meter is a LADDER, and this is how the player feels it become one: crossing
+## into a new stage announces itself once, at the wave it happens, naming the stage. Only stages
+## flagged `omen` announce (the safe first stage stays quiet), so "Taint -> Omens" is the first
+## time the danger is legible -- long before the meter can kill.
+func _on_corruption_stage_changed(_stage_index: int, stage_name: String, omen: bool) -> void:
+	if not omen:
+		return
+	show_banner(
+		"CORRUPTION RISES  [ %s ]\nThe rot deepens: the cult's power grows -- and so does its hunger."
+			% stage_name,
+		4.5,
+		Color(0.86, 0.30, 0.42)
+	)
+
+
 func _on_reckoning_started(
 	rogue_count: int, severity: int, leak_cost: int, spawn_world_pos: Vector3
 ) -> void:

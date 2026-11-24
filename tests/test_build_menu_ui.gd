@@ -839,7 +839,8 @@ func test_09_currency_feedback_world_popups_topbar_deltas_and_live_ledger_toolti
 		"TopBar Scrap delta badge must show '+12', got '%s'" % top_bar._scrap_delta_label.text
 	)
 
-	# 3. Step Tithe Box for 5.0s -> must emit 'tithe_box' flow (+4 Off) and spawn a popup over the tower
+	# 3. Step Tithe Box for 5.0s -> must emit 'tithe_box' flow (+2 Off) and spawn a popup over the tower
+	# (income trimmed from +4/5s to +2/5s; see AGENTS.md §2)
 	effects_view.clear_all()
 	flows.clear()
 	gs.tower_system._step_tithe_box_tower(tithe, 5.1)
@@ -847,17 +848,17 @@ func test_09_currency_feedback_world_popups_topbar_deltas_and_live_ledger_toolti
 
 	var tithe_flow_found: bool = false
 	for f2: Dictionary in flows:
-		if String(f2["source"]) == "tithe_box" and int(f2["off"]) == 4 and int(f2["tid"]) == tithe.tower_id:
+		if String(f2["source"]) == "tithe_box" and int(f2["off"]) == 2 and int(f2["tid"]) == tithe.tower_id:
 			tithe_flow_found = true
 			break
-	assert(tithe_flow_found, "Stepping Tithe Box 5s must emit currency_flow_recorded('tithe_box', 4, 0)")
+	assert(tithe_flow_found, "Stepping Tithe Box 5s must emit currency_flow_recorded('tithe_box', 2, 0)")
 
 	var saw_tithe_popup: bool = false
 	for l_entry2: Dictionary in effects_view._active_labels:
 		var lbl3d_2: Label3D = l_entry2["node"] as Label3D
-		if is_instance_valid(lbl3d_2) and lbl3d_2.text == "+4 Off":
+		if is_instance_valid(lbl3d_2) and lbl3d_2.text == "+2 Off":
 			saw_tithe_popup = true
-	assert(saw_tithe_popup, "Tithe Box payout must spawn a '+4 Off' floating popup above the tower")
+	assert(saw_tithe_popup, "Tithe Box payout must spawn a '+2 Off' floating popup above the tower")
 
 	# 4. Verify live ledger tooltip on TopBar includes both Enemy Kills and Tithe Boxes
 	var off_tip: String = top_bar._offerings_chip.tooltip_text

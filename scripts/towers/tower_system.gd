@@ -50,6 +50,10 @@ signal ability_telegraphed(event: Dictionary)
 signal loss_report_generated(report: LossReport)
 signal lane_bounty_paid(lane_id: int, unit_id: int, offerings_paid: int, scrap_paid: int, offerings_remaining: int, scrap_remaining: int)
 signal currency_flow_recorded(source: String, offerings_delta: int, scrap_delta: int, hex: Vector2i, unit_id: int, tower_id: int)
+## Emitted at wave start when the Corruption meter crosses into a DIFFERENT stage of the ladder.
+## The HUD uses it to announce a new stage (the "omen"), so the meter teaches itself instead of
+## reading as a 0-to-death cliff.
+signal corruption_stage_changed(stage_index: int, stage_name: String, omen: bool)
 
 # --- Configuration & Grid state ----------------------------------------------
 var balance: TowerBalanceData
@@ -68,6 +72,15 @@ var offerings: int = _Balance.DEFAULT_STARTING_OFFERINGS
 var scrap: int = _Balance.DEFAULT_STARTING_SCRAP
 var lives: int = _Balance.DEFAULT_STARTING_LIVES
 var corruption: int = 0
+## Index into `balance.corruption_stages` last announced at a wave start. Lets start_wave tell
+## when the meter has crossed into a new stage so it can emit `corruption_stage_changed`.
+var _last_corruption_stage_index: int = 0
+## Memoised active-stage payoff, keyed by the Corruption value it was computed for. The payoff is
+## read per outgoing damage event (DoT puddles, many units), so re-walking the ladder every hit was
+## measurable; this makes the hot path an int compare + field read. Self-invalidates: a mismatched
+## `corruption` (however it was set) forces a recompute.
+var _cached_corruption_value: int = -1
+var _cached_payoff_per_point: float = 0.0
 ## Rites: Corruption spent as a resource. Spendable on run-wide boons.
 var rites: int = 0
 ## How many Rites have EVER been drawn this run. The tower panel keeps the Rite upgrade
@@ -113,6 +126,9 @@ var objective_revealed_damage_bonus: float = 0.0
 ## Extra Corruption headroom granted by held Corruption Reservoir sites. Global by
 ## nature: a Corruption ceiling is a meter-wide number and cannot be made local.
 var corruption_cap_bonus: int = 0
+## Fallback Corruption discount per Rite granted by a held Reservoir (used only when
+## objective_system is null). A Reservoir is a BONUS, not the gate on drawing Rites.
+var objective_rite_cost_discount: int = 0
 ## Fallback jam-duration mult (used only when objective_system is null).
 var jank_jam_duration_mult: float = 1.0
 
@@ -382,11 +398,13 @@ func clear_event_modifiers() -> void:
 func apply_objective_effects(
 	revealed_bonus: float,
 	cap_bonus: int,
-	jam_mult: float
+	jam_mult: float,
+	rite_discount: int = 0
 ) -> void:
 	objective_revealed_damage_bonus = maxf(0.0, revealed_bonus)
 	corruption_cap_bonus = maxi(0, cap_bonus)
 	jank_jam_duration_mult = maxf(0.0, jam_mult)
+	objective_rite_cost_discount = maxi(0, rite_discount)
 
 
 ## Effective Corruption ceiling including held Reservoir sites.
@@ -438,9 +456,18 @@ func get_objective_capture_damage_taken_mult_at(hex: Vector2i) -> float:
 ##   3. Debt RESETS when they come, so one spending spree cannot snowball into a
 ##      permanent spiral -- the reckoning happens, and then it is over.
 
-## Corruption paid per Rite drawn.
+## Corruption paid per Rite drawn. A held Corruption Reservoir is a DISCOUNT, not a gate:
+## drawing Rites is available from Corruption alone, and the site makes each draw cheaper.
 func get_rite_cost() -> int:
-	return maxi(1, balance.rite_corruption_cost)
+	return maxi(1, balance.rite_corruption_cost - _objective_rite_cost_discount())
+
+
+## Corruption shaved off each Rite by a held Reservoir. Prefers the attached ObjectiveSystem
+## (true locality) and falls back to the wave-pushed aggregate for headless tests.
+func _objective_rite_cost_discount() -> int:
+	if objective_system != null:
+		return maxi(0, objective_system.get_rite_cost_discount())
+	return maxi(0, objective_rite_cost_discount)
 
 
 ## Extra Rogue severity earned by the debt accrued since the last reckoning.
@@ -542,18 +569,74 @@ func get_owned_tower_count(tower_type_id: String) -> int:
 	return count
 
 
-## Computes the Offerings build cost of the next tower of [param tower_id_or_def],
-## applying +10% cost escalation per copy once the player owns 10+ copies of that type.
+## Computes the Offerings build cost of the next tower of [param tower_id_or_def]. TWO escalation
+## braces multiply: the per-TYPE tax (+rate once the player owns `cost_escalation_start_copies` of
+## that type) and a GLOBAL tax on total tower count (`global_cost_escalation_*`). The global term is
+## the one that taxes a DIVERSE carpet, which per-type escalation alone cannot see (the observed
+## run built 198 towers across all 11 types and never tripped the per-type tax).
 func get_tower_build_cost(tower_id_or_def: Variant) -> int:
 	var def: TowerData = _resolve_tower_def(tower_id_or_def)
 	if def == null:
 		return 0
-	var owned: int = get_owned_tower_count(def.id)
+	var raw: float = float(def.cost) * _per_type_cost_multiplier(def.id) * get_global_count_escalation_multiplier()
+	return roundi(raw)
+
+
+## Per-type escalation multiplier for [param tower_type_id]: 1.0 until the player owns enough
+## copies of that type, then +`cost_escalation_per_copy` per extra copy.
+func _per_type_cost_multiplier(tower_type_id: String) -> float:
+	var owned: int = get_owned_tower_count(tower_type_id)
 	var start_copies: int = maxi(1, balance.cost_escalation_start_copies)
 	if owned < start_copies:
-		return def.cost
+		return 1.0
 	var taxed_copies: int = owned - start_copies + 1
-	return roundi(float(def.cost) * (1.0 + balance.cost_escalation_per_copy * float(taxed_copies)))
+	return 1.0 + balance.cost_escalation_per_copy * float(taxed_copies)
+
+
+## Total towers currently placed across every type.
+func get_total_tower_count() -> int:
+	return towers.size()
+
+
+## GLOBAL width multiplier: 1.0 until `global_cost_escalation_start_towers` towers stand, then
+## +`global_cost_escalation_per_tower` per extra tower, clamped to `global_cost_escalation_max_mult`
+## so it is a brake on a carpet rather than an impassable wall.
+func get_global_count_escalation_multiplier() -> float:
+	var total: int = get_total_tower_count()
+	var start: int = maxi(1, balance.global_cost_escalation_start_towers)
+	if total <= start:
+		return 1.0
+	var mult: float = 1.0 + balance.global_cost_escalation_per_tower * float(total - start)
+	return minf(mult, maxf(1.0, balance.global_cost_escalation_max_mult))
+
+
+## Effective cost of unlocking [param node] on [param tower]: the node's own cost, plus T2-only
+## escalation. The T2 shared node is what a wide-shallow net actually spams; T3/T4/Rite are NOT
+## escalated, so depth stays the affordable path once width gets expensive.
+func get_effective_upgrade_cost(tower: TowerInstance, node: UpgradeNode) -> int:
+	if node == null:
+		return 0
+	if node.tier != 2 or node.branch != _UpgradeNode.Branch.SHARED:
+		return node.cost
+	var per: float = balance.t2_cost_escalation_per_copy
+	if per <= 0.0:
+		return node.cost
+	var type_id: String = tower.get_type_id() if tower != null else node.tower_id
+	var owned: int = count_upgraded_towers_of_type(type_id)
+	var start: int = maxi(1, balance.t2_cost_escalation_start_copies)
+	if owned < start:
+		return node.cost
+	return roundi(float(node.cost) * (1.0 + per * float(owned - start + 1)))
+
+
+## Towers of [param tower_type_id] that already own their T2 (tier >= 2) -- "how many copies of
+## this type have you already deepened". This prices the NEXT T2 of that type.
+func count_upgraded_towers_of_type(tower_type_id: String) -> int:
+	var n: int = 0
+	for t: TowerInstance in towers.values():
+		if t.get_type_id() == tower_type_id and t.tier >= 2:
+			n += 1
+	return n
 
 
 ## True when [param hex] is within hex distance <= build_distance (2) of at least one path hex.
@@ -845,13 +928,14 @@ func can_upgrade_tower(tower: TowerInstance, node_id: String, ignore_cost: bool 
 	if node.tier == 4 and tower.tier != 3:
 		return {"ok": false, "reason": "requires_t3_first", "node": node}
 
-	# Currency check
+	# Currency check. T2 uses the ESCALATED effective cost; T3/T4/Rite use their flat cost.
 	if not ignore_cost:
-		if node.currency == _UpgradeNode.Currency.OFFERINGS and offerings < node.cost:
+		var eff_cost: int = get_effective_upgrade_cost(tower, node)
+		if node.currency == _UpgradeNode.Currency.OFFERINGS and offerings < eff_cost:
 			return {"ok": false, "reason": "insufficient_offerings", "node": node}
-		if node.currency == _UpgradeNode.Currency.SCRAP and scrap < node.cost:
+		if node.currency == _UpgradeNode.Currency.SCRAP and scrap < eff_cost:
 			return {"ok": false, "reason": "insufficient_scrap", "node": node}
-		if node.currency == _UpgradeNode.Currency.RITES and rites < node.cost:
+		if node.currency == _UpgradeNode.Currency.RITES and rites < eff_cost:
 			return {"ok": false, "reason": "insufficient_rites", "node": node}
 
 	return {"ok": true, "reason": "", "node": node}
@@ -876,23 +960,24 @@ func upgrade_tower(tower: TowerInstance, node_id: String, ignore_cost: bool = fa
 		return false
 	var node: UpgradeNode = check["node"] as UpgradeNode
 
+	var pay_cost: int = get_effective_upgrade_cost(tower, node)
 	if not ignore_cost:
 		if node.currency == _UpgradeNode.Currency.OFFERINGS:
-			offerings -= node.cost
-			tower.total_offerings_spent += node.cost
+			offerings -= pay_cost
+			tower.total_offerings_spent += pay_cost
 		elif node.currency == _UpgradeNode.Currency.SCRAP:
-			scrap -= node.cost
-			tower.total_scrap_spent += node.cost
+			scrap -= pay_cost
+			tower.total_scrap_spent += pay_cost
 		else:
 			# Rites are deliberately NOT tracked for refunds: they are Corruption
 			# spent with permanent Attention attached, so selling must not launder
 			# them back (see TowerInstance sell refund, which refunds Offering/Scrap only).
-			rites -= node.cost
+			rites -= pay_cost
 	else:
 		if node.currency == _UpgradeNode.Currency.OFFERINGS:
-			tower.total_offerings_spent += node.cost
+			tower.total_offerings_spent += pay_cost
 		elif node.currency == _UpgradeNode.Currency.SCRAP:
-			tower.total_scrap_spent += node.cost
+			tower.total_scrap_spent += pay_cost
 
 	tower.unlocked_upgrade_ids.append(node.id)
 	tower.unlocked_nodes.append(node)
@@ -938,13 +1023,56 @@ func perform_penance() -> bool:
 	return true
 
 
-## Current misfire probability at wave start based on global Corruption.
+## The Corruption ladder to use: the tuned stages, or the built-in default when a bare
+## TowerBalanceData carries none (a headless test may construct one without the .tres).
+func _corruption_stages() -> Array:
+	if balance != null and not balance.corruption_stages.is_empty():
+		return balance.corruption_stages
+	return _Balance.DEFAULT_CORRUPTION_STAGES
+
+
+## Index of the ACTIVE stage: the highest stage whose threshold is <= current Corruption.
+func get_corruption_stage_index() -> int:
+	var stages: Array = _corruption_stages()
+	var idx: int = 0
+	for i: int in range(stages.size()):
+		if corruption >= int(stages[i].get("threshold", 0)):
+			idx = i
+	return idx
+
+
+## The active stage Dictionary. Never null once the ladder has entries; returns a neutral
+## "no penalty / flat payoff" stage for a degenerate empty ladder.
+func get_corruption_stage() -> Dictionary:
+	var stages: Array = _corruption_stages()
+	if stages.is_empty():
+		return {
+			"threshold": 0,
+			"name": "",
+			"misfire_chance": 0.0,
+			"payoff_per_point": balance.corruption_damage_bonus_per_point,
+			"omen": false,
+		}
+	return stages[get_corruption_stage_index()] as Dictionary
+
+
+func get_corruption_stage_name() -> String:
+	return String(get_corruption_stage().get("name", ""))
+
+
+## Current misfire probability at wave start, taken from the active stage of the ladder.
 func get_corruption_misfire_chance() -> float:
-	if corruption >= balance.corruption_misfire_high_threshold:
-		return balance.corruption_misfire_high_chance
-	if corruption >= balance.corruption_misfire_low_threshold:
-		return balance.corruption_misfire_low_chance
-	return 0.0
+	return float(get_corruption_stage().get("misfire_chance", 0.0))
+
+
+## Additive Revealed-tower damage bonus per point of Corruption, ramped by the active stage.
+## This is what makes the climb feel rewarding before it feels dangerous. Memoised (see
+## `_cached_payoff_per_point`) because it is read on the per-hit damage path.
+func get_corruption_payoff_per_point() -> float:
+	if corruption != _cached_corruption_value:
+		_cached_corruption_value = corruption
+		_cached_payoff_per_point = float(get_corruption_stage().get("payoff_per_point", balance.corruption_damage_bonus_per_point))
+	return _cached_payoff_per_point
 
 
 # --- Jank & Maintenance ------------------------------------------------------
@@ -1032,7 +1160,7 @@ func get_revealed_additive_bonus(tower: TowerInstance) -> float:
 		return 0.0
 	var corr_bonus: float = 0.0
 	if not tower.compliance_suppressed:
-		corr_bonus = float(corruption) * balance.corruption_damage_bonus_per_point
+		corr_bonus = float(corruption) * get_corruption_payoff_per_point()
 	return (
 		corr_bonus
 		+ event_revealed_damage_bonus
@@ -1319,7 +1447,8 @@ func start_wave(
 				if paid_scr > 0:
 					record_currency_flow("upkeep_and_steal", 0, -paid_scr, censer.hex, -1, censer.tower_id)
 
-	# 5. Corruption misfire roll (50+: 10%, 75+: 20% one random Revealed tower disabled that wave)
+	# 5. Corruption misfire roll -- the chance comes from the ACTIVE stage of the ladder
+	#    (see balance.corruption_stages): nothing below the first penalty stage, then rising.
 	var misfired_tower_id: int = -1
 	var misfire_chance: float = get_corruption_misfire_chance()
 	if misfire_chance > 0.0:
@@ -1332,6 +1461,18 @@ func start_wave(
 			var picked: TowerInstance = revealed_towers[pick_idx]
 			picked.misfired_this_wave = true
 			misfired_tower_id = picked.tower_id
+
+	# 5b. Stage announcement: if the meter has crossed into a different stage since the last
+	#     wave, tell the HUD so it can announce the new stage (the "omen"). This is the moment
+	#     the player learns the meter is a ladder rather than a 0-to-death cliff.
+	var stage_index_now: int = get_corruption_stage_index()
+	if stage_index_now != _last_corruption_stage_index:
+		_last_corruption_stage_index = stage_index_now
+		corruption_stage_changed.emit(
+			stage_index_now,
+			get_corruption_stage_name(),
+			bool(get_corruption_stage().get("omen", false))
+		)
 
 	# 6. THE RECKONING: Rogues wake from the Corruption held RIGHT NOW, and the Rite
 	#    debt accrued since they last woke decides how BAD they are. So spending
@@ -2415,6 +2556,23 @@ func _step_single_target_tower(tower: TowerInstance, delta: float, _rng: RandomN
 				tower.ledger_stacks = 0
 			base_dmg *= 1.0 + per_stack * float(tower.ledger_stacks)
 
+		# Rite: the_audit_comes_due -- THE AUDIT COMES DUE. The T3 ledger only ramps; the
+		# T4 CASHES IT IN. When the page fills, the whole account is settled at once as a
+		# Void burst proportional to the stacks, the page is torn out, and the ledger starts
+		# over. The fast tower earns its capstone by staying on one mark to the audit date.
+		if tower.has_behavior("the_audit_comes_due"):
+			var settle_at: int = maxi(1, int(tower.get_behavior_param("the_audit_comes_due", "settle_at_stacks", 12)))
+			if tower.ledger_stacks >= settle_at:
+				var per_stack_settle: float = float(tower.get_behavior_param("the_audit_comes_due", "settle_damage_per_stack", 0.60))
+				var settle_raw: float = tower.def.damage * per_stack_settle * float(tower.ledger_stacks)
+				deal_damage_from_tower(
+					tower, target,
+					calculate_hit_damage(tower, target, settle_raw, _C.DamageTag.VOID),
+					_C.DamageTag.VOID
+				)
+				tower.ledger_stacks = 0
+				tower_cooldown_used.emit(tower.tower_id, tower.get_type_id(), "the_audit_comes_due", tower.hex)
+
 		var primary_dmg: float = calculate_hit_damage(tower, target, base_dmg, tower.def.damage_tag, false, ignore_res)
 		deal_damage_from_tower(tower, target, primary_dmg, tower.def.damage_tag)
 
@@ -2623,6 +2781,28 @@ func _step_storm_drain_tower(tower: TowerInstance, delta: float) -> void:
 			u.conduct_electric_wet = true
 			u.entangled_by_drain = true
 
+	# Rite: the_fathom_collects -- THE FATHOM COLLECTS. Every interval the deep reaches up for
+	# the LEADER (the most path-advanced Ground unit in range), drags it back and pins it. The
+	# tentacle's ordinary root catches whoever is at hand; the fathom takes the one about to
+	# leak. The pin always lands; the drag respects displacement diminishing returns.
+	if tower.has_behavior("the_fathom_collects"):
+		tower.special_cooldown -= delta
+		if tower.special_cooldown <= 0.0:
+			var leader: CombatUnit = null
+			for u: CombatUnit in in_range_targets:
+				if leader == null or u.path_position > leader.path_position:
+					leader = u
+			if leader != null:
+				var collect_root: float = float(tower.get_behavior_param("the_fathom_collects", "collect_root_duration", 2.0))
+				var collect_drag: float = float(tower.get_behavior_param("the_fathom_collects", "collect_drag_hexes", 1.0))
+				leader.apply_root(collect_root, true)
+				if collect_drag > 0.0 and not leader.is_displacement_immune():
+					leader.displace_along_path(collect_drag, get_spawn_path_index(leader.lane_id))
+				tower.special_cooldown = maxf(1.0, float(tower.get_behavior_param("the_fathom_collects", "collect_interval", 6.0)))
+				tower_cooldown_used.emit(tower.tower_id, tower.get_type_id(), "the_fathom_collects", tower.hex)
+			else:
+				tower.special_cooldown = 0.0
+
 	# leviathan_awakens: every 25 s a sweep hits all enemies in range +2 for 120 Void and roots 1 s
 	if tower.has_behavior("leviathan_awakens"):
 		tower.special_cooldown -= delta
@@ -2698,6 +2878,35 @@ func _step_watcher_tower(tower: TowerInstance, delta: float, rng: RandomNumberGe
 	var rate: float = get_effective_tower_fire_rate(tower)
 	if rate <= 0.0:
 		return
+
+	# Rite: the_debt_collector -- THE SETTLEMENT. Every interval the collector calls in a
+	# debt: a %-of-max-HP Void strike on the HIGHEST-HP enemy in range. This is the Rite
+	# branch's answer to a single fat account (Tank/Boss), the exact shape a wider net of
+	# cheap towers cannot buy -- more T1s chip many small bodies, this concentrates on one.
+	if tower.has_behavior("the_debt_collector"):
+		tower.special_cooldown -= delta
+		if tower.special_cooldown <= 0.0:
+			var strike_interval: float = maxf(1.0, float(tower.get_behavior_param("the_debt_collector", "debt_strike_interval", 12.0)))
+			var strike_ratio: float = float(tower.get_behavior_param("the_debt_collector", "debt_strike_hp_ratio", 0.15))
+			var strike_boss_ratio: float = float(tower.get_behavior_param("the_debt_collector", "debt_strike_boss_hp_ratio", 0.05))
+			var strike_range: int = get_effective_tower_range_hexes(tower)
+			var fat: CombatUnit = null
+			for u: CombatUnit in units:
+				if not u.is_alive():
+					continue
+				if _HexGrid.hex_distance(tower.hex, get_unit_hex(u)) > strike_range:
+					continue
+				if fat == null or u.max_hp > fat.max_hp:
+					fat = u
+			if fat != null:
+				var ratio: float = strike_boss_ratio if fat.is_boss() else strike_ratio
+				# Added as RAW %-of-max-HP, not routed through calculate_hit_damage: like
+				# the_eye_opens, a percentage-of-max-HP effect must not be amplified by the
+				# tower's own +damage multipliers, or the Rite T4's +dmg would balloon it.
+				deal_damage_from_tower(tower, fat, fat.max_hp * ratio, _C.DamageTag.VOID)
+				tower.special_cooldown = strike_interval
+				tower_cooldown_used.emit(tower.tower_id, tower.get_type_id(), "the_debt_collector", tower.hex)
+
 	tower.attack_cooldown -= delta
 	if tower.attack_cooldown > 0.0:
 		return
@@ -3070,6 +3279,14 @@ func _step_chain_arc_tower(tower: TowerInstance, delta: float) -> void:
 			hop_range = int(tower.get_behavior_param("astral_conduction", "chain_hop_range", 3))
 			bounce_decay = float(tower.get_behavior_param("astral_conduction", "bounce_decay", 1.0))
 
+		# Rite: the_grid_forecloses -- THE GRID FORECLOSES. The arc does not weaken as it
+		# spreads; it HARDENS: no bounce decay, and each further chained target takes a
+		# growing share. A dense pack is punished more, not less -- the anti-swarm capstone.
+		var chain_growth: float = 0.0
+		if tower.has_behavior("the_grid_forecloses"):
+			bounce_decay = 1.0
+			chain_growth = float(tower.get_behavior_param("the_grid_forecloses", "chain_damage_growth", 0.20))
+
 		var visited_ids: Dictionary = {primary.unit_id: true}
 		var current_target: CombatUnit = primary
 		var bounce_mult: float = 1.0
@@ -3090,6 +3307,8 @@ func _step_chain_arc_tower(tower: TowerInstance, delta: float) -> void:
 				if current_target.is_air() or current_target.has_tag(_C.UnitTag.SHIELDED) or current_target.has_tag(_C.UnitTag.CYBERNETIC):
 					var tag_bonus: float = float(tower.get_behavior_param("breaker_cascade", "tag_damage_bonus", 0.35))
 					hop_base_dmg *= (1.0 + tag_bonus)
+			if chain_growth > 0.0:
+				hop_base_dmg *= 1.0 + chain_growth * float(_hop)
 
 			var arc_dmg: float = calculate_hit_damage(tower, current_target, hop_base_dmg, tower.def.damage_tag)
 			deal_damage_from_tower(tower, current_target, arc_dmg, tower.def.damage_tag)

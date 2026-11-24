@@ -6,12 +6,13 @@
 script = ExtResource("1_objective")
 id = "corruption_reservoir"
 display_name = "Corruption Reservoir"
-description = "A sink of accumulated rot beneath the block. Holding it raises how much Corruption the cult can bear before the Rogue Entities wake, and it is what lets the cult draw Rites at all; if the corporations take it they pump the filth out and their units crossing it are faster and tougher."
+description = "A sink of accumulated rot beneath the block. Holding it raises how much Corruption the cult can bear before the Rogue Entities wake and cheapens every Rite drawn (Rites are drawable from Corruption alone); if the corporations take it they pump the filth out and their units crossing it are faster and tougher."
 kind = 2
 color = Color(0.35, 0.85, 0.42, 0.85)
 claim_radius_hexes = 2
 revealed_damage_bonus = 0.0
 corruption_cap_bonus = 25
+rite_cost_discount = 4
 jam_duration_mult = 1.0
 capture_enemy_speed_bonus = 0.15
 capture_enemy_damage_reduction = 0.1

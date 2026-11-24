@@ -44,6 +44,10 @@ const ARCH_MONO_PSYCHIC: String = "mono_psychic"
 const ARCH_RITE_GAMBLER: String = "rite_gambler"
 const ARCH_TURTLE: String = "turtle"
 const ARCH_NAIVE: String = "naive"
+## The build the run analysis (seed 4624212) exposed: a WIDE, SHALLOW net -- many towers, T2 only,
+## never a T3/T4 branch. It exists to prove the new width taxes (global count escalation, T2
+## escalation, trimmed passive income) actually kill the carpet build, not just look good on paper.
+const ARCH_CARPET: String = "carpet"
 
 # --- Run state (transient; reset per run) ------------------------------------
 var _unit_map: Dictionary = {}
@@ -183,13 +187,16 @@ static func all_archetype_ids() -> Array[String]:
 		ARCH_RITE_GAMBLER,
 		ARCH_TURTLE,
 		ARCH_NAIVE,
+		ARCH_CARPET,
 	]
 
 
 ## Returns the config for [param id]. Fields:
 ##   plan                ordered tower ids the bot cycles through when building
-##   branch              "revealed" | "rigged" | "rite" | "mix" | "random"
+##   branch              "revealed" | "rigged" | "rite" | "mix" | "random" | "rite_seeker"
 ##   upgrades            "full" | "t2_only" | "none"
+##   draw_rites          draw Rites whenever affordable (needs a Corruption source)
+##   draw_rite_gate      Corruption level at which drawing starts (default 30)
 ##   reserve_offerings   keep at least this many Offerings unspent (slow spenders)
 ##   reserve_scrap       keep at least this many Scrap unspent
 ##   max_towers          cap on towers owned
@@ -233,21 +240,27 @@ static func get_archetype(id: String) -> Dictionary:
 		ARCH_MONO_PSYCHIC:
 			return _mono(id, "Monoculture: Psychic (Choir core)", "chanting_choir", "revealed")
 		ARCH_RITE_GAMBLER:
+			# A Rite-seeker must RAISE the meter before it can draw: Rite nodes add NO
+			# Corruption, so a uniform Rite build can never reach the draw cost. The
+			# "rite_seeker" branch policy runs a Revealed spine (T3 +4 / T4 +8 Corruption)
+			# while the rest commit to Rite, and the lower draw gate spends the meter as
+			# soon as it is worth drawing -- which is the gamble the archetype is named for.
 			return {
 				"id": id,
-				"display": "Rite gambler",
+				"display": "Rite gambler (Revealed spine + Rite payoff)",
 				"plan": [
 					"tithe_box", "hexed_nail_gun", "gutter_ritual_circle",
 					"substation_effigy", "watcher_in_the_billboard",
 					"tentacle_storm_drain", "rust_censer",
 				],
-				"branch": "rite",
+				"branch": "rite_seeker",
 				"upgrades": "full",
 				"reserve_offerings": 0,
 				"reserve_scrap": 0,
 				"max_towers": 16,
 				"objective_priority": true,
 				"draw_rites": true,
+				"draw_rite_gate": 10,
 				"penance": false,
 				"maintenance": false,
 				"placement": "best",
@@ -287,6 +300,28 @@ static func get_archetype(id: String) -> Dictionary:
 				"penance": false,
 				"maintenance": false,
 				"placement": "random",
+			}
+		ARCH_CARPET:
+			return {
+				"id": id,
+				"display": "Carpet (wide + shallow, T2 only)",
+				# Cycles EVERY tower type so the per-type tax never trips -- only the GLOBAL
+				# count tax and the economy can stop it. This is the diverse-carpet build.
+				"plan": [
+					"tithe_box", "hexed_nail_gun", "chanting_choir", "gutter_ritual_circle",
+					"rust_censer", "watcher_in_the_billboard", "substation_effigy",
+					"tentacle_storm_drain", "fever_shrine", "dead_air_altar", "the_congregation",
+				],
+				"branch": "mix",
+				"upgrades": "t2_only",
+				"reserve_offerings": 0,
+				"reserve_scrap": 0,
+				"max_towers": 200,
+				"objective_priority": false,
+				"draw_rites": false,
+				"penance": false,
+				"maintenance": false,
+				"placement": "spread",
 			}
 	return get_archetype(ARCH_BALANCED)
 
@@ -636,8 +671,12 @@ func _run_intermission(gs: GameStateNode, arch: Dictionary, rng: RandomNumberGen
 
 func _run_extra_actions(gs: GameStateNode, arch: Dictionary) -> void:
 	if bool(arch.get("draw_rites", false)) and gs.can_draw_rites(1):
+		# draw_rite_gate lets a committed Rite-seeker draw as soon as the meter is worth
+		# spending (default 30 = cautious); a pure Rite build generates no Corruption, so it
+		# still needs a Revealed spine for this to fire at all.
+		var gate: int = int(arch.get("draw_rite_gate", 30))
 		var guard: int = 0
-		while guard < 8 and gs.corruption >= 30 and gs.can_draw_rites(1):
+		while guard < 8 and gs.corruption >= gate and gs.can_draw_rites(1):
 			if not gs.request_draw_rites(1):
 				break
 			guard += 1
@@ -719,6 +758,11 @@ func _select_branch_nodes(t: TowerInstance, arch: Dictionary, rng: RandomNumberG
 			want = "revealed" if (t.tower_id % 2 == 0) else "rigged"
 		"random":
 			want = "revealed" if rng.randi_range(0, 1) == 0 else "rigged"
+		"rite_seeker":
+			# Deterministic per-tower: roughly one tower in three runs the Revealed spine
+			# (+4/+8 Corruption per node) to FEED the meter, the rest commit to Rite. A
+			# uniform Rite build generates no Corruption and could never draw a Rite.
+			want = "revealed" if (t.tower_id % 3 == 0) else "rite"
 	match want:
 		"rite":
 			return [def.rite_t3_upgrade, def.rite_t4_upgrade]
