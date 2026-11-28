@@ -33,11 +33,11 @@ var _confirm_remaining: float = 0.0
 var _updating_audio_ui: bool = false
 
 var _aspect_ratio_row: HBoxContainer
-var _aspect_ratio_select: OptionButton
+var _aspect_ratio_select: InlineSelector
 var _resolution_row: HBoxContainer
-var _resolution_select: OptionButton
+var _resolution_select: InlineSelector
 var _window_mode_row: HBoxContainer
-var _window_mode_select: OptionButton
+var _window_mode_select: InlineSelector
 var _active_status_label: Label
 var _background_audio_row: HBoxContainer
 var _background_audio_slider: HSlider
@@ -77,11 +77,11 @@ func _process(delta: float) -> void:
 func _build_ui() -> void:
 	if get_node_or_null("VBox") != null:
 		_aspect_ratio_row = get_node_or_null("VBox/AspectRatioRow") as HBoxContainer
-		_aspect_ratio_select = get_node_or_null("VBox/AspectRatioRow/AspectRatioSelect") as OptionButton
+		_aspect_ratio_select = get_node_or_null("VBox/AspectRatioRow/AspectRatioSelect") as InlineSelector
 		_resolution_row = get_node_or_null("VBox/ResolutionRow") as HBoxContainer
-		_resolution_select = get_node_or_null("VBox/ResolutionRow/ResolutionSelect") as OptionButton
+		_resolution_select = get_node_or_null("VBox/ResolutionRow/ResolutionSelect") as InlineSelector
 		_window_mode_row = get_node_or_null("VBox/WindowModeRow") as HBoxContainer
-		_window_mode_select = get_node_or_null("VBox/WindowModeRow/WindowModeSelect") as OptionButton
+		_window_mode_select = get_node_or_null("VBox/WindowModeRow/WindowModeSelect") as InlineSelector
 		_active_status_label = get_node_or_null("VBox/ActiveStatusLabel") as Label
 		_background_audio_row = get_node_or_null("VBox/BackgroundAudioRow") as HBoxContainer
 		_background_audio_slider = get_node_or_null("VBox/BackgroundAudioRow/BackgroundAudioSlider") as HSlider
@@ -150,7 +150,7 @@ func _build_ui() -> void:
 	aspect_label.custom_minimum_size = Vector2(130.0, 0.0)
 	_aspect_ratio_row.add_child(aspect_label)
 
-	_aspect_ratio_select = OptionButton.new()
+	_aspect_ratio_select = InlineSelector.new()
 	_aspect_ratio_select.name = "AspectRatioSelect"
 	_aspect_ratio_select.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_aspect_ratio_select.custom_minimum_size = Vector2(0.0, 34.0)
@@ -168,7 +168,7 @@ func _build_ui() -> void:
 	res_label.custom_minimum_size = Vector2(130.0, 0.0)
 	_resolution_row.add_child(res_label)
 
-	_resolution_select = OptionButton.new()
+	_resolution_select = InlineSelector.new()
 	_resolution_select.name = "ResolutionSelect"
 	_resolution_select.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_resolution_select.custom_minimum_size = Vector2(0.0, 34.0)
@@ -186,7 +186,7 @@ func _build_ui() -> void:
 	mode_label.custom_minimum_size = Vector2(130.0, 0.0)
 	_window_mode_row.add_child(mode_label)
 
-	_window_mode_select = OptionButton.new()
+	_window_mode_select = InlineSelector.new()
 	_window_mode_select.name = "WindowModeSelect"
 	_window_mode_select.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_window_mode_select.custom_minimum_size = Vector2(0.0, 34.0)
@@ -335,12 +335,12 @@ func _build_ui() -> void:
 
 
 func _connect_ui_signals() -> void:
-	if _aspect_ratio_select != null and not _aspect_ratio_select.item_selected.is_connected(_on_aspect_ratio_selected):
-		_aspect_ratio_select.item_selected.connect(_on_aspect_ratio_selected)
-	if _resolution_select != null and not _resolution_select.item_selected.is_connected(_on_resolution_selected):
-		_resolution_select.item_selected.connect(_on_resolution_selected)
-	if _window_mode_select != null and not _window_mode_select.item_selected.is_connected(_on_window_mode_selected):
-		_window_mode_select.item_selected.connect(_on_window_mode_selected)
+	if _aspect_ratio_select != null and not _aspect_ratio_select.option_selected.is_connected(_on_aspect_ratio_selected):
+		_aspect_ratio_select.option_selected.connect(_on_aspect_ratio_selected)
+	if _resolution_select != null and not _resolution_select.option_selected.is_connected(_on_resolution_selected):
+		_resolution_select.option_selected.connect(_on_resolution_selected)
+	if _window_mode_select != null and not _window_mode_select.option_selected.is_connected(_on_window_mode_selected):
+		_window_mode_select.option_selected.connect(_on_window_mode_selected)
 	if _background_audio_slider != null and not _background_audio_slider.value_changed.is_connected(_on_background_audio_slider_changed):
 		_background_audio_slider.value_changed.connect(_on_background_audio_slider_changed)
 	if _fx_audio_slider != null and not _fx_audio_slider.value_changed.is_connected(_on_fx_audio_slider_changed):
@@ -377,25 +377,23 @@ func refresh_platform_visibility() -> void:
 func _populate_aspect_ratios() -> void:
 	if _aspect_ratio_select == null:
 		return
-	_aspect_ratio_select.clear()
 	_available_aspects = _DisplaySettings.get_supported_aspect_ratios(_screen_size_override)
 
+	var labels: Array[String] = []
 	var selected_idx: int = 0
 	for i in range(_available_aspects.size()):
-		var ratio_label: String = _available_aspects[i]
-		_aspect_ratio_select.add_item(ratio_label, i)
-		if ratio_label == pending_settings.current_aspect_ratio:
+		labels.append(_available_aspects[i])
+		if _available_aspects[i] == pending_settings.current_aspect_ratio:
 			selected_idx = i
 
+	_aspect_ratio_select.set_options(labels, selected_idx)
 	if _available_aspects.size() > 0:
-		_aspect_ratio_select.select(selected_idx)
-		pending_settings.current_aspect_ratio = _available_aspects[selected_idx]
+		pending_settings.current_aspect_ratio = _available_aspects[_aspect_ratio_select.get_selected_index()]
 
 
 func _populate_resolutions() -> void:
 	if _resolution_select == null:
 		return
-	_resolution_select.clear()
 	_available_resolutions = _DisplaySettings.get_resolutions_for_aspect_ratio(
 		pending_settings.current_aspect_ratio,
 		_screen_size_override
@@ -403,33 +401,33 @@ func _populate_resolutions() -> void:
 	if _available_resolutions.is_empty():
 		_available_resolutions = _DisplaySettings.get_supported_resolutions(_screen_size_override)
 
+	var labels: Array[String] = []
 	var selected_idx: int = _available_resolutions.size() - 1
 	for i in range(_available_resolutions.size()):
-		var res: Vector2i = _available_resolutions[i]
-		_resolution_select.add_item(_DisplaySettings.format_resolution(res), i)
-		if res == pending_settings.current_resolution:
+		labels.append(_DisplaySettings.format_resolution(_available_resolutions[i]))
+		if _available_resolutions[i] == pending_settings.current_resolution:
 			selected_idx = i
 
+	_resolution_select.set_options(labels, selected_idx)
 	if _available_resolutions.size() > 0 and selected_idx >= 0:
-		_resolution_select.select(selected_idx)
-		pending_settings.current_resolution = _available_resolutions[selected_idx]
+		pending_settings.current_resolution = _available_resolutions[_resolution_select.get_selected_index()]
 
 
 func _populate_window_modes() -> void:
 	if _window_mode_select == null:
 		return
-	_window_mode_select.clear()
 	_available_window_modes = _DisplaySettings.get_window_modes()
 
+	var labels: Array[String] = []
 	var selected_idx: int = 0
 	for i in range(_available_window_modes.size()):
-		var mode_val: int = _available_window_modes[i]
-		_window_mode_select.add_item(_DisplaySettings.get_window_mode_label(mode_val), mode_val)
-		if mode_val == pending_settings.current_window_mode:
+		labels.append(_DisplaySettings.get_window_mode_label(_available_window_modes[i]))
+		if _available_window_modes[i] == pending_settings.current_window_mode:
 			selected_idx = i
 
+	_window_mode_select.set_options(labels, selected_idx)
 	if _available_window_modes.size() > 0:
-		_window_mode_select.select(selected_idx)
+		pending_settings.current_window_mode = _available_window_modes[_window_mode_select.get_selected_index()]
 
 
 func _on_aspect_ratio_selected(index: int) -> void:
@@ -535,11 +533,11 @@ func _update_active_status_label() -> void:
 
 func _update_controls_interactivity() -> void:
 	if _aspect_ratio_select != null:
-		_aspect_ratio_select.disabled = _confirm_active
+		_aspect_ratio_select.set_selector_disabled(_confirm_active)
 	if _resolution_select != null:
-		_resolution_select.disabled = _confirm_active
+		_resolution_select.set_selector_disabled(_confirm_active)
 	if _window_mode_select != null:
-		_window_mode_select.disabled = _confirm_active
+		_window_mode_select.set_selector_disabled(_confirm_active)
 	if _apply_button != null:
 		_apply_button.disabled = _confirm_active
 	if _back_button != null:

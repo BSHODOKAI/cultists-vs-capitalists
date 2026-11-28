@@ -118,10 +118,10 @@ func test_main_menu_settings_navigation_and_steam_deck_visibility() -> void:
 	assert(not main_vbox.visible, "Main menu VBox must hide when SettingsMenu is open")
 
 	# Verify controls inside SettingsMenu
-	var aspect_select: OptionButton = settings_menu.get_node_or_null("VBox/AspectRatioRow/AspectRatioSelect") as OptionButton
-	var res_select: OptionButton = settings_menu.get_node_or_null("VBox/ResolutionRow/ResolutionSelect") as OptionButton
+	var aspect_select: InlineSelector = settings_menu.get_node_or_null("VBox/AspectRatioRow/AspectRatioSelect") as InlineSelector
+	var res_select: InlineSelector = settings_menu.get_node_or_null("VBox/ResolutionRow/ResolutionSelect") as InlineSelector
 	var mode_row: Control = settings_menu.get_node_or_null("VBox/WindowModeRow") as Control
-	var mode_select: OptionButton = settings_menu.get_node_or_null("VBox/WindowModeRow/WindowModeSelect") as OptionButton
+	var mode_select: InlineSelector = settings_menu.get_node_or_null("VBox/WindowModeRow/WindowModeSelect") as InlineSelector
 	var apply_btn: Button = settings_menu.get_node_or_null("VBox/ButtonRow/ApplyButton") as Button
 	var back_btn: Button = settings_menu.get_node_or_null("VBox/ButtonRow/BackButton") as Button
 	var confirm_box: Control = settings_menu.get_node_or_null("VBox/ConfirmBox") as Control
@@ -129,13 +129,13 @@ func test_main_menu_settings_navigation_and_steam_deck_visibility() -> void:
 	var keep_btn: Button = settings_menu.get_node_or_null("VBox/ConfirmBox/ConfirmVBox/ConfirmBtnRow/KeepButton") as Button
 	var revert_btn: Button = settings_menu.get_node_or_null("VBox/ConfirmBox/ConfirmVBox/ConfirmBtnRow/RevertButton") as Button
 
-	assert(aspect_select != null and aspect_select.item_count > 0, "AspectRatioSelect must be populated")
-	assert(res_select != null and res_select.item_count > 0, "ResolutionSelect must be populated")
+	assert(aspect_select != null and aspect_select.get_option_count() > 0, "AspectRatioSelect must be populated")
+	assert(res_select != null and res_select.get_option_count() > 0, "ResolutionSelect must be populated")
 	assert(mode_row != null and mode_row.visible, "WindowModeRow must be visible on PC")
-	assert(mode_select != null and mode_select.item_count == 3, "WindowModeSelect must have 3 options (Fullscreen, Windowed, Windowed Borderless)")
-	assert(mode_select.get_item_text(0) == "Fullscreen", "Option 0 must be Fullscreen")
-	assert(mode_select.get_item_text(1) == "Windowed", "Option 1 must be Windowed")
-	assert(mode_select.get_item_text(2) == "Windowed Borderless", "Option 2 must be Windowed Borderless")
+	assert(mode_select != null and mode_select.get_option_count() == 3, "WindowModeSelect must have 3 options (Fullscreen, Windowed, Windowed Borderless)")
+	assert(mode_select.get_options()[0] == "Fullscreen", "Option 0 must be Fullscreen")
+	assert(mode_select.get_options()[1] == "Windowed", "Option 1 must be Windowed")
+	assert(mode_select.get_options()[2] == "Windowed Borderless", "Option 2 must be Windowed Borderless")
 	assert(apply_btn != null, "SettingsMenu must have ApplyButton")
 	assert(confirm_box != null and not confirm_box.visible, "ConfirmBox must start hidden")
 	assert(keep_btn != null and revert_btn != null, "ConfirmBox must have KeepButton and RevertButton")
@@ -148,8 +148,7 @@ func test_main_menu_settings_navigation_and_steam_deck_visibility() -> void:
 	var aspects: PackedStringArray = settings_menu.get_available_aspect_ratios()
 	var idx_16_10: int = aspects.find("16:10")
 	assert(idx_16_10 >= 0, "1440p screen must offer 16:10 aspect ratio")
-	aspect_select.select(idx_16_10)
-	aspect_select.item_selected.emit(idx_16_10)
+	aspect_select.set_selected_index(idx_16_10, true)
 
 	var res_16_10: Array[Vector2i] = settings_menu.get_available_resolutions()
 	assert(not res_16_10.is_empty(), "Selecting 16:10 must populate 16:10 resolutions")
@@ -157,8 +156,7 @@ func test_main_menu_settings_navigation_and_steam_deck_visibility() -> void:
 		assert(_DisplaySettings.get_aspect_ratio_label(r) == "16:10", "Filtered resolution must be 16:10")
 
 	# Pick the first 16:10 resolution (e.g. 1280x800) - should ONLY stage in pending_settings before Apply
-	res_select.select(0)
-	res_select.item_selected.emit(0)
+	res_select.set_selected_index(0, true)
 	var target_res: Vector2i = res_16_10[0]
 	assert(
 		settings_menu.display_settings.current_resolution == initial_res,
@@ -204,10 +202,8 @@ func test_main_menu_settings_navigation_and_steam_deck_visibility() -> void:
 	)
 
 	# 2. Select 16:10 resolution again, press Apply, then click Keep Changes before timeout
-	aspect_select.select(idx_16_10)
-	aspect_select.item_selected.emit(idx_16_10)
-	res_select.select(0)
-	res_select.item_selected.emit(0)
+	aspect_select.set_selected_index(idx_16_10, true)
+	res_select.set_selected_index(0, true)
 	apply_btn.pressed.emit()
 	assert(confirm_box.visible, "ConfirmBox must open on second Apply")
 	keep_btn.pressed.emit()
@@ -307,11 +303,10 @@ func test_in_game_menu_esc_deselect_before_opening_and_settings_and_quit() -> vo
 	assert(not menu_panel.visible and ig_settings.visible, "MenuPanel must hide while Display Settings is open")
 
 	ig_settings.set_screen_size_override(Vector2i(2560, 1440))
-	var res_select: OptionButton = ig_settings.get_node("VBox/ResolutionRow/ResolutionSelect") as OptionButton
+	var res_select: InlineSelector = ig_settings.get_node("VBox/ResolutionRow/ResolutionSelect") as InlineSelector
 	var apply_btn: Button = ig_settings.get_node("VBox/ButtonRow/ApplyButton") as Button
 	var keep_btn: Button = ig_settings.get_node("VBox/ConfirmBox/ConfirmVBox/ConfirmBtnRow/KeepButton") as Button
-	res_select.select(0)
-	res_select.item_selected.emit(0)
+	res_select.set_selected_index(0, true)
 	var expected_res: Vector2i = ig_settings.get_available_resolutions()[0]
 	apply_btn.pressed.emit()
 	assert(ig_settings.is_confirmation_active(), "Apply inside in-game settings must start 5s confirmation")
