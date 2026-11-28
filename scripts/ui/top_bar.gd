@@ -48,7 +48,12 @@ var _base_fonts: Dictionary = {}      # Control -> int base font size
 var _base_seps: Dictionary = {}       # BoxContainer -> int base separation
 var _base_icon_sizes: Dictionary = {} # Control -> float base min width (chip icons + bar)
 var _applying_fit: bool = false
-var _last_fit_sig: String = ""
+## True between a resize being observed and the deferred fit actually running, so a burst of
+## `resized` / viewport `size_changed` notifications collapses into ONE fit.
+var _fit_pending: bool = false
+## The (width, content) signature of the last applied fit. A repeat is a no-op -- see
+## [method _apply_fit] for why re-mutating on every resize crashes the engine.
+var _last_fit_key: String = ""
 static var _cached_off_sources_line: String = ""
 static var _cached_scr_sources_line: String = ""
 static var _cached_sources_tsys_id: int = 0
@@ -110,7 +115,9 @@ func _ready() -> void:
 	var vp: Viewport = get_viewport()
 	if vp != null and not vp.size_changed.is_connected(_on_resized):
 		vp.size_changed.connect(_on_resized)
-	_on_resized()
+	# Fit once synchronously so the very first frame is already compacted; later resizes go
+	# through the coalesced deferred path in _on_resized.
+	_apply_fit()
 
 
 func _build_ui() -> void:
@@ -305,8 +312,15 @@ func _make_delta_badge(chip: HBoxContainer) -> Label:
 ## ---- Responsive one-row fit -------------------------------------------------
 
 ## Re-applies the compacting scale whenever the bar (or the viewport) resizes.
+##
+## The fit is DEFERRED and coalesced: `resized` fires from inside the container's sort pass, and
+## mutating child minimum sizes / theme overrides from there re-queues that same sort, so doing
+## the fit synchronously can wedge the engine's message queue (godot#124575, signal 11 crash).
 func _on_resized() -> void:
-	_apply_fit()
+	if _fit_pending:
+		return
+	_fit_pending = true
+	_apply_fit.call_deferred()
 
 
 ## The layout width the bar must fit into. This is the VIEWPORT width, never the bar's own
@@ -350,8 +364,19 @@ func _set_scale(s: float) -> void:
 ## stylebox / button content margins are fixed, so a single ratio can still overflow by a few
 ## pixels. Each pass only DECREASES the scale, so it converges. Idempotent.
 func _apply_fit() -> void:
+	_fit_pending = false
 	if _hbox == null or _applying_fit:
 		return
+	# CRASH GUARD (godot#124575): _set_scale mutates child font sizes / separations / minimum
+	# sizes, and each mutation re-queues a container re-sort that re-emits `resized`. If we
+	# mutated on EVERY call -- as this did, always resetting to 1.0 first -- the engine's
+	# `_sort_children -> update_minimum_size -> call_deferred -> _sort_children` cycle never
+	# drains; the message queue grows without bound and Godot dies with signal 11. Fit ONLY
+	# when the (width, content) signature actually changed; an unchanged signature is a no-op.
+	var key: String = _compute_fit_sig()
+	if key == _last_fit_key:
+		return
+	_last_fit_key = key
 	_applying_fit = true
 	_set_scale(1.0)
 	var avail: float = _available_width()
@@ -497,11 +522,9 @@ func refresh() -> void:
 		_draw_rite_button.disabled = not can_draw
 
 	# The visible set of readouts (e.g. the Draw Rite button appears once a Rite is held) can
-	# change the row's width, so re-fit when the layout signature changes.
-	var fit_sig: String = _compute_fit_sig()
-	if fit_sig != _last_fit_sig:
-		_last_fit_sig = fit_sig
-		_apply_fit()
+	# change the row's width. _apply_fit is a cheap no-op when the (width, content) signature is
+	# unchanged, so calling it on every refresh is safe and cannot re-mutate the layout in a loop.
+	_apply_fit()
 
 
 func _on_draw_rite_pressed() -> void:

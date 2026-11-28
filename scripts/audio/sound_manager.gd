@@ -213,6 +213,11 @@ func _has_valid_stream(stream_path: String) -> bool:
 func _play_approved_cue(cue_res: Dictionary) -> Dictionary:
 	if not bool(cue_res.get("played", false)):
 		return cue_res
+	# A HUD button bound via bind_ui_buttons can fire its press while the scene is being torn
+	# down (Quit to Main Menu / window close), when this node is already outside the tree and
+	# AudioStreamPlayer.play() would error. There is nothing to hear then, so skip playback.
+	if not is_inside_tree():
+		return cue_res
 	var path: String = String(cue_res.get("path", ""))
 	if not _has_valid_stream(path):
 		return cue_res

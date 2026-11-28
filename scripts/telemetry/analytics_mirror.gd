@@ -141,6 +141,11 @@ func _should_emit() -> bool:
 		return true
 	if DisplayServer.get_name() == "headless":
 		return false
+	# _ensure_ready() runs from _init (autoload construction) before this node joins the tree,
+	# where an absolute get_node("/root/GameState") errors. Out of the tree there is no run to
+	# suppress (a replay is only ever set once a run is live), so emit.
+	if not is_inside_tree():
+		return true
 	var gs: Node = get_node_or_null(GAME_STATE_PATH)
 	if gs != null and bool(gs.get("is_replaying")):
 		return false

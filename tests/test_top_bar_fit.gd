@@ -130,3 +130,57 @@ func test_typical_row_stays_legible_at_4_3() -> void:
 		% tb._lives_label.get_theme_font_size("font_size")
 	)
 	tb.queue_free()
+
+
+## CRASH GUARD (godot#124575): `resized` is emitted from INSIDE the container's sort pass, and
+## `_set_scale` mutates child font sizes / minimum sizes, each of which re-queues that same sort.
+## If the bar re-mutated on every call -- as it once did, always resetting tracked fonts to 1.0 --
+## the engine's `_sort_children -> update_minimum_size -> _sort_children` cycle never drains, the
+## deferred message queue grows without bound, and Godot dies with signal 11. A re-fit with an
+## UNCHANGED (width, content) signature must therefore be a strict NO-OP (no layout mutation).
+func test_refit_with_unchanged_signature_is_a_no_op() -> void:
+	var tb: TopBar = _make_bar()
+	await get_tree().process_frame
+	_fill_worst_case(tb)
+
+	tb.fit_width_override = 864.0
+	tb._apply_fit()
+
+	# Sentinel: a font size the fit would overwrite IF it ran again. Text length is unchanged, so
+	# the fit signature is identical and the sentinel must survive.
+	tb._lives_label.add_theme_font_size_override("font_size", 99)
+	tb._apply_fit()
+	assert(
+		tb._lives_label.get_theme_font_size("font_size") == 99,
+		"An identical refit must not mutate the layout (it re-armed the crash loop)"
+	)
+
+	# A genuinely different width must still trigger a real re-fit.
+	tb.fit_width_override = 512.0
+	tb._apply_fit()
+	assert(
+		tb._lives_label.get_theme_font_size("font_size") != 99,
+		"A new width must still trigger a real re-fit"
+	)
+	tb.queue_free()
+
+
+## The resize handler must not fit synchronously -- it would mutate layout from inside the sort
+## pass. It schedules a single coalesced deferred fit instead.
+func test_resize_fit_is_deferred_and_coalesced() -> void:
+	var tb: TopBar = _make_bar()
+	await get_tree().process_frame
+	_fill_typical(tb)
+	tb.fit_width_override = 864.0
+	tb._apply_fit()
+
+	assert(not tb._fit_pending, "No fit should be pending before a resize")
+	tb._on_resized()
+	assert(tb._fit_pending, "_on_resized must defer the fit, never run it on the sort stack")
+	# A burst of resize notifications collapses into the one pending fit.
+	tb._on_resized()
+	assert(tb._fit_pending, "A burst of resizes must coalesce into a single pending fit")
+
+	await get_tree().process_frame
+	assert(not tb._fit_pending, "The deferred fit must clear the pending flag when it runs")
+	tb.queue_free()
